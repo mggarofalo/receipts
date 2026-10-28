@@ -11,7 +11,7 @@ namespace Receipts.JevPairedRunner
 	{
 		public static async Task<int> RunAsync(string[] args)
 		{
-			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate"))
+			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate" or "prepare-batched" or "replay-batched" or "validate-batched"))
 			{
 				Console.Error.WriteLine("Usage: prepare|replay|validate <absolute-input.json> <absolute-replies.json> <absolute-output.json>");
 				return 2;
@@ -29,6 +29,41 @@ namespace Receipts.JevPairedRunner
 					}
 				}
 				PairedInput input = Read<PairedInput>(args[1]);
+				if (args[0].EndsWith("-batched", StringComparison.Ordinal))
+				{
+					BatchedReplayReplies batchedReplies = Read<BatchedReplayReplies>(args[2]);
+					BatchedPairedReplayPlan batched = new(input);
+					object batchResult;
+					if (args[0] == "validate-batched")
+					{
+						await batched.ValidateAsync(batchedReplies);
+						batchResult = new { validated = true, maximumNetworkCalls = 0 };
+					}
+					else if (args[0] == "prepare-batched")
+					{
+						var verification = batchedReplies.Shortlist.Count == 0 ? null :
+							batched.PrepareVerification(batchedReplies.Shortlist);
+						batchResult = new
+						{
+							format = BatchedPairedReplayPlan.Version,
+							batched.PlanSha256,
+							batched.ProductionPayload,
+							shortlistPayloads = batched.ShortlistBatches.Select(batch => batch.Payload),
+							verificationBatches = verification?.Batches,
+							verificationSha256 = verification?.PlanSha256,
+							maximumNetworkCalls = 0,
+							retries = 0
+						};
+					}
+					else
+					{
+						batchResult = await batched.ReplayAsync(batchedReplies);
+					}
+					using FileStream batchOutput = new(args[3], FileMode.CreateNew, FileAccess.Write, FileShare.None);
+					await JsonSerializer.SerializeAsync(batchOutput, batchResult, CandidateParity.JsonOptions);
+					batchOutput.Flush(flushToDisk: true);
+					return 0;
+				}
 				ReplayReplies replies = Read<ReplayReplies>(args[2]);
 				PairedReplayPlan plan = PairedReplay.Prepare(input);
 				object result;

@@ -46,9 +46,14 @@ public sealed class BatchedVerificationPlan
 	}
 
 	/// <summary>Exactly one response per request, in request order. Coverage is global, never inferred from per-batch answers.</summary>
-	public CandidateWireResult Aggregate(IReadOnlyList<string> responses)
+	public CandidateWireResult Aggregate(IReadOnlyList<string> responses) => Parse(responses, false);
+
+	/// <summary>Validates only an ordered prefix; never produces a decision.</summary>
+	public bool ValidatePrefix(IReadOnlyList<string> responses) => Parse(responses, true).Decision.Failure is null;
+
+	private CandidateWireResult Parse(IReadOnlyList<string> responses, bool prefix)
 	{
-		if (responses is null || responses.Count != Batches.Count)
+		if (responses is null || responses.Count > Batches.Count || (!prefix && responses.Count != Batches.Count))
 		{
 			return Invalid();
 		}
@@ -57,7 +62,7 @@ public sealed class BatchedVerificationPlan
 		{
 			JsonObject answers = new();
 			long input = 0, output = 0;
-			for (int i = 0; i < Batches.Count; i++)
+			for (int i = 0; i < responses.Count; i++)
 			{
 				string raw = responses[i];
 				if (raw is null || raw.Length > CandidateWire.MaximumResponseBytes ||
@@ -100,6 +105,10 @@ public sealed class BatchedVerificationPlan
 
 				input = checked(input + batchInput);
 				output = checked(output + batchOutput);
+			}
+			if (prefix)
+			{
+				return new(null, new(null, [], null, null), input, output);
 			}
 			return complete.ParseResponse(new JsonObject
 			{
@@ -146,7 +155,7 @@ public static class BatchedVerification
 	public const int MaximumPathsPerBatch = 32;
 	public const int MaximumBatchBytes = 32 * 1024;
 
-	public static BatchedVerificationPlan Prepare(CandidateVerificationPlan plan, string model)
+	public static BatchedVerificationPlan Prepare(CandidateVerificationPlan plan, string model, bool globalCoverageLast = false)
 	{
 		ArgumentNullException.ThrowIfNull(plan);
 		CandidateWireRequest complete = CandidateWire.Prepare(plan, model);
@@ -157,12 +166,19 @@ public static class BatchedVerification
 			MaximumPathsPerBatch,
 			MaximumBatchBytes
 		})));
+		if (globalCoverageLast)
+		{
+			binding = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(binding + ":global-coverage-last-v1")));
+		}
 		JsonObject source = JsonNode.Parse(complete.Payload)!.AsObject();
 		JsonObject sourceQuestions = source["questions"]!.AsObject();
 		Dictionary<string, string> originalIds = new(StringComparer.Ordinal);
 		List<VerificationBatch> batches = [];
 		// Exactly one coverage request sees the complete taxonomy and complete union of paths.
-		AddBatch(true, [], ["purchase", "unlisted"]);
+		if (!globalCoverageLast)
+		{
+			AddBatch(true, [], ["purchase", "unlisted"]);
+		}
 		List<int> pending = [];
 		for (int index = 0; index < plan.Paths.Count; index++)
 		{
@@ -187,6 +203,10 @@ public static class BatchedVerification
 			AddPaths();
 		}
 
+		if (globalCoverageLast)
+		{
+			AddBatch(true, [], ["purchase", "unlisted"]);
+		}
 		return new(complete, binding, batches.ToArray(), originalIds);
 
 		void AddPaths()

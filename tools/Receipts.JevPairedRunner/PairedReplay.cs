@@ -99,7 +99,7 @@ public sealed class PairedReplayPlan
 		}
 	}
 
-	private async Task<CategorySuggestionResult> ParseProductionAsync(string response, CancellationToken cancellationToken = default)
+	internal async Task<CategorySuggestionResult> ParseProductionAsync(string response, CancellationToken cancellationToken = default)
 	{
 		using ReplayHandler handler = new(ProductionPayload, response);
 		using HttpClient client = new(handler);
