@@ -283,7 +283,7 @@ it("isolates pending future mapping by signed-in actor and clears it only when s
     path.endsWith("/status")
       ? ok({
           ...status,
-          capability: "unconfigured",
+          capability: "unavailable",
           suggestionsAvailable: false,
         })
       : fail(500, "Provider reads should stay disabled"),
@@ -319,15 +319,29 @@ it("keeps manual browse available when assistance capability is absent", async (
     path.endsWith("/status")
       ? ok({
           ...status,
-          capability: "unconfigured",
+          capability: "unavailable",
           suggestionsAvailable: false,
         })
       : fail(500, "Unexpected request"),
   );
   renderWithQueryClient(<ClassificationWorkspace />);
   expect(
-    await screen.findByText(/suggestions are unavailable/i),
+    await screen.findByText("Browse categories and classify receipts."),
   ).toBeInTheDocument();
+  await waitFor(() =>
+    expect(
+      screen.queryByText(/Checking category assistance/),
+    ).not.toBeInTheDocument(),
+  );
+  expect(
+    screen.queryByText(/suggestions are unavailable/i),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Review details" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("link", { name: "Assistance settings" }),
+  ).toHaveAttribute("href", "/admin/category-assistance");
   expect(
     screen.getByRole("link", { name: "Browse categories" }),
   ).toHaveAttribute("href", "/categories");

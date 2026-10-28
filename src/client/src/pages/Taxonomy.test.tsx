@@ -1,7 +1,11 @@
 import "@/test/setup-combobox-polyfills";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  useIsFetching,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { useEffect } from "react";
 import { renderWithQueryClient } from "@/test/test-utils";
 import mockClient, { resetMockClient } from "@/test/mock-api-client";
@@ -289,8 +293,16 @@ describe("Category tree", () => {
       await userEvent.click(d.getByRole("button", { name: "Rename category" }));
       await waitFor(() => expect(mockClient.POST).toHaveBeenCalledOnce());
       if (readTiming === "while saving") startRead();
-      await waitFor(() => expect(mockClient.GET).toHaveBeenCalledTimes(2));
-      const readSignal = mockClient.GET.mock.calls[1][1]!.signal!;
+      await waitFor(() =>
+        expect(
+          mockClient.GET.mock.calls.filter(
+            ([path]) => path === "/api/taxonomy",
+          ),
+        ).toHaveLength(2),
+      );
+      const readSignal = mockClient.GET.mock.calls.filter(
+        ([path]) => path === "/api/taxonomy",
+      )[1][1]!.signal!;
       const saved = {
         ...revision,
         id: "rev-2",
@@ -560,4 +572,86 @@ it("invalidates current dashboard hierarchy after a committed tree edit and reta
     cache!.getQueryState(["dashboard", "spending-by-category", "asClassified"])
       ?.isInvalidated,
   ).toBe(false);
+});
+
+describe("Suggestions navigation", () => {
+  function CapabilityReadState() {
+    const fetching = useIsFetching({
+      queryKey: ["category-assistance", "status"],
+    });
+    return (
+      <span>{fetching ? "Checking capability" : "Capability checked"}</span>
+    );
+  }
+  it.each(["ready", "unavailable", "error"])(
+    "keeps category browsing and editing available when assistance is %s",
+    async (capability) => {
+      let finish!: (value: unknown) => void;
+      mockClient.GET.mockImplementation((path: string) =>
+        path === "/api/category-assistance/status"
+          ? new Promise((resolve) => {
+              finish = resolve;
+            })
+          : Promise.resolve(success(revision)),
+      );
+      renderWithQueryClient(
+        <>
+          <Taxonomy />
+          <CapabilityReadState />
+        </>,
+      );
+      await screen.findByRole("tree");
+      expect(
+        screen.queryByRole("link", { name: "Suggestions" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("Browse categories")).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(
+        screen.getByRole("link", { name: "Clean up history" }),
+      ).toHaveAttribute("href", "/categories/cleanup");
+      await act(async () =>
+        finish(
+          capability === "error"
+            ? failure(503, "Status unavailable")
+            : {
+                data: {
+                  capability,
+                  consentEnabled: true,
+                  suggestionsAvailable: capability === "ready",
+                  provider: "jev",
+                  models: [],
+                  dailyLimit: 20,
+                  pendingLimit: 5,
+                },
+                error: undefined,
+                response: new Response(null, { status: 200 }),
+              },
+        ),
+      );
+      await screen.findByText("Capability checked");
+      if (capability === "ready") {
+        expect(
+          screen.getByRole("link", { name: "Suggestions" }),
+        ).toHaveAttribute("href", "/classification");
+      } else {
+        expect(
+          screen.queryByRole("link", { name: "Suggestions" }),
+        ).not.toBeInTheDocument();
+      }
+      expect(
+        screen.queryByText(
+          /suggestions are unavailable|not enabled|status unavailable/i,
+        ),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "New category" }),
+      ).toBeEnabled();
+      expect(
+        screen.getByRole("treeitem", { name: "Food" }),
+      ).toBeInTheDocument();
+      expect(mockClient.POST).not.toHaveBeenCalled();
+    },
+  );
 });

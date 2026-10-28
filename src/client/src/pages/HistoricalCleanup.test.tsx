@@ -332,3 +332,67 @@ it("allows a new selection after returning from a captured preview", async () =>
     screen.getByRole("checkbox", { name: "Select Bread at Shop" }),
   ).toBeEnabled();
 });
+
+it("keeps manual historical category selection and preview without configured Jev", async () => {
+  const original = mockClient.GET.getMockImplementation()!;
+  mockClient.GET.mockImplementation((path: string, options: unknown) =>
+    path === "/api/category-assistance/status"
+      ? Promise.resolve(
+          success({
+            capability: "unavailable",
+            suggestionsAvailable: false,
+            consentEnabled: false,
+          }),
+        )
+      : original(path, options),
+  );
+  renderWithQueryClient(<HistoricalCleanup />, {
+    auth: {
+      user: {
+        userId: "manual-user",
+        email: "manual@example.test",
+        roles: [],
+        mustResetPassword: false,
+      },
+    },
+  });
+  await screen.findByText("Dairy");
+  await waitFor(() =>
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/category-assistance/status",
+      expect.anything(),
+    ),
+  );
+  expect(
+    screen.queryByRole("region", { name: "Historical suggestions" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "Recent operations" }),
+  ).toBeInTheDocument();
+  expect(mockClient.POST).not.toHaveBeenCalled();
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: "Select Dairy at Shop" }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Bulk destination" }),
+  );
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Reason for reclassification" }),
+    "Manual refinement",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Capture server preview" }),
+  );
+  await waitFor(() =>
+    expect(mockClient.POST).toHaveBeenCalledWith(
+      "/api/historical-reclassifications",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          reason: "Manual refinement",
+          groups: [expect.objectContaining({ targetCategoryId: "milk" })],
+        }),
+      }),
+    ),
+  );
+  expect(mockClient.POST).toHaveBeenCalledTimes(1);
+});

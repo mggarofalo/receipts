@@ -376,6 +376,27 @@ export default function Taxonomy() {
       return result.data;
     },
   });
+  const assistanceStatus = useQuery({
+    ...localErrorPolicy.query,
+    queryKey: ["category-assistance", "status"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/api/category-assistance/status",
+        {
+          ...localErrorPolicy.request,
+          signal,
+        },
+      );
+      if (error || !data)
+        throw error ?? new Error("Assistance status unavailable");
+      return data;
+    },
+  });
+  const suggestionsAvailable =
+    !assistanceStatus.isError &&
+    assistanceStatus.data?.capability === "ready" &&
+    assistanceStatus.data.suggestionsAvailable === true &&
+    assistanceStatus.data.consentEnabled === true;
   const editable = isAdmin() && !historicalId;
   return (
     <>
@@ -383,9 +404,11 @@ export default function Taxonomy() {
         aria-label="Classification workspace"
         className="mb-4 flex flex-wrap gap-3 text-sm"
       >
-        <Link className="underline" to="/classification">
-          Suggestions
-        </Link>
+        {suggestionsAvailable && (
+          <Link className="underline" to="/classification">
+            Suggestions
+          </Link>
+        )}
         <span aria-current="page" className="font-semibold">
           Browse categories
         </span>
