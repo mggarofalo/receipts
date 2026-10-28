@@ -3,6 +3,7 @@ using System.Text.Json;
 using Application.Classification;
 using Application.Taxonomy;
 using Infrastructure.Entities.CategoryAssistance;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -36,6 +37,10 @@ public sealed class CategoryAssistanceReviewPreferenceStore(
 			new { attemptId, request.ExpectedRevision, request.State, excludedItemIds = sorted })));
 		await using var db = await factory.CreateDbContextAsync(ct);
 		await using var tx = await db.Database.BeginTransactionAsync(ct);
+		// Historical writers acquire this gate before reading preferences and hold it
+		// through their writes. Discovery manifests are advisory and may remain stale after
+		// a preference update. Always acquire this gate before the attempt row lock.
+		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		await RequireActorAndAttemptAsync(db, actor, attemptId, ct, true, true);
 		var previous = await db.CategoryAssistanceReviewOperations.AsNoTracking()
 			.SingleOrDefaultAsync(x => x.Actor == actor && x.OperationId == request.OperationId, ct);

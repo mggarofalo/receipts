@@ -10,7 +10,9 @@ using Infrastructure.Entities.Core;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Options;
@@ -24,8 +26,153 @@ namespace Infrastructure.IntegrationTests.Services;
 [Trait("Prerequisite", "Postgres")]
 public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 {
-	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
+	private sealed class Factory(PostgresFixture fixture, IInterceptor? interceptor = null) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => interceptor is null ? fixture.CreateDbContext() :
+		new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(interceptor).Options);
+	}
+
+	private sealed class PauseSave : SaveChangesInterceptor
+	{
+		public TaskCompletionSource<int> Arrived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+			InterceptionResult<int> result, CancellationToken cancellationToken = default)
+		{
+			Arrived.TrySetResult(((NpgsqlConnection)eventData.Context!.Database.GetDbConnection()).ProcessID);
+			await Release.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+			return result;
+		}
+	}
+
+	private static async Task WaitForBlockedGate(PostgresFixture fixture, int holderPid, Task waiter, CancellationToken ct)
+	{
+		await using var observer = new NpgsqlConnection(fixture.ConnectionString);
+		await observer.OpenAsync(ct);
+		await using var command = new NpgsqlCommand("SELECT EXISTS (SELECT 1 FROM pg_locks l WHERE l.locktype='advisory' AND NOT l.granted AND l.database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND @holder = ANY(pg_blocking_pids(l.pid)))", observer);
+		command.Parameters.AddWithValue("holder", holderPid);
+		while (!(bool)(await command.ExecuteScalarAsync(ct))!)
+		{
+			if (waiter.IsCompleted) { await waiter; throw new InvalidOperationException("Expected a waiter on the holder's gate."); }
+			await Task.Delay(20, ct);
+		}
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task DiscoveryAndPreferenceUpdateSerializeButManifestRemainsAdvisory(bool updateFirst)
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		await using var setup = fixture.CreateDbContext();
+		var discovery = new OrganizationDiscoveryStore(new Factory(fixture), TimeProvider.System);
+		var run = await discovery.StartAsync((await setup.CategoryAssistanceSettings.SingleAsync()).Revision, default);
+		var pause = new PauseSave();
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture, updateFirst ? pause : null), TimeProvider.System);
+		var scanner = new OrganizationDiscoveryStore(new Factory(fixture, updateFirst ? null : pause), TimeProvider.System);
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+		var request = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), Guid.Empty, "later", [seed.Item]);
+		Task first = updateFirst ? preferences.UpdateAsync(seed.Actor, seed.Attempt, request, timeout.Token)
+			: scanner.DiscoverAsync(run, 100, timeout.Token);
+		try
+		{
+			int holderPid = await pause.Arrived.Task.WaitAsync(timeout.Token);
+			Task second = updateFirst ? scanner.DiscoverAsync(run, 100, timeout.Token)
+				: preferences.UpdateAsync(seed.Actor, seed.Attempt, request, timeout.Token);
+			await WaitForBlockedGate(fixture, holderPid, second, timeout.Token);
+			pause.Release.TrySetResult();
+			await Task.WhenAll(first, second);
+			var manifest = await setup.OrganizationItems.AsNoTracking().SingleAsync(x => x.ItemId == seed.Item, timeout.Token);
+			manifest.State.Should().Be(updateFirst ? "protected" : "observed");
+			if (updateFirst) { manifest.SourceId.Should().BeNull(); }
+			else { manifest.SourceId.Should().NotBeNull(); }
+			// A preference saved after discovery need not invalidate the advisory manifest.
+			// An executor must acquire the gate and re-read the committed preference itself.
+			await using var executor = fixture.CreateDbContext();
+			await using var tx = await executor.Database.BeginTransactionAsync(timeout.Token);
+			await NormalizationWriteGuard.AcquireWriteGateAsync(executor, timeout.Token);
+			var row = await executor.CategoryAssistanceReviewPreferences.AsNoTracking()
+				.SingleAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt, timeout.Token);
+			row.State.Should().Be("later");
+			CategoryAssistanceReviewPreferenceStore.Excluded(row).Should().Equal(seed.Item);
+			await tx.CommitAsync(timeout.Token);
+		}
+		finally { pause.Release.TrySetResult(); timeout.Cancel(); }
+	}
+
+	[Fact]
+	public async Task PreferenceUpdateAndHistoricalWriterSerializeBeforeReadingExclusions()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		await using var blocker = new NpgsqlConnection(fixture.ConnectionString);
+		await blocker.OpenAsync();
+		await using var blockerTx = await blocker.BeginTransactionAsync();
+		await using var lockAttempt = new NpgsqlCommand(
+			"SELECT \"Id\" FROM category_assistance.\"Attempts\" WHERE \"Id\" = @id FOR UPDATE", blocker, blockerTx);
+		lockAttempt.Parameters.AddWithValue("id", seed.Attempt);
+		await lockAttempt.ExecuteScalarAsync();
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+		var update = preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), Guid.Empty, "later", [seed.Item]), timeout.Token);
+		await using var waiting = new NpgsqlCommand(
+			"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid)))", blocker, blockerTx);
+		while (!(bool)(await waiting.ExecuteScalarAsync(timeout.Token))!)
+		{
+			if (update.IsCompleted) { await update; throw new InvalidOperationException("Update did not wait for attempt lock."); }
+			await Task.Delay(20, timeout.Token);
+		}
+		await using var executor = fixture.CreateDbContext();
+		await using var executorTx = await executor.Database.BeginTransactionAsync(timeout.Token);
+		var acquire = NormalizationWriteGuard.AcquireWriteGateAsync(executor, timeout.Token);
+		await using var gateWait = new NpgsqlCommand(
+			"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND pid = @pid)", blocker, blockerTx);
+		gateWait.Parameters.AddWithValue("pid", ((NpgsqlConnection)executor.Database.GetDbConnection()).ProcessID);
+		while (!(bool)(await gateWait.ExecuteScalarAsync(timeout.Token))!)
+		{
+			if (acquire.IsCompleted) { await acquire; throw new InvalidOperationException("Historical writer did not wait for preference update."); }
+			await Task.Delay(20, timeout.Token);
+		}
+		await blockerTx.CommitAsync(timeout.Token);
+		await update;
+		await acquire;
+		var row = await executor.CategoryAssistanceReviewPreferences.AsNoTracking()
+			.SingleAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt, timeout.Token);
+		CategoryAssistanceReviewPreferenceStore.Excluded(row).Should().Equal(seed.Item);
+		row.State.Should().Be("later");
+		await executorTx.CommitAsync(timeout.Token);
+	}
+
+	[Fact]
+	public async Task PreferenceUpdateWaitsForHistoricalWriterGate()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		await using var executor = fixture.CreateDbContext();
+		await using var executorTx = await executor.Database.BeginTransactionAsync();
+		await NormalizationWriteGuard.AcquireWriteGateAsync(executor, CancellationToken.None);
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+		var update = preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), Guid.Empty, "later", [seed.Item]), timeout.Token);
+		await using var observer = new NpgsqlConnection(fixture.ConnectionString);
+		await observer.OpenAsync(timeout.Token);
+		await using var waiting = new NpgsqlCommand(
+			"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND @holder = ANY(pg_blocking_pids(pid)))", observer);
+		waiting.Parameters.AddWithValue("holder", ((NpgsqlConnection)executor.Database.GetDbConnection()).ProcessID);
+		while (!(bool)(await waiting.ExecuteScalarAsync(timeout.Token))!)
+		{
+			if (update.IsCompleted) { await update; throw new InvalidOperationException("Preference update did not wait for historical writer."); }
+			await Task.Delay(20, timeout.Token);
+		}
+		(await executor.CategoryAssistanceReviewPreferences.AsNoTracking()
+			.AnyAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt, timeout.Token)).Should().BeFalse();
+		await executorTx.CommitAsync(timeout.Token);
+		var result = await update;
+		result.ExcludedItemIds.Should().Equal(seed.Item);
+	}
 
 	[Fact]
 	public async Task ReviewPreferencesRejectUnrelatedExcludedItemsWithoutRecordingAnOperation()
