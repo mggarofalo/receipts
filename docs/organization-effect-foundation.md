@@ -201,3 +201,47 @@ unchanged. Tests cover pending/skipped acceptance, rejection of applied evidence
 with and without ordinary manual authority, preservation of ordinary history
 errors, both cross-actor reservation phases, and the full candidate export/read
 barriers. No v14 format or production writer is activated.
+
+## Inactive v1 typed claim codec
+
+`OrganizationEffectContractV1` is a pure, internal candidate codec. No archive,
+entity persistence, authority validator or writer calls it. The applied-outcome
+barrier above remains in force. Its `approved-exact-mapping` decision kind names a
+claim requiring proof; successfully reading that kind does not establish approval.
+Mapping references retain the existing `CategoryMappingReuseEvidence` meanings:
+mapping revision, original approval taxonomy revision and source fingerprint.
+There is deliberately no new approval boolean or substitute authority.
+
+The item request binds manifest identity, actor, policy version, capture time,
+raw source tuple and source revisions, explicit prior assignment identity or null,
+target category/revision and ordered category-to-root identity path, both reserved
+operations, and typed mapping references. A separate phase command binds the item
+request hash, phase operation, expected assignment, category/revision/path and
+recording time. These are candidate claims, not an executable assignment command
+or a complete manifest-level request contract. Undo may express an absent category
+with an empty path, and must name an expected applied assignment.
+
+All constructor fields are required, including nullable fields. Reading rejects
+unknown fields, duplicate fields, unknown versions and kinds, malformed identities,
+non-uppercase SHA-256 strings, and unpaired UTF-16 surrogates before JSON encoding
+can replace them. Object keys use the existing ordinal canonical
+JSON codec; nulls are emitted explicitly and path array order is retained. Hashes
+are uppercase SHA-256 of UTF-8 domain, a zero byte, and canonical JSON. Domains are
+`receipts.organization-effect.item-request.v1`,
+`receipts.organization-effect.apply.v1`, and
+`receipts.organization-effect.undo.v1`. Timestamps must be UTC at PostgreSQL's
+microsecond precision; JSON requires exactly six fractional digits and `Z`.
+Submicrosecond input is rejected rather than rounded or silently truncated.
+
+Before using these claims as authority, reconstruct mapping revision operation and
+request authority using the existing mapping command semantics, source fingerprint
+and exact source tuple, approval taxonomy and current semantic fingerprint, and
+revocation/head history at the relevant decision. Verify category paths against
+immutable taxonomy snapshots. Bind each phase to its request's reserved operation,
+actor, source, expected prior lineage and terminal outcome, and reconstruct undo's
+prior category and revision from its original assignment. Define the complete
+manifest request and its item membership hash, and its relationship to persisted
+`RequestHash`. None of these checks are supplied by this codec. Existing arbitrary
+decision JSON and opaque request hashes cannot be upgraded or reinterpreted as v1
+authority. New typed persistence/portable envelopes, adversarial semantic tests,
+and real full backup/import evidence remain required before changing the barrier.
