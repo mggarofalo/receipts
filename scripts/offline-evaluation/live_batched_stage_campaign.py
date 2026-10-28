@@ -20,3 +20,10 @@ class LiveBatchedPairedStageCampaign(LivePairedStageCampaign, BatchedPairedStage
                (__file__, batched_stage_campaign.__file__)):
             raise LedgerError('executing batched Python source inventories required')
         super()._verify_live_files(artifacts)
+
+
+class LivePartitionedBatchedPairedStageCampaign(
+        LiveBatchedPairedStageCampaign,
+        batched_stage_campaign.PartitionedBatchedPairedStageCampaign):
+    """Explicit opt-in v2 seam; same reserved transport, no CLI registration."""
+    FORMAT = 'live-batched-paired-stage-v2'

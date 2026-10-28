@@ -139,7 +139,7 @@ class StageCampaign:
                             raise LedgerError('stage evidence drift')
                     done.append(receipt)
                     pending = None
-                elif event['op'] in ('verifier', 'verifiers'):
+                elif event['op'] in ('verifier', 'verifiers', 'verifiers-v2'):
                     if pending is not None or len(done) != len(self.payloads) or verifier is not None:
                         raise LedgerError('invalid verifier binding order')
                     if event['responses'] != [r['response_sha256'] for r in done]:

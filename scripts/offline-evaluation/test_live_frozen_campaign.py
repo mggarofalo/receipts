@@ -174,7 +174,8 @@ class FrozenLiveCampaignTests(unittest.TestCase):
             # Full directory membership + byte hashes are intentionally checked
             # at every gate. Allow slow disks/antivirus a synthetic-test budget;
             # the production HTTPS child's 30-second deadline is unchanged.
-            timeout=600, creationflags=subprocess.CREATE_NO_WINDOW)
+            timeout=getattr(self, 'CASE_TIMEOUT_SECONDS', 600),
+            creationflags=subprocess.CREATE_NO_WINDOW)
         self.assertEqual(process.returncode, 0, process.stderr.decode(errors='replace')[-6000:])
         report = json.loads(process.stdout)
         self.assertTrue(report['actual_csharp'])

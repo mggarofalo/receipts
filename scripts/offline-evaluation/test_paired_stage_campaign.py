@@ -36,9 +36,25 @@ class ActualPairedStageTests(unittest.TestCase):
             target = source / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(repo / name, target)
+        # Resolve only from the existing local package cache. Explicitly disable
+        # advisory fetching as well: this synthetic fixture never needs network.
+        cache_report = subprocess.check_output(
+            ['dotnet', 'nuget', 'locals', 'global-packages', '--list'], text=True)
+        package_cache = Path(cache_report.partition(': ')[2].strip())
+        if not package_cache.is_dir():
+            raise AssertionError('existing local NuGet package cache required')
+        project = str(repo / 'tools/Receipts.JevPairedRunner')
         with (cls.root / 'publish.log').open('wb') as log:
-            subprocess.run(['dotnet', 'publish', str(repo / 'tools/Receipts.JevPairedRunner'),
-                            '-o', cls.roots['executable'], '--no-restore', '--nologo'], stdout=log, stderr=log, check=True)
+            subprocess.run(['dotnet', 'restore', project, '-r', 'win-x64',
+                            '--source', str(package_cache), '-p:NuGetAudit=false',
+                            '-p:SelfContained=false', '--nologo'],
+                           stdout=log, stderr=log, check=True)
+            # Select the Windows dependency closure during publishing, retaining
+            # every output. This avoids repeatedly hashing unused foreign-RID
+            # native assets; no published file or integrity gate is removed.
+            subprocess.run(['dotnet', 'publish', project, '-r', 'win-x64',
+                            '--self-contained', 'false', '-o', cls.roots['executable'],
+                            '--no-restore', '--nologo'], stdout=log, stderr=log, check=True)
         installed = Path(shutil.which('dotnet')).parent
         runtime = Path(cls.roots['dependency'])
         runtime.mkdir()
