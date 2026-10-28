@@ -25,6 +25,20 @@ public sealed class CategoryMappingHistoryIntegrityTests(PostgresFixture fixture
 		public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext();
 	}
 
+	[Fact]
+	public async Task MappingChangesWorkAfterLatestMigrationWithoutAuthorityJournal()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		var test = new CategoryMappingHistoryIntegrityTests(isolated);
+		(string actor, CategoryMappingCommand command, CategoryMappingService service) = await test.CreateApprovalCommandAsync();
+		CategoryMappingRevision approval = await service.ChangeAsync(actor, command);
+		(await service.ResolveAsync(command.Source, command.SourceFingerprint)).CategoryId.Should().Be(command.CategoryId);
+		(await service.ChangeAsync(actor, command)).Should().Be(approval);
+
+		await using ApplicationDbContext db = isolated.CreateDbContext();
+		(await db.Database.SqlQueryRaw<bool>("SELECT to_regclass('taxonomy.\"MappingAuthorityEvents\"') IS NULL AS \"Value\"").SingleAsync()).Should().BeTrue();
+	}
+
 	[Theory]
 	[InlineData(false)]
 	[InlineData(true)]
