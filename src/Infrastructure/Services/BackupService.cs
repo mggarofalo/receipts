@@ -13,7 +13,14 @@ public class BackupService(
 	IDbContextFactory<ApplicationDbContext> dbContextFactory,
 	ILogger<BackupService> logger) : IBackupService
 {
-	public async Task<string> ExportToSqliteAsync(CancellationToken cancellationToken = default)
+	public Task<string> ExportToSqliteAsync(CancellationToken cancellationToken = default)
+		=> ExportToSqliteCoreAsync(false, cancellationToken);
+
+	// Inactive integration seam: deliberately absent from IBackupService and HTTP endpoints.
+	internal Task<string> ExportV14CandidateAsync(CancellationToken cancellationToken = default)
+		=> ExportToSqliteCoreAsync(true, cancellationToken);
+
+	private async Task<string> ExportToSqliteCoreAsync(bool effectsCandidate, CancellationToken cancellationToken)
 	{
 		string tempPath = Path.Combine(Path.GetTempPath(), $"receipts-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.db");
 		logger.LogInformation("Starting SQLite export to {Path}", tempPath);
@@ -81,7 +88,12 @@ public class BackupService(
 			await ExportAcceptedDuplicatePairsAsync(source, sqlite, cancellationToken);
 			await PortableCatalogArchive.ExportAsync(source, sqlite, cancellationToken);
 			await PortableTaxonomyArchive.ExportAsync(source, sqlite, cancellationToken);
-			await WriteMetadataAsync(sqlite, cancellationToken);
+			if (effectsCandidate)
+			{
+				var history = await PortableTaxonomyArchive.ReadAsync(sqlite, cancellationToken);
+				await PortableTaxonomyArchive.ExportEffectsCandidateAsync(source, sqlite, history, cancellationToken, transaction);
+			}
+			await WriteMetadataAsync(sqlite, cancellationToken, effectsCandidate ? PortableTaxonomyArchive.EffectsCandidateVersion : PortableBackupFormat.CurrentVersion);
 
 
 			await transaction.CommitAsync(cancellationToken);
@@ -715,11 +727,11 @@ public class BackupService(
 		}
 	}
 
-	private static async Task WriteMetadataAsync(SqliteConnection sqlite, CancellationToken cancellationToken)
+	private static async Task WriteMetadataAsync(SqliteConnection sqlite, CancellationToken cancellationToken, int version)
 	{
 		Dictionary<string, string> metadata = new()
 		{
-			["export_version"] = PortableBackupFormat.CurrentVersion.ToString(CultureInfo.InvariantCulture),
+			["export_version"] = version.ToString(CultureInfo.InvariantCulture),
 			["exported_at"] = DateTimeOffset.UtcNow.ToString("O"),
 			["format"] = "receipts-sqlite-backup",
 		};

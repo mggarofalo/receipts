@@ -6,9 +6,10 @@ namespace Infrastructure.Services;
 internal static partial class PortableTaxonomyArchive
 {
 	// Candidate only. The eventual caller must hold the same source snapshot as the ordinary
-	// archive export and validate retained history. No current-format path calls these helpers.
+	// archive export and validate retained history. The inactive v14 candidate exporter composes
+	// these with ordinary history; no current-format path calls them.
 	internal static async Task ExportEffectsCandidateAsync(ApplicationDbContext db, SqliteConnection sqlite,
-		State retained, CancellationToken ct)
+		State retained, CancellationToken ct, SqliteTransaction? enclosingTransaction = null)
 	{
 		var manifests = await db.OrganizationEffectManifests.AsNoTracking().ToListAsync(ct);
 		var items = await db.OrganizationEffectItems.AsNoTracking().ToListAsync(ct);
@@ -19,7 +20,8 @@ internal static partial class PortableTaxonomyArchive
 		var records = WriteEffectEvidence(evidence);
 		// Apply the reader's envelope limits to exports too, so every candidate export can be read.
 		ReadEffectEvidence(records);
-		using var transaction = sqlite.BeginTransaction();
+		using var ownedTransaction = enclosingTransaction is null ? sqlite.BeginTransaction() : null;
+		var transaction = enclosingTransaction ?? ownedTransaction!;
 		await using var command = sqlite.CreateCommand();
 		command.Transaction = transaction;
 		command.CommandText = "CREATE TABLE organization_effect_archive (kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id))";
@@ -33,7 +35,7 @@ internal static partial class PortableTaxonomyArchive
 			command.Parameters.AddWithValue("$payload", row.Payload);
 			await command.ExecuteNonQueryAsync(ct);
 		}
-		await transaction.CommitAsync(ct);
+		if (ownedTransaction is not null) { await ownedTransaction.CommitAsync(ct); }
 	}
 
 	internal static async Task<EffectEvidence> ReadEffectsCandidateAsync(SqliteConnection sqlite, State retained, CancellationToken ct)

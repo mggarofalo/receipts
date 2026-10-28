@@ -134,3 +134,40 @@ rejection, and failure after item insertion with no partial rows surviving commi
 These primitives do not establish portable recovery: version/table integration,
 consistent export snapshots, ordinary retained-history integration, offline
 inspection/normalization and older-format compatibility remain required together.
+
+## Inactive v14 export/read composition
+
+`BackupService.ExportV14CandidateAsync` is an internal integration seam, absent
+from `IBackupService` and HTTP routes. It reuses the complete ordinary export,
+including PostgreSQL Repeatable Read and its read-only source snapshot. It reads
+and validates ordinary history from the exported SQLite tables, then seals and
+exports effects from the same source snapshot into the existing SQLite transaction.
+There is no nested SQLite transaction. Failure discards the candidate file; only
+the owner commits the whole file. Non-PostgreSQL test contexts do not establish
+concurrent snapshot guarantees.
+
+`ReadV14CandidateAsync` requires exactly version 14 metadata, every v13 dependency
+table plus the effect table, and the exact three TEXT effect columns. It validates
+ordinary history before effect membership and lineage. The candidate reader is
+internal; public import, inspection and normalization still reject version 14.
+The public exporter and `PortableBackupFormat.CurrentVersion` remain v13.
+Tests compose a full backup with a real non-genesis taxonomy snapshot and pending
+manifest, then reject wrong version, missing dependency/effect tables, extra effect
+columns, broken ordinary history and truncated sealed membership.
+
+This stage does not establish effect recovery. Still required together before
+activation: public version/table integration, restore preflight and retention
+integration with ordinary history, effect restoration under the existing exclusive
+restore locks and generation fence, offline inspection/normalization preservation,
+older-version retention through actual imports, and realistic PostgreSQL full
+backup/import tests (including applied/undone assignments and concurrent capture).
+Ordinary assignment-authority validation must explicitly recognize validated
+effect outcomes before an effect writer can create assignments; it currently accepts
+only its existing classification/migration/legacy-write authorities. Do not bypass
+that validation to make an effect archive pass. The existing restore generation
+fence is unchanged and must continue fencing all future local organizer work.
+
+Request hashes still have syntax validation only; no versioned request contract
+exists to recompute them. Decision evidence has structural, size and canonical
+membership validation only, with no policy authorization or semantic guarantee.
+No production writer or archive version is enabled by this integration seam.
