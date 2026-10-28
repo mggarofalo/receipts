@@ -18,12 +18,16 @@ NANODOLLARS_PER_TOKEN = 42
 RESERVATION_NANODOLLARS = TOKENS_PER_ATTEMPT * NANODOLLARS_PER_TOKEN
 MAX_LEDGER_BYTES = 2_097_152
 # Complete canonical record bytes, including chain metadata and terminating LF.
-RECORD_BYTE_CAPS = {"policy": 2_048, "bind": 1_179_648, "verifier": 524_288,
+RECORD_BYTE_CAPS = {"policy": 2_048, "bind": 1_179_648, "verifier": 524_288, "verifiers": 524_288,
                     "start": 512, "attempt": 512, "outcome": 512, "finish": 512}
 
 
 def required_capacity(policy):
-    """Worst case: one binding/verifier and four records per allowed request."""
+    """One binding, one legacy verifier OR entire batched vector, four records/call.
+
+    All five batch payloads share the existing verifier record cap. No journal
+    expansion: 96 calls still require at most 1,902,592 canonical bytes.
+    """
     return (RECORD_BYTE_CAPS["policy"] + RECORD_BYTE_CAPS["bind"]
             + RECORD_BYTE_CAPS["verifier"] + policy.max_calls * 4 * 512)
 
@@ -41,11 +45,12 @@ def _record_kind(body):
             "start": {"op", "index", "request_sha256"},
             "finish": {"op", "index", "receipt_sha256"},
             "verifier": {"op", "payload", "plan_sha256", "responses"},
+            "verifiers": {"op", "batches", "plan_sha256", "responses"},
         }
         if kind == "bind":
             required = {"op", "format", "plan", "artifacts", "private_root"}
             if (not required <= set(event) or set(event) - required - {"executor", "transport"}
-                    or event["format"] not in ("offline-stage-v1", "offline-paired-stage-v1", "live-paired-stage-v1")
+                    or event["format"] not in ("offline-stage-v1", "offline-paired-stage-v1", "offline-batched-paired-stage-v1", "live-paired-stage-v1")
                     or not isinstance(event["plan"], dict) or not isinstance(event["artifacts"], dict)
                     or not isinstance(event["private_root"], str)):
                 raise LedgerError("invalid binding event")
@@ -64,6 +69,28 @@ def _record_kind(body):
                 key = "request_sha256" if kind == "start" else "receipt_sha256"
                 if type(event["index"]) is not int or not 0 <= event["index"] < 96 or not _sha(event[key]):
                     raise LedgerError("invalid stage index/hash")
+            elif kind == "verifiers":
+                batches = event["batches"]
+                if (not isinstance(batches, list) or len(batches) > 5
+                        or not isinstance(event["responses"], list) or len(event["responses"]) > 95
+                        or any(not _sha(value) for value in event["responses"])
+                        or (not batches and event["plan_sha256"] is not None)
+                        or (batches and not _sha(event["plan_sha256"]))):
+                    raise LedgerError("invalid batched verifier binding")
+                for index, batch in enumerate(batches):
+                    if (not isinstance(batch, dict)
+                            or set(batch) != {"index", "isGlobalCoverage", "payload", "questionIds"}
+                            or type(batch["index"]) is not int or batch["index"] != index
+                            or type(batch["isGlobalCoverage"]) is not bool
+                            or batch["isGlobalCoverage"] != (index == len(batches) - 1)
+                            or not isinstance(batch["payload"], str) or not batch["payload"]
+                            or len(batch["payload"].encode("utf-8")) > 32 * 1024
+                            or not isinstance(batch["questionIds"], list) or not batch["questionIds"]
+                            or any(not isinstance(q, str) or not q for q in batch["questionIds"])
+                            or len(set(batch["questionIds"])) != len(batch["questionIds"])):
+                        raise LedgerError("invalid ordered verification batch")
+                if batches and len(batches) < 2:
+                    raise LedgerError("verification paths and final global coverage required")
             elif (not isinstance(event["responses"], list) or len(event["responses"]) > 95
                   or any(not _sha(value) for value in event["responses"])
                   or (event["payload"] is None and event["plan_sha256"] is not None)
@@ -107,6 +134,8 @@ def _check_counts(records, policy):
     counts = {}
     for row in records:
         kind = _record_kind(row["body"])
+        if kind == "verifiers":
+            kind = "verifier"
         counts[kind] = counts.get(kind, 0) + 1
         cap = 1 if kind in ("policy", "bind", "verifier") else policy.max_calls
         if counts[kind] > cap:

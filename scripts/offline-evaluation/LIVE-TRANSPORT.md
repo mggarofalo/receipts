@@ -102,3 +102,29 @@ start/reservation is written. The larger journal changes no call, spend, payload
 path, locking, fsync, poison, pending-stage or no-retry safeguards. This remains
 one immutable case under the existing aggregate ledger; it adds no continuation,
 reservation reset, refund, network action or credential access.
+
+
+The separate `BatchedPairedStageCampaign` remains **offline only** and accepts
+only recorded transport. It uses the actual frozen `prepare-batched`,
+`validate-batched`, and `replay-batched` commands. After every ordered shortlist
+response has succeeded, one durable `verifiers` record binds the complete ordered
+vector (at most four path batches followed by one global coverage batch), its
+actual plan hash and all prerequisite response hashes. Reopen re-derives that
+entire vector from the frozen executable and exact shortlist responses. Legacy
+`verifier` and batched `verifiers` are mutually exclusive and share the same
+single-record allowance and **aggregate 524,288-byte cap**; five separate
+524,288-byte records are not permitted. The total 2,097,152-byte limit and the
+1,902,592-byte worst-case proof at 96 calls therefore remain unchanged. Overflow
+fails before binding and before any verification request starts. Per-batch
+payloads remain capped at 32,768 UTF-8 bytes. Canonical escaping and metadata
+count toward the full aggregate record cap.
+
+Stage names are `baseline`, ordered `shortlist:N`, ordered `verifier:N`, then
+`global-coverage`. Actual prefix parser validation precedes each success, and
+actual complete aggregation precedes final coverage success. `result` rejects
+incomplete campaigns; explicit actual-reducer abstention has no verification
+requests. Interrupted, malformed or failed stages remain terminal across reopen;
+there is no retry, refund, automatic repair, live batch controller, multi-case
+continuation, private-data discovery or activation. Run synthetic frozen
+integration and capacity evidence with:
+`python -B -m unittest discover -s scripts/offline-evaluation -p test_batched_stage_campaign.py -v`.

@@ -14,6 +14,8 @@ from stage_campaign import StageCampaign, digest, owner
 
 class PairedStageCampaign(StageCampaign):
     FORMAT = 'offline-paired-stage-v1'
+    PREPARE = 'prepare'
+    EMPTY_VERIFICATION = None
 
     def __init__(self, ledger, runner, input_path, *, case, private_root):
         if type(runner) is not FrozenRunner:
@@ -28,7 +30,7 @@ class PairedStageCampaign(StageCampaign):
             raise LedgerError('private output outside checkout required')
         self._identity = _canonical({'input': str(self.input), 'input_sha256': self.input_hash,
                                     'roots': runner.roots, 'host': runner.host, 'assembly': runner.assembly})
-        exported = self._run('prepare', {'production': '', 'shortlist': [], 'verification': None})
+        exported = self._run(self.PREPARE, {'production': '', 'shortlist': [], 'verification': self.EMPTY_VERIFICATION})
         plan = {'case': case, 'plan_sha256': exported['planSha256'],
                 'production': exported['productionPayload'], 'shortlist': exported['shortlistPayloads']}
         super().__init__(ledger, plan, artifacts=runner.artifacts, private_root=private_root)

@@ -139,17 +139,25 @@ class StageCampaign:
                             raise LedgerError('stage evidence drift')
                     done.append(receipt)
                     pending = None
-                elif event['op'] == 'verifier':
+                elif event['op'] in ('verifier', 'verifiers'):
                     if pending is not None or len(done) != len(self.payloads) or verifier is not None:
                         raise LedgerError('invalid verifier binding order')
                     if event['responses'] != [r['response_sha256'] for r in done]:
                         raise LedgerError('verifier response binding mismatch')
+                    self._validate_verifier(event, done)
                     verifier = event
                 else:
                     raise LedgerError('unknown stage transition')
         if len(attempts) != len(done) + (1 if pending and len(attempts) > len(done) else 0):
             raise LedgerError('interleaved campaign attempt')
         return done, pending, verifier
+
+    def _validate_verifier(self, event, done):
+        if event['op'] != 'verifier':
+            raise LedgerError('incompatible verifier mode')
+
+    def _expected_stage(self, index, verifier):
+        return self.names[index] if index < len(self.names) else 'verifier'
 
     def _payload(self, index, verifier):
         # Every transition derives the request from the canonical immutable
@@ -176,7 +184,7 @@ class StageCampaign:
             if pending:
                 raise LedgerError('unfinished stage; stop and inspect')
             index = len(done)
-            expected = self.names[index] if index < len(self.names) else 'verifier'
+            expected = self._expected_stage(index, verifier)
             payload = self._payload(index, verifier)
             if stage != expected:
                 raise LedgerError('stage skipping/reordering/replay rejected')
