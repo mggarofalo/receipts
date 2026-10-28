@@ -1,5 +1,9 @@
 # Offline evaluation primitives
 
+The separate [campaign reservation foundation](CAMPAIGN-LEDGER.md) provides
+offline durable attempted-call accounting for a future provider adapter. It
+contains no dispatch integration and makes no provider billing guarantee.
+
 This Python 3.11+ standard-library tool splits labeled cohorts and scores previously
 recorded classification results. It does not call providers, read environment
 credentials, locate databases, or search for data. Supply every input and output
