@@ -52,7 +52,11 @@ def verify_artifacts(artifacts):
             path = require_plain_absolute_path(name)
             if not path.is_absolute() or not isinstance(expected, str) or len(expected) != 64:
                 raise LedgerError("absolute artifact path and SHA-256 required")
-            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            # Reopen and hash every byte at every boundary. file_digest uses a
+            # bounded reusable buffer instead of allocating the entire artifact;
+            # no metadata or digest is reused between verifications.
+            with path.open('rb') as stream:
+                actual = hashlib.file_digest(stream, 'sha256').hexdigest()
             if actual != expected:
                 raise LedgerError("artifact hash mismatch")
             result[kind][str(path)] = actual

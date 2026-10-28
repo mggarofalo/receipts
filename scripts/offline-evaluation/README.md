@@ -25,6 +25,27 @@ python scripts/offline-evaluation/evaluation.py split --cases <cases.json> --hol
 python scripts/offline-evaluation/evaluation.py score --cases <heldout-cases.json> --predictions <predictions.json> --output <report.json>
 ```
 
+`python scripts/offline-evaluation/benchmark_frozen_hashing.py` compares complete
+frozen verification using the previous whole-file SHA-256 implementation and
+bounded-buffer `hashlib.file_digest`. It creates only invented temporary files,
+accepts no arguments, launches no executable, and performs no network operations.
+The inventory has 240 files totaling 429 MiB: three 64-MiB files and 237 one-MiB
+files across source, executable and dependency roots. Six alternating timed runs
+per implementation reduce warm-cache ordering bias; profiles identify hash,
+filesystem and ancestry costs. Run on the target filesystem to assess local cost.
+
+On Windows with Python 3.13, an initial warm-cache run measured median complete
+verification at 0.390 seconds for whole-file reads and 0.325 seconds for streaming
+(1.20x). A repeat measured 0.623 and 0.364 seconds (1.71x), showing filesystem
+timing variability. A separate 240-MiB profile attributed about 48% of verification time to
+path ancestry validation and 30% to SHA-256. These synthetic results establish a
+modest local improvement, not a prediction for a real campaign's elapsed time.
+Streaming also avoids allocating an entire runtime artifact. Every verification
+still reopens each artifact, reads and hashes its full content, checks all path
+ancestry, and validates complete root membership. No digest, metadata or ancestry
+cache survives or spans checks. Required pre/post stage and execution checks,
+size limits, error messages and exchange ownership remain unchanged.
+
 The recorded and live wire guards share `guarded_exchange.validate_envelope`.
 For Choice answers they follow the production `CategorySuggestionPolicy`:
 total mass may differ from one by at most `0.01 + 1e-12`, inclusively, and the
