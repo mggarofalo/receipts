@@ -320,3 +320,44 @@ purchase eligibility, actor authorization, item/manifest request binding, execut
 head revalidation, assignment lineage, or undo authority. Its capture IDs require a
 future typed durable binding to the actual frozen effects. Replay success grants no
 assignment authority; the existing applied-effect barrier remains closed.
+
+## Inactive authority journal storage candidate
+
+Migration `20261028150000_AddMappingAuthorityJournalStorage` adds SQL-owned tables
+outside the mutable EF model. It creates no baseline and installs no production
+writer. Inserting the single baseline snapshots every current mapping head,
+including revocations, under the existing `taxonomy.Head` transaction lock.
+Baseline heads cannot be supplied by ordinary DML or extended after sealing.
+Both live baseline insertion and event append require READ COMMITTED isolation;
+other isolation levels fail before acquiring the lock. PostgreSQL snapshot
+isolation can retain old mapping heads even after waiting for this lock, because
+mapping changes need not update the taxonomy head row itself. Statement-fresh
+reads after lock acquisition are part of this candidate live-write contract.
+The baseline stores identities and immutable revision references; a future
+trusted reader must project exact source tuples and calculate the v1 baseline
+hash. No archive seal or independent export anchor is created here.
+
+Event insertion takes the same lock, derives the next ordinal and predecessor
+from committed/transaction-local events, and rejects supplied gaps or forks.
+Rollback consumes no ordinal. The tip is a derived view, so it cannot drift from
+retained events. Transitions extend the journal's exact source head and must
+reference the actual mapping head; captures require that same approved head.
+Baseline/event rows reject update, delete and truncate. Source equality uses
+ordinal C collation; timestamps and SQL sequences have no ordering role.
+
+This protects ordering and retention against ordinary table DML, not database
+owners, DDL, disabled triggers, or superusers. Mapping revision source
+normalization, fingerprints, actor/command authenticity and taxonomy semantics
+remain the existing validators' responsibility. The database does not require
+all mapping changes to append events: existing writers remain inactive with
+respect to this journal. Consequently this is not a trusted production authority
+store yet, and its tip is not an independently authenticated archive checkpoint.
+Capture identities still lack typed effect bindings. A future activation must
+atomically append every mapping change and frozen capture, validate trusted
+baseline provenance, and bind captures to effects before granting authority.
+
+Restoring imported journal evidence is not implemented by these live-write
+triggers. A future restore path needs its own validated, atomic protocol for
+baseline completeness, event lineage, independently trusted terminal anchors,
+and final mapping heads; it cannot replay historical events against the live
+head guard or bypass isolation/immutability guards and claim equivalent trust.
