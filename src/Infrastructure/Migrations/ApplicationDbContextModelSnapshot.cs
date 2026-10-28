@@ -2770,6 +2770,12 @@ namespace Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CapturedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("ManualV1");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasColumnType("text");
@@ -2816,6 +2822,9 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("ApplyOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ApprovedMappingRevisionId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("ExpectedAssignmentId")
@@ -2876,6 +2885,8 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("ApplyOperationId")
                         .IsUnique();
+
+                    b.HasIndex("ApprovedMappingRevisionId");
 
                     b.HasIndex("ExpectedAssignmentId");
 
@@ -3631,6 +3642,11 @@ namespace Infrastructure.Migrations
                     b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
                         .WithMany()
                         .HasForeignKey("AppliedAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovedMappingRevisionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)

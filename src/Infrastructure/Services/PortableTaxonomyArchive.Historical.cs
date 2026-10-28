@@ -11,6 +11,8 @@ internal static partial class PortableTaxonomyArchive
 {
 	private static async Task ExportHistoricalAsync(ApplicationDbContext db, SqliteConnection sqlite, CancellationToken ct)
 	{
+		if (await db.HistoricalOperations.AnyAsync(x => x.Kind != HistoricalOperationKind.ManualV1, ct))
+		{ throw new InvalidDataException("Automatic historical operations cannot be exported yet."); }
 		async Task Rows<T>(string kind, IQueryable<T> rows) where T : class
 		{
 			await foreach (T row in rows.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
@@ -19,12 +21,59 @@ internal static partial class PortableTaxonomyArchive
 				command.CommandText = "INSERT INTO historical_operation_archive(kind,id,payload) VALUES($kind,$id,$payload)";
 				command.Parameters.AddWithValue("$kind", kind);
 				command.Parameters.AddWithValue("$id", ArchiveKey(row));
-				command.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(row, JsonOptions));
+				command.Parameters.AddWithValue("$payload", HistoricalManualPayload(row));
 				await command.ExecuteNonQueryAsync(ct);
 			}
 		}
 		await Rows("operation", db.HistoricalOperations);
 		await Rows("item", db.HistoricalOperationItems);
+	}
+
+
+	// The public archive format predates automatic provenance. Keep its exact manual
+	// shape until automatic evidence has a separately validated portable format.
+	private static string HistoricalManualPayload<T>(T row) where T : class
+	{
+		object payload = row switch
+		{
+			HistoricalOperationEntity h => new
+			{
+				h.Id,
+				h.Actor,
+				h.RequestHash,
+				h.SelectionJson,
+				h.TaxonomyRevisionId,
+				h.CapturedAt,
+				h.Reason,
+				h.State,
+				h.UndoTaxonomyRevisionId,
+				h.UndoReason
+			},
+			HistoricalOperationItemEntity i => new
+			{
+				i.OperationId,
+				i.ItemId,
+				i.ReceiptId,
+				i.Store,
+				i.RawDescription,
+				i.ItemCode,
+				i.ItemRevision,
+				i.ReceiptRevision,
+				i.ExpectedAssignmentId,
+				i.PreviousCategoryId,
+				i.TargetCategoryId,
+				i.ApplyOperationId,
+				i.UndoOperationId,
+				i.State,
+				i.AppliedAssignmentId,
+				i.Reason,
+				i.UndoState,
+				i.UndoAssignmentId,
+				i.UndoReason
+			},
+			_ => throw new InvalidOperationException("Unknown historical archive row.")
+		};
+		return JsonSerializer.Serialize(payload, JsonOptions);
 	}
 
 	private static async Task<State> ReadHistoricalAsync(SqliteConnection sqlite, State state, CancellationToken ct)
@@ -62,6 +111,7 @@ internal static partial class PortableTaxonomyArchive
 		HashSet<Guid> operationIds = [];
 		foreach (var h in s.HistoricalOperations)
 		{
+			Require(h.Kind == HistoricalOperationKind.ManualV1, "Automatic historical operations cannot be restored yet.");
 			Require(h.Id != Guid.Empty && Text(h.Actor) && Text(h.Reason) && Hash(h.RequestHash)
 				&& Utc(h.CapturedAt) && Enum.IsDefined(h.State)
 				&& s.Revisions.Any(r => r.Id == h.TaxonomyRevisionId && r.RecordedAt <= h.CapturedAt), "Invalid historical header.");
@@ -88,6 +138,7 @@ internal static partial class PortableTaxonomyArchive
 			Require(h.State != HistoricalOperationState.Undone || rows.All(i => i.State != HistoricalItemState.Applied || i.UndoState != HistoricalItemState.Pending), "Undone operation has pending undo items.");
 			foreach (var row in rows)
 			{
+				Require(row.ApprovedMappingRevisionId == null, "Manual historical items cannot carry automatic provenance.");
 				Require(row.ItemId != Guid.Empty && row.ReceiptId != Guid.Empty && row.ItemRevision != Guid.Empty && row.ReceiptRevision != Guid.Empty
 					&& groups.Any(g => g.Group == new HistoricalGroupKey(row.Store, row.RawDescription, row.ItemCode) && g.TargetCategoryId == row.TargetCategoryId)
 					&& row.ApplyOperationId != Guid.Empty && row.UndoOperationId != Guid.Empty

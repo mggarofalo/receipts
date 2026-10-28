@@ -13,6 +13,7 @@ public sealed class HistoricalOperationConfiguration : IEntityTypeConfiguration<
 		b.ToTable("HistoricalOperations", "taxonomy");
 		b.HasKey(x => x.Id);
 		b.Property(x => x.Id).ValueGeneratedNever();
+		b.Property(x => x.Kind).HasConversion<string>().HasDefaultValue(HistoricalOperationKind.ManualV1);
 		b.Property(x => x.Actor).UseCollation("C");
 		b.Property(x => x.SelectionJson).HasColumnType("jsonb");
 		b.HasOne<TaxonomyRevisionEntity>().WithMany().HasForeignKey(x => x.TaxonomyRevisionId).OnDelete(DeleteBehavior.Restrict);
@@ -32,6 +33,7 @@ public sealed class HistoricalOperationConfiguration : IEntityTypeConfiguration<
 		b.HasIndex(x => new { x.OperationId, x.State, x.ItemId });
 		b.HasIndex(x => new { x.OperationId, x.State, x.UndoState, x.ItemId });
 		b.HasOne<HistoricalOperationEntity>().WithMany().HasForeignKey(x => x.OperationId).OnDelete(DeleteBehavior.Restrict);
+		b.HasOne<CategoryMappingRevisionEntity>().WithMany().HasForeignKey(x => x.ApprovedMappingRevisionId).OnDelete(DeleteBehavior.Restrict);
 		// Intentionally no source-row FK: deleted sources must remain visible as frozen evidence.
 		b.HasOne<PurchaseClassificationEntity>().WithMany().HasForeignKey(x => x.ExpectedAssignmentId).OnDelete(DeleteBehavior.Restrict);
 		b.HasOne<PurchaseClassificationEntity>().WithMany().HasForeignKey(x => x.AppliedAssignmentId).OnDelete(DeleteBehavior.Restrict);

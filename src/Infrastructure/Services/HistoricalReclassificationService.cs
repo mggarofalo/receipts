@@ -128,7 +128,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		HistoricalOperationEntity? existing = await db.HistoricalOperations.SingleOrDefaultAsync(x => x.Id == request.OperationId, ct);
 		if (existing != null)
 		{
-			if (existing.Actor != request.Actor || existing.RequestHash != hash)
+			if (existing.Kind != HistoricalOperationKind.ManualV1 || existing.Actor != request.Actor || existing.RequestHash != hash)
 			{ throw new TaxonomyException(409, "Operation ID was already used with a different request."); }
 			return await ProgressAsync(db, existing, ct);
 		}
@@ -223,6 +223,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
+		if (operation.Kind != HistoricalOperationKind.ManualV1)
+		{ throw new TaxonomyException(409, "Automatic historical operations cannot be run by the manual service."); }
 		operation.State = HistoricalReclassificationPolicy.Cancel(operation.State);
 		await db.SaveChangesAsync(ct);
 		await transaction.CommitAsync(ct);
@@ -238,6 +240,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
+		if (operation.Kind != HistoricalOperationKind.ManualV1)
+		{ throw new TaxonomyException(409, "Automatic historical operations cannot be run by the manual service."); }
 		bool reverting = undo != null;
 		if (reverting && operation.UndoTaxonomyRevisionId != null &&
 			(operation.UndoTaxonomyRevisionId != undo!.TaxonomyRevisionId || operation.UndoReason != undo.Reason))

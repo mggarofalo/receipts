@@ -133,7 +133,7 @@ public sealed partial class ClassificationTests
 	{
 		// A separate database excludes source-restore audit from other fixture tests:
 		// that audit correctly protects its own later migration first.
-		var isolated = new PostgresFixture("20261027110503_RaiseCategoryAssistanceDailyLimit");
+		var isolated = new PostgresFixture();
 		await isolated.InitializeAsync();
 		try { await new ClassificationTests(isolated).AssertHistoricalDowngradeBoundary(); }
 		finally { await isolated.DisposeAsync(); }
