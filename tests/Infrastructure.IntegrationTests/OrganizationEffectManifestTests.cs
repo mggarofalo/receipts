@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
+using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -362,7 +363,27 @@ public sealed class OrganizationEffectManifestTests(PostgresFixture server) : Is
 		actualOutcome.Offset.Should().Be(TimeSpan.Zero);
 	}
 
-	private async Task<(Guid Manifest, OrganizationEffectItemEntity Item)> CaptureAsync(DateTimeOffset? capturedAt = null)
+	[Fact]
+	public async Task PortableMembershipHash_SurvivesActualJsonbNumericRoundTrip()
+	{
+		const string decision = """
+			{"nested":{"exponent":1e2,"decimal":1.230000,"tiny":1.23456789012345678901234567890123456789e-50},
+			 "values":[-0.000,1e100,123456789012345678901234567890123456789.012345678901234567890,{"x":-12.3400e+5}]}
+			""";
+		var (manifestId, original) = await CaptureAsync(decisionEvidence: decision);
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		var manifest = await db.OrganizationEffectManifests.AsNoTracking().SingleAsync(m => m.Id == manifestId);
+		var stored = await db.OrganizationEffectItems.AsNoTracking().SingleAsync();
+		stored.DecisionEvidenceJson.Should().NotBe(decision);
+		stored.DecisionEvidenceJson.Should().NotContain("1e2");
+		PortableTaxonomyArchive.SealEffectManifest(manifest, [stored]).ItemsHash
+			.Should().Be(PortableTaxonomyArchive.SealEffectManifest(manifest, [original]).ItemsHash);
+		PortableTaxonomyArchive.CanonicalEffectDecision(stored.DecisionEvidenceJson)
+			.Should().Be(PortableTaxonomyArchive.CanonicalEffectDecision(decision));
+	}
+
+	private async Task<(Guid Manifest, OrganizationEffectItemEntity Item)> CaptureAsync(DateTimeOffset? capturedAt = null,
+		string decisionEvidence = "{\"policy\":\"v1\"}")
 	{
 		await using ApplicationDbContext db = fixture.CreateDbContext();
 		await using var transaction = await db.Database.BeginTransactionAsync();
@@ -403,7 +424,7 @@ public sealed class OrganizationEffectManifestTests(PostgresFixture server) : Is
 			TargetCategoryId = category,
 			ApplyOperationId = Guid.NewGuid(),
 			UndoOperationId = Guid.NewGuid(),
-			DecisionEvidenceJson = "{\"policy\":\"v1\"}"
+			DecisionEvidenceJson = decisionEvidence
 		};
 		db.Add(item);
 		await db.SaveChangesAsync();

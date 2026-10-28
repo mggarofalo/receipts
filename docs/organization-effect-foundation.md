@@ -44,3 +44,40 @@ immutable evidence, duplicate terminal results, invalid undo, invalid outcome
 references, forged stamps, cross-phase Repeatable Read collisions, same-item
 operation/category/lineage mismatches, and successful separate apply/undo outcome persistence. They do not
 establish conditional mutation or archive correctness; those paths do not exist.
+
+## Candidate portable evidence increment
+
+`PortableTaxonomyArchive.Effects.cs` defines an internal, unwired representation
+and local validator for a future archive extension. The current archive remains
+v13: export, ordinary archive reading, preflight and restore do not call this code.
+It does not establish portable recovery or authorize a writer.
+
+The candidate uses strict `kind/id/payload` records for manifest, item and outcome.
+Each manifest envelope carries its item count and SHA-256 content digest, sealing
+the captured member set independently of deployment-local transaction stamps.
+Operation reservations are derived from item operation IDs and are not serialized.
+The validator rejects duplicate or orphan keys, unavailable frozen taxonomy targets,
+cross-phase operation collisions (including retained historical operations), missing
+prior assignments, unrecorded assignments under reserved operations, and invalid
+apply/undo outcome lineage. Source IDs are frozen evidence and need not refer to
+live business rows. Observed outcome revisions remain separate from capture revisions.
+
+Decision evidence must be a JSON object with no duplicate keys, including nested
+objects. Membership hashing sorts item IDs, sorts decision object keys ordinally,
+retains array order, and ignores whitespace and object key order. Numbers use exact
+base-10 value semantics: strip coefficient leading/trailing zeros, adjust an arbitrary
+precision decimal exponent, and normalize signed zero to zero. Thus `1e2`, `100.0`
+and `100` hash identically, including after PostgreSQL `jsonb` rendering. No binary
+floating point or bounded .NET decimal conversion occurs. This is not RFC 8785 or
+a policy contract; PostgreSQL still enforces its own numeric storage range.
+The original decision JSON is retained in the payload. Request
+hashes remain opaque 64-character hexadecimal values: there is no versioned request
+or decision schema yet, so the validator cannot recompute or authorize policy intent.
+The membership digest detects accidental modification or truncation relative to
+its envelope; it is not a signature or proof of an export's global completeness.
+
+Before this representation becomes an archive version, implement and verify export,
+strict version/table validation, ordinary retained-history validation, destination
+prefix/collision checks and older-archive retention, preflight, transactional restore
+with trigger reconstruction, and offline inspection/normalization. Define the policy
+and request hash contract before trusting decision evidence in a production writer.
