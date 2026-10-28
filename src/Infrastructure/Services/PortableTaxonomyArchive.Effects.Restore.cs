@@ -13,11 +13,9 @@ internal static partial class PortableTaxonomyArchive
 		Require(db.Database.IsNpgsql() && db.Database.CurrentTransaction != null,
 			"Effect restoration requires a PostgreSQL restore transaction.");
 		Require(!db.ChangeTracker.HasChanges(), "Effect restoration requires saved dependency changes.");
-		var manifests = await db.OrganizationEffectManifests.AsNoTracking().ToListAsync(ct);
-		var items = await db.OrganizationEffectItems.AsNoTracking().ToListAsync(ct);
-		var outcomes = await db.OrganizationEffectOutcomes.AsNoTracking().ToListAsync(ct);
-		var members = items.ToLookup(i => i.ManifestId);
-		EffectEvidence existing = new(manifests.Select(m => SealEffectManifest(m, members[m.Id])).ToList(), items, outcomes);
+		var existing = await LoadEffectsCandidateAsync(db, ct);
+		var manifests = existing.Manifests.Select(m => m.Manifest).ToList();
+		var outcomes = existing.Outcomes;
 		var retained = ValidateEffectDestination(existingHistory, existing, incomingHistory, incoming);
 		var storedManifests = manifests.Select(m => m.Id).ToHashSet();
 		var storedOutcomes = outcomes.Select(o => (o.ManifestId, o.ItemId, o.Phase)).ToHashSet();
@@ -57,4 +55,13 @@ internal static partial class PortableTaxonomyArchive
 
 		static T Copy<T>(T value) => JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, JsonOptions), JsonOptions)!;
 	}
+	internal static async Task<EffectEvidence> LoadEffectsCandidateAsync(ApplicationDbContext db, CancellationToken ct)
+	{
+		var manifests = await db.OrganizationEffectManifests.AsNoTracking().ToListAsync(ct);
+		var items = await db.OrganizationEffectItems.AsNoTracking().ToListAsync(ct);
+		var outcomes = await db.OrganizationEffectOutcomes.AsNoTracking().ToListAsync(ct);
+		var members = items.ToLookup(i => i.ManifestId);
+		return new(manifests.Select(m => SealEffectManifest(m, members[m.Id])).ToList(), items, outcomes);
+	}
+
 }

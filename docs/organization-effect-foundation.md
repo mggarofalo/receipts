@@ -512,3 +512,42 @@ any baseline, journal event, mapping or taxonomy operation that takes
 `taxonomy.Head`. Typed declaration triggers cannot repair an inverted order when
 a transaction already holds Head from an earlier untyped action. No global
 deadlock-proof ordering is claimed for mixed caller protocols.
+
+## Inactive full candidate import composition
+
+The internal BackupImportService.ImportV14CandidateAsync seam now composes the
+strict candidate reader with the ordinary business import. It is absent from the
+public service interface and endpoints. Public import, inspection and offline
+normalization still reject v14; PortableBackupFormat.CurrentVersion remains 13.
+Offline normalization must not rewrite or strip this candidate extension.
+
+Under the ordinary local/database restore locks and taxonomy head lock, the seam
+runs ordinary ValidateDestination and source-revision preflight, then validates
+existing effects, incoming effects and their retained union before business
+writes. The authority barrier rejects applied effects, including retained applied
+outcomes. Only the bounded structural evidence candidate is supported; typed
+capture witness/journal portability and execution authority remain unimplemented.
+Opaque decision/request evidence is never upgraded into authority.
+
+Business dependencies, ordinary immutable history, effect restoration and the
+normalization/category-assistance generation fences share the outer transaction.
+A later failure rolls all of them back. Effect restoration uses its existing
+savepoint, PostgreSQL stamps and operation reservation triggers. Repeating an
+archive is idempotent for evidence, while each successful restore advances the
+local generations. Candidate imports of v10-v13 retain omitted local effects and
+validate their dependency closure; pre-v10 archives are explicitly rejected by
+this seam because their legacy migration composition has not been validated for
+effect retention. The ordinary public legacy import behavior is unchanged.
+
+The PostgreSQL integration case covers full export to a fresh destination,
+repeat restore, retention through older v10-v13 archives, skipped terminal results,
+destination manifest conflict rejection, and invalid-input rollback of business
+rows and the assistance generation. A fault after effect item insertion checks
+that restored business/assignment dependencies really exist at the fault point
+and that the outer rollback removes them, effect manifests, members, operations
+and outcomes while preserving the original generation. Pre-v12 imports lack the
+archived source-revision evidence; a later replay of the original newer archive
+can therefore fail ordinary source-revision prefix validation.
+This is bounded integration evidence, not archive activation. Offline inspection/
+normalization preservation, typed witnesses, independent journal trust anchors,
+applied assignment authority and broader version compatibility remain prerequisites.

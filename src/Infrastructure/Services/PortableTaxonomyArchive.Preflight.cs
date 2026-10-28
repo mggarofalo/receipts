@@ -6,7 +6,7 @@ internal static partial class PortableTaxonomyArchive
 {
 	// Caller must hold the restore coordination lock and taxonomy head lock until commit.
 	// This method is read-only: no archived row is attached to the destination context.
-	internal static async Task PreflightDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
+	internal static async Task<State> PreflightDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
 	{
 		var existing = new State(await db.TaxonomyIdentities.AsNoTracking().ToListAsync(ct),
 			await db.TaxonomyHeads.AsNoTracking().ToListAsync(ct), await db.TaxonomyRevisions.AsNoTracking().ToListAsync(ct),
@@ -24,6 +24,7 @@ internal static partial class PortableTaxonomyArchive
 		};
 		ValidateDestination(existing, incoming);
 		await PreflightSourceRevisionsAsync(db, incoming, ct);
+		return existing;
 	}
 
 	internal static void ValidateDestination(State existing, State incoming)
