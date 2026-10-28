@@ -2983,6 +2983,186 @@ namespace Infrastructure.Migrations
                     b.ToTable("LegacyItemOutcomes", "taxonomy");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectItemEntity", b =>
+                {
+                    b.Property<Guid>("ManifestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ApplyOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DecisionEvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("ExpectedAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("ItemRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RawDescription")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Store")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid>("TargetCategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TaxonomyRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UndoOperationId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ManifestId", "ItemId");
+
+                    b.HasIndex("ApplyOperationId")
+                        .IsUnique();
+
+                    b.HasIndex("UndoOperationId")
+                        .IsUnique();
+
+                    b.HasIndex("ItemId", "ExpectedAssignmentId");
+
+                    b.HasIndex("ManifestId", "TaxonomyRevisionId");
+
+                    b.HasIndex("TaxonomyRevisionId", "TargetCategoryId");
+
+                    b.ToTable("OrganizationEffectItems", "taxonomy", t =>
+                        {
+                            t.HasCheckConstraint("CK_EffectItem_Operations", "\"ApplyOperationId\" <> \"UndoOperationId\"");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectManifestEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TaxonomyRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("WriteTransaction")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValueSql("txid_current()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaxonomyRevisionId");
+
+                    b.ToTable("OrganizationEffectManifests", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectOperationEntity", b =>
+                {
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ManifestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Phase")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.HasKey("OperationId");
+
+                    b.HasIndex("ManifestId", "ItemId", "Phase")
+                        .IsUnique();
+
+                    b.ToTable("OrganizationEffectOperations", "taxonomy", t =>
+                        {
+                            t.HasCheckConstraint("CK_EffectOperation_Phase", "\"Phase\" IN ('apply', 'undo')");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectOutcomeEntity", b =>
+                {
+                    b.Property<Guid>("ManifestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Phase")
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid?>("AssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Disposition")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<Guid?>("ItemRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ReceiptRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("ManifestId", "ItemId", "Phase");
+
+                    b.HasIndex("ItemId", "AssignmentId");
+
+                    b.ToTable("OrganizationEffectOutcomes", "taxonomy", t =>
+                        {
+                            t.HasCheckConstraint("CK_EffectOutcome_Disposition", "\"Disposition\" IN ('applied', 'skipped')");
+
+                            t.HasCheckConstraint("CK_EffectOutcome_Evidence", "(\"Disposition\" = 'applied' AND \"AssignmentId\" IS NOT NULL AND \"ItemRevision\" IS NOT NULL AND \"ReceiptRevision\" IS NOT NULL) OR (\"Disposition\" = 'skipped' AND \"AssignmentId\" IS NULL)");
+
+                            t.HasCheckConstraint("CK_EffectOutcome_Phase", "\"Phase\" IN ('apply', 'undo')");
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3664,6 +3844,61 @@ namespace Infrastructure.Migrations
                     b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
                         .WithMany()
                         .HasForeignKey("AssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectItemEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId", "ExpectedAssignmentId")
+                        .HasPrincipalKey("ReceiptItemId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.OrganizationEffectManifestEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManifestId", "TaxonomyRevisionId")
+                        .HasPrincipalKey("Id", "TaxonomyRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyNodeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TaxonomyRevisionId", "TargetCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectManifestEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("TaxonomyRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectOperationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.OrganizationEffectItemEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManifestId", "ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.OrganizationEffectOutcomeEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId", "AssignmentId")
+                        .HasPrincipalKey("ReceiptItemId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.OrganizationEffectItemEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ManifestId", "ItemId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
