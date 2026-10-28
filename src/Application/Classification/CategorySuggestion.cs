@@ -103,7 +103,7 @@ public static class CategorySuggestionPolicy
 				!Probability(choice.Confidence) || choice.Probabilities.Count != ids.Length ||
 				!choice.Probabilities.TryGetValue(choice.CategoryId, out double selected) ||
 				ids.Any(id => !choice.Probabilities.TryGetValue(id, out double p) || !Probability(p)) ||
-				Math.Abs(choice.Probabilities.Values.Sum() - 1) > 0.01 ||
+							!DistributionTotalValid(choice.Probabilities.Values) ||
 				choice.Probabilities.Values.Any(value => value > selected + 1e-9))
 			{
 				return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
@@ -151,7 +151,7 @@ public static class CategorySuggestionPolicy
 			!Probability(judgment.FitProbability) || !Probability(judgment.Confidence) || judgment.InputTokens is < 0 or > 9007199254740991 || judgment.OutputTokens is < 0 or > 9007199254740991 ||
 			judgment.Probabilities.Count != request.Categories.Count || !judgment.Probabilities.TryGetValue(judgment.CategoryId, out double selected) ||
 			request.Categories.Any(category => !judgment.Probabilities.TryGetValue(category.Id, out double probability) || !Probability(probability)) ||
-			Math.Abs(judgment.Probabilities.Values.Sum() - 1) > 0.01 || judgment.Probabilities.Values.Any(value => value > selected + 1e-9))
+					!DistributionTotalValid(judgment.Probabilities.Values) || judgment.Probabilities.Values.Any(value => value > selected + 1e-9))
 		{
 			return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
 		}
@@ -161,6 +161,11 @@ public static class CategorySuggestionPolicy
 			judgment.FitProbability, selected, judgment.Confidence,
 			new(provider, judgment.Model, Version, request.TaxonomyRevision, judgment.InputTokens, judgment.OutputTokens)), null);
 	}
+
+	// Accommodate accumulation rounding at the inclusive one-percent boundary;
+	// this allowance is far below the provider tolerance.
+	private static bool DistributionTotalValid(IEnumerable<double> probabilities) =>
+		Math.Abs(probabilities.Sum() - 1d) <= 0.01d + 1e-12d;
 
 	private static bool Probability(double value) => double.IsFinite(value) && value is >= 0 and <= 1;
 }
