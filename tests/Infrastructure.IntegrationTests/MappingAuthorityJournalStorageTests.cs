@@ -26,6 +26,43 @@ public sealed class MappingAuthorityJournalStorageTests : IsolatedPostgresTest
 	public MappingAuthorityJournalStorageTests(PostgresFixture server) : base(server) => this.server = server;
 
 	[Fact]
+	public async Task MappingChange_AppendsOnceAndRollsBackOnAppendFailure()
+	{
+		var (baseline, mapping) = await SeedAsync();
+		await using var db = fixture.CreateDbContext();
+		var previous = await db.CategoryMappingRevisions.AsNoTracking().SingleAsync();
+		var source = new NormalizationSourceKey(previous.Location, previous.Description, previous.ItemCode);
+		var command = new CategoryMappingCommand(source, previous.SourceFingerprint, mapping,
+			previous.TaxonomyRevisionId, null, Guid.NewGuid(), "Revoke");
+		CategoryMappingService service = new(new Factory(fixture), TimeProvider.System);
+		await db.Database.ExecuteSqlRawAsync("""
+            CREATE FUNCTION taxonomy.reject_test_transition() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'test append failure'; END $$;
+            CREATE TRIGGER reject_test_transition BEFORE INSERT ON taxonomy."MappingAuthorityEvents"
+                FOR EACH ROW EXECUTE FUNCTION taxonomy.reject_test_transition();
+            """);
+		Func<Task> fail = () => service.ChangeAsync(previous.Actor, command);
+		await fail.Should().ThrowAsync<PostgresException>();
+		(await db.CategoryMappingHeads.AsNoTracking().SingleAsync()).RevisionId.Should().Be(mapping);
+		(await db.CategoryMappingRevisions.CountAsync()).Should().Be(1);
+		(await TipAsync(db)).Should().Be(0);
+		await db.Database.ExecuteSqlRawAsync("""
+            DROP TRIGGER reject_test_transition ON taxonomy."MappingAuthorityEvents";
+            DROP FUNCTION taxonomy.reject_test_transition();
+            """);
+		var revoked = await service.ChangeAsync(previous.Actor, command);
+		var replay = await service.ChangeAsync(previous.Actor, command);
+		replay.Id.Should().Be(revoked.Id);
+		(await db.CategoryMappingHeads.AsNoTracking().SingleAsync()).RevisionId.Should().Be(revoked.Id);
+		(await db.CategoryMappingRevisions.CountAsync()).Should().Be(2);
+		(await TipAsync(db)).Should().Be(1);
+		(await db.Database.SqlQuery<long>($"""
+            SELECT count(*) AS "Value" FROM taxonomy."MappingAuthorityEvents"
+            WHERE "BaselineId" = {baseline} AND "Kind" = 1 AND "MappingRevisionId" = {revoked.Id}
+            """).SingleAsync()).Should().Be(1);
+	}
+
+	[Fact]
 	public async Task MultiRowAppend_RejectsWholeStatementThenAllowsSeparateStatementsInOneTransaction()
 	{
 		var (baseline, mapping) = await SeedAsync();
@@ -219,18 +256,15 @@ public sealed class MappingAuthorityJournalStorageTests : IsolatedPostgresTest
 	{
 		var (baseline, mapping) = await SeedAsync();
 		await using var db = fixture.CreateDbContext();
-		var previous = await db.CategoryMappingRevisions.SingleAsync();
-		CategoryMappingService service = new(new Factory(fixture), TimeProvider.System);
-		var revoked = await service.ChangeAsync(previous.Actor, new(new(previous.Location, previous.Description, previous.ItemCode),
-			previous.SourceFingerprint, mapping, previous.TaxonomyRevisionId, null, Guid.NewGuid(), "Revoke"));
-		foreach (Guid id in new[] { mapping, revoked.Id })
+		Guid revoked = await WriteUnjournaledRevocationAsync(db, mapping);
+		foreach (Guid id in new[] { mapping, revoked })
 		{
 			Func<Task> capture = () => AppendAsync(db, baseline, id);
 			await capture.Should().ThrowAsync<PostgresException>();
 		}
 		await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO taxonomy."MappingAuthorityEvents" ("Id","BaselineId","Kind","MappingRevisionId")
-            VALUES ({Guid.NewGuid()},{baseline},1,{revoked.Id})
+            VALUES ({Guid.NewGuid()},{baseline},1,{revoked})
             """);
 		(await TipAsync(db)).Should().Be(1);
 	}
@@ -243,20 +277,17 @@ public sealed class MappingAuthorityJournalStorageTests : IsolatedPostgresTest
 	{
 		var (baseline, mapping) = await SeedAsync();
 		await using var db = fixture.CreateDbContext();
-		var previous = await db.CategoryMappingRevisions.SingleAsync();
-		CategoryMappingService service = new(new Factory(fixture), TimeProvider.System);
-		var revoked = await service.ChangeAsync(previous.Actor, new(new(previous.Location, previous.Description, previous.ItemCode),
-			previous.SourceFingerprint, mapping, previous.TaxonomyRevisionId, null, Guid.NewGuid(), "Revoke"));
+		Guid revoked = await WriteUnjournaledRevocationAsync(db, mapping);
 		Func<Task> typedTransition = () => db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO taxonomy."MappingAuthorityEvents" ("Id","BaselineId","Kind","MappingRevisionId","CaptureWitnessVersion")
-            VALUES ({Guid.NewGuid()},{baseline},1,{revoked.Id},{witnessVersion})
+            VALUES ({Guid.NewGuid()},{baseline},1,{revoked},{witnessVersion})
             """);
 		(await typedTransition.Should().ThrowAsync<PostgresException>()).Which.SqlState
 			.Should().Be(PostgresErrorCodes.CheckViolation);
 		(await TipAsync(db)).Should().Be(0);
 		await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO taxonomy."MappingAuthorityEvents" ("Id","BaselineId","Kind","MappingRevisionId","CaptureWitnessVersion")
-            VALUES ({Guid.NewGuid()},{baseline},1,{revoked.Id},NULL)
+            VALUES ({Guid.NewGuid()},{baseline},1,{revoked},NULL)
             """);
 		(await TipAsync(db)).Should().Be(1);
 	}
@@ -300,7 +331,36 @@ public sealed class MappingAuthorityJournalStorageTests : IsolatedPostgresTest
 		await transaction.RollbackAsync();
 		await using var verify = fixture.CreateDbContext();
 		(await verify.CategoryMappingHeads.AsNoTracking().SingleAsync()).RevisionId.Should().Be(revoked);
-		(await TipAsync(verify)).Should().Be(0);
+		(await TipAsync(verify)).Should().Be(1);
+	}
+
+	// Simulate an out-of-band mapping writer without weakening journal guards.
+	private static async Task<Guid> WriteUnjournaledRevocationAsync(ApplicationDbContext db, Guid mapping)
+	{
+		await using var transaction = await db.Database.BeginTransactionAsync();
+		await db.Database.ExecuteSqlRawAsync("SELECT 1 FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE");
+		var previous = await db.CategoryMappingRevisions.AsNoTracking().SingleAsync(row => row.Id == mapping);
+		var head = await db.CategoryMappingHeads.SingleAsync();
+		Guid revoked = Guid.NewGuid();
+		db.CategoryMappingRevisions.Add(new()
+		{
+			Id = revoked,
+			PreviousRevisionId = mapping,
+			SourceFingerprint = previous.SourceFingerprint,
+			Location = previous.Location,
+			Description = previous.Description,
+			ItemCode = previous.ItemCode,
+			TaxonomyRevisionId = previous.TaxonomyRevisionId,
+			Actor = previous.Actor,
+			OperationId = Guid.NewGuid(),
+			RequestHash = previous.RequestHash,
+			Reason = "Out-of-band revoke",
+			RecordedAt = previous.RecordedAt
+		});
+		head.RevisionId = revoked;
+		await db.SaveChangesAsync();
+		await transaction.CommitAsync();
+		return revoked;
 	}
 
 	private async Task<Guid> RevokeAsync()

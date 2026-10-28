@@ -103,6 +103,15 @@ public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContex
 		if (head == null) { db.CategoryMappingHeads.Add(new() { SourceFingerprint = fingerprint, RevisionId = revision.Id }); }
 		else { head.RevisionId = revision.Id; }
 		await db.SaveChangesAsync(ct);
+		if (db.Database.IsNpgsql())
+		{
+			// The baseline is the explicit activation marker. Do not query the tip here:
+			// a legacy baseline without an anchor must reach the database guard and fail closed.
+			await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO taxonomy."MappingAuthorityEvents" ("Id", "BaselineId", "Kind", "MappingRevisionId")
+                SELECT {Guid.NewGuid()}, "Id", 1, {revision.Id} FROM taxonomy."MappingAuthorityBaseline"
+                """, ct);
+		}
 		if (transaction != null) { await transaction.CommitAsync(ct); }
 		return Read(revision);
 	}
