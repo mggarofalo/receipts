@@ -90,6 +90,57 @@ class SafeDiagnosticsTests(unittest.TestCase):
         self.assert_safe(caught.exception, 'transport', 'spawn')
         run.assert_called_once()
 
+    def test_failing_code_getters_do_not_mask_primary_os_failure(self):
+        class GetterFailure(OSError):
+            @property
+            def errno(self):
+                raise RuntimeError('SECRET getter C:/private/SECRET.json')
+
+            @property
+            def winerror(self):
+                raise KeyboardInterrupt('SECRET secondary interruption')
+
+        original = GetterFailure('SECRET original receipt response key')
+        with self.assertRaises(SafeOSError) as caught:
+            with safe_os(Stage.OUTCOME, Operation.JOURNAL_APPEND):
+                raise original
+        self.assertIs(caught.exception.__context__, original)
+        self.assertEqual(caught.exception.diagnostic, {'kind': 'os_error',
+            'stage': 'outcome', 'operation': 'journal_append', 'errno': None, 'winerror': None})
+        self.assertEqual(json.loads(str(caught.exception)), caught.exception.diagnostic)
+        self.assertNotIn('SECRET', str(caught.exception))
+        self.assertTrue(caught.exception.__suppress_context__)
+
+    def test_failing_serializer_keeps_primary_failure_and_structured_diagnostic(self):
+        original = fault()
+        for secondary in (RuntimeError('SECRET serializer'), KeyboardInterrupt('SECRET')):
+            with self.subTest(secondary=type(secondary).__name__), \
+                    patch('safe_os_diagnostics.json.dumps', side_effect=secondary):
+                with self.assertRaises(SafeOSError) as caught:
+                    with safe_os(Stage.RECEIPT, Operation.FSYNC):
+                        raise original
+            self.assertIs(caught.exception.__context__, original)
+            self.assertEqual(caught.exception.diagnostic, {'kind': 'os_error',
+                'stage': 'receipt', 'operation': 'fsync', 'errno': 13, 'winerror': 32})
+            self.assertEqual(str(caught.exception), 'terminal OS error; safe diagnostic available')
+            self.assertNotIn('SECRET', ''.join(traceback.format_exception_only(caught.exception)))
+            self.assertTrue(caught.exception.__suppress_context__)
+
+    def test_numeric_codes_are_bounded_before_serialization(self):
+        original = fault()
+        for value, expected in ((-(2 ** 31), -(2 ** 31)), (2 ** 32 - 1, 2 ** 32 - 1),
+                                (-(2 ** 31) - 1, None), (2 ** 32, None), (10 ** 5000, None)):
+            original.errno = value
+            original.winerror = value
+            with self.assertRaises(SafeOSError) as caught:
+                with safe_os(Stage.RECEIPT, Operation.WRITE):
+                    raise original
+            self.assertIs(caught.exception.__context__, original)
+            self.assertEqual(caught.exception.diagnostic['errno'], expected)
+            self.assertEqual(caught.exception.diagnostic['winerror'], expected)
+            self.assertEqual(json.loads(str(caught.exception)), caught.exception.diagnostic)
+            self.assertLess(len(str(caught.exception)), 200)
+
 
 @unittest.skipUnless(os.name == 'nt', 'Windows durable ledger')
 class CampaignDiagnosticsTests(SafeDiagnosticsTests):

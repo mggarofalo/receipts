@@ -42,10 +42,23 @@ class SafeOSError(OSError):
         self.diagnostic = {'kind': 'os_error', 'stage': stage.value,
                            'operation': operation.value}
         for field in ('errno', 'winerror'):
-            value = getattr(error, field, None)
+            try:
+                value = getattr(error, field, None)
+            except BaseException:
+                # Diagnostic getters are untrusted subclass code. A secondary
+                # failure must never mask the original terminal OS failure.
+                value = None
             # bool/int subclasses can supply surprising serialization behavior.
-            self.diagnostic[field] = value if type(value) is int else None
-        super().__init__(json.dumps(self.diagnostic, sort_keys=True))
+            # Bound numeric output to signed/unsigned 32-bit OS error codes.
+            self.diagnostic[field] = (value if type(value) is int
+                                      and -(2 ** 31) <= value < 2 ** 32 else None)
+        try:
+            message = json.dumps(self.diagnostic, sort_keys=True)
+        except BaseException:
+            # Keep the structured fields available even if the serializer fails.
+            # Do not stringify either the OS error or the serializer failure.
+            message = 'terminal OS error; safe diagnostic available'
+        super().__init__(message)
 
 
 @contextmanager

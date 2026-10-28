@@ -162,6 +162,10 @@ names supplied by a caller. The live campaign annotates stage start, reservation
 directory creation, request/response/receipt open/write/flush/fsync/close, outcome,
 finish, and child creation. Other OS faults receive the exchange/dispatch fallback.
 The helper is required in the frozen source inventory like other executing modules.
+Code extraction is best-effort: throwing getters, non-integers, and values outside
+the signed/unsigned 32-bit OS range become null. Serializer failures leave the
+structured diagnostic available and use a fixed safe exception message. Neither
+secondary failure replaces the terminal OS failure or authorizes continuation.
 
 An external launcher should catch `SafeOSError` before its generic exception
 handler and serialize **only** the diagnostic dictionary into its terminal report:
