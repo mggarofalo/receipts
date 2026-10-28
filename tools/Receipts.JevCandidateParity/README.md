@@ -29,7 +29,7 @@ as fabricated low probabilities. The response parser bounds each response to 1 M
 All answers above the fixed candidate rejection boundary of 0.3 remain plausible,
 including uncertain answers. Descendant retention never depends on ancestor scores.
 The reducer keeps maximal retained paths and expands their full ancestor closure;
-retained ancestors are represented in that closure. More than 32 maximal paths or
+retained ancestors are represented in that closure. In the default API, more than 32 maximal paths or
 128 closure categories produces `shortlist-overflow` abstention with no top-k
 truncation. No retained path produces `no-plausible-path`. Success returns only an
 existing `CandidateVerificationPlan`, which still needs independent support/context,
@@ -127,6 +127,37 @@ this plan hash have different contracts and must not be compared as equal reques
 This plan parity command does not establish production/provider parity, raw response parsing,
 transport behavior, authorization, model quality, shortlist recall or activation
 readiness. There is no inference capability or production registration.
+
+## Opt-in bounded verification batches
+
+`ExhaustiveShortlist.PrepareForBatchedVerification(...)` retains every plausible
+terminal within a 128-node ancestor closure, including the synthetic 70-terminal /
+112-node case. The default `Prepare` above keeps its 32-terminal limit. Explicit
+candidate sets can use `SupportedCategoryCandidate.PlanForBatchedVerification(...)`.
+No path is removed to meet either bound; overflow fails or abstains.
+
+Pass the resulting plan to `BatchedVerification.Prepare(plan, model)`. This creates
+at most 32 paths per verification batch, splitting earlier at 32 KiB of UTF-8 JSON.
+Each path has separate support and context questions with complete definitions.
+Exactly one additional global request includes the full taxonomy and union of
+verified paths for purchase evidence and unlisted-alternative coverage. A global
+request or individual complete path that exceeds the byte bound fails planning;
+state and definitions are never truncated.
+
+`batchedPlan.Aggregate(responses)` requires every response exactly once, in request
+order, before invoking the unchanged candidate reducer. Missing, duplicate,
+cross-plan or malformed answers fail without a partial winner. IDs bind the exact
+purchase, taxonomy, revision, model, paths, policy and batching format. The opt-in
+plan canonicalizes taxonomy order; the existing single-request API is unchanged.
+
+These are offline payload bounds, **not token limits**. The optional
+`ValidateInputTokenBudget(tokenizer, inputAllowance)` validates every artifact
+against a supplied counter/budget; it does not provide or certify a tokenizer.
+Before separately authorized dispatch, an evaluator must count actual model input,
+reserve output/context overhead and enforce documented shared/per-question limits.
+No live transport, inference, private data, key access or threshold tuning was added.
+See [the experiment notes](../../docs/offline-batched-verification.md) for evidence
+and the remaining token/live integration limits.
 
 ## Offline typed wire API
 

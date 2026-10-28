@@ -1,0 +1,13 @@
+# Offline bounded verification experiment
+
+This opt-in candidate extends the exhaustive shortlist into deterministic verification batches. It has no transport, credential access, registration, or production activation. Existing `Plan`, `ExhaustiveShortlist.Prepare`, and `CandidateWire.Prepare` behavior remains available.
+
+Use `ExhaustiveShortlist.PrepareForBatchedVerification`, aggregate every shortlist response, then pass its verification plan to `BatchedVerification.Prepare`. Alternatively, `SupportedCategoryCandidate.PlanForBatchedVerification` accepts an explicit complete candidate set. The experimental limit is 128 unique nodes after ancestor closure. Every plausible terminal and every ancestor survives; overflow abstains or fails instead of selecting top candidates. The .3/.7 thresholds and existing supported-path reducer are unchanged.
+
+Each path receives separate support and context questions. Path requests hold at most 32 complete paths, and the 32 KiB UTF-8 request bound may split them earlier. A single global request contains the entire taxonomy and union of verified paths, with purchase-evidence and unlisted-alternative questions. If this global request or one complete path exceeds the byte bound, planning fails without truncation. All responses, including global coverage, must arrive exactly once in request order. Strict schemas reject omitted, repeated, unknown, cross-plan and malformed answers. No batch produces an early winner; complete validated judgments go through `SupportedCategoryCandidate.Decide`.
+
+Question IDs bind the exact immutable purchase, taxonomy, revision, model, complete paths, questions, policy and batching format. Input order is canonicalized for the opt-in plan. Usage is validated and summed with overflow checks; usage does not establish accuracy or context fit.
+
+The byte guard is not a token counter. Before a separately authorized transport uses these artifacts, a pinned-model tokenizer must count the complete requests (including the model's actual serialized input) with an input allowance that reserves output/context overhead. `ValidateInputTokenBudget` checks every artifact against a caller-supplied tokenizer and positive budget; it does not implement or certify that tokenizer. This offline experiment does not establish model context fit, latency, cost, or classification quality. No held-out examples or thresholds were tuned.
+
+Synthetic tests cover 70 terminals with 112 closure nodes, deterministic ordering, global union coverage, cross-root conflicts, ancestor fallback, missing/duplicate/cross-plan/malformed responses, closure overflow, byte overflow and the explicit token-budget check. A controlled live evaluation and any runner integration remain separate work.

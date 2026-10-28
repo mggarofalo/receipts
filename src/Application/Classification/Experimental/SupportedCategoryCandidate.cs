@@ -65,6 +65,19 @@ public static class SupportedCategoryCandidate
 
 	public static CandidateVerificationPlan Plan(CandidatePurchase purchase, string taxonomyRevision,
 		IReadOnlyList<SuggestionCategory> taxonomy, IReadOnlyList<string> shortlistedIds)
+		=> PlanCore(purchase, taxonomyRevision, taxonomy, shortlistedIds, MaximumShortlistSize);
+
+	/// <summary>Opt-in offline batching experiment; preserves all terminals within the existing closure bound.</summary>
+	public static CandidateVerificationPlan PlanForBatchedVerification(CandidatePurchase purchase, string taxonomyRevision,
+		IReadOnlyList<SuggestionCategory> taxonomy, IReadOnlyList<string> shortlistedIds)
+	{
+		ArgumentNullException.ThrowIfNull(taxonomy);
+		return PlanCore(purchase, taxonomyRevision, taxonomy.OrderBy(category => category?.Id, StringComparer.Ordinal).ToArray(),
+			shortlistedIds, MaximumVerificationPaths);
+	}
+
+	private static CandidateVerificationPlan PlanCore(CandidatePurchase purchase, string taxonomyRevision,
+		IReadOnlyList<SuggestionCategory> taxonomy, IReadOnlyList<string> shortlistedIds, int maximumTerminals)
 	{
 		ArgumentNullException.ThrowIfNull(purchase);
 		ArgumentNullException.ThrowIfNull(taxonomy);
@@ -72,7 +85,7 @@ public static class SupportedCategoryCandidate
 		if (string.IsNullOrWhiteSpace(purchase.Description) || purchase.Description.Length > 4096 ||
 			purchase.Store?.Length > 512 || purchase.ProductCode?.Length > 256 ||
 			string.IsNullOrWhiteSpace(taxonomyRevision) || taxonomyRevision.Length > 200 ||
-			taxonomy.Count is < 1 or > MaximumTaxonomySize || shortlistedIds.Count is < 1 or > MaximumShortlistSize)
+			taxonomy.Count is < 1 or > MaximumTaxonomySize || (shortlistedIds.Count < 1 || shortlistedIds.Count > maximumTerminals))
 		{
 			throw new ArgumentException("Invalid or oversized candidate input.");
 		}

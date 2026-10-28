@@ -17,17 +17,19 @@ public sealed class ExhaustiveShortlistPlan
 	private readonly SuggestionCategory[] taxonomy;
 	private readonly CandidateVerificationPath[] paths;
 	private readonly string model;
+	private readonly bool batchedVerification;
 	private readonly IReadOnlyDictionary<string, string> categoriesByQuestion;
 
 	internal ExhaustiveShortlistPlan(CandidatePurchase purchase, string revision, SuggestionCategory[] taxonomy,
 		CandidateVerificationPath[] paths, string model, string binding, ShortlistBatch[] batches,
-		IReadOnlyDictionary<string, string> categoriesByQuestion)
+		IReadOnlyDictionary<string, string> categoriesByQuestion, bool batchedVerification)
 	{
 		this.purchase = purchase;
 		this.revision = revision;
 		this.taxonomy = taxonomy;
 		this.paths = paths;
 		this.model = model;
+		this.batchedVerification = batchedVerification;
 		this.categoriesByQuestion = categoriesByQuestion;
 		PlanSha256 = binding;
 		Batches = Array.AsReadOnly(batches);
@@ -106,12 +108,14 @@ public sealed class ExhaustiveShortlistPlan
 		string[] terminals = retained.Where(id => !ancestors.Contains(id)).Order(StringComparer.Ordinal).ToArray();
 		int closure = paths.Where(path => terminals.Contains(path.CategoryId, StringComparer.Ordinal))
 			.SelectMany(path => path.Categories).Select(category => category.Id).Distinct(StringComparer.Ordinal).Count();
-		if (terminals.Length > SupportedCategoryCandidate.MaximumShortlistSize ||
+		if (terminals.Length > (batchedVerification ? SupportedCategoryCandidate.MaximumVerificationPaths : SupportedCategoryCandidate.MaximumShortlistSize) ||
 			closure > SupportedCategoryCandidate.MaximumVerificationPaths)
 		{
 			return new(null, "shortlist-overflow", null);
 		}
-		return new(SupportedCategoryCandidate.Plan(purchase, revision, taxonomy, terminals), null, null);
+		return new(batchedVerification
+			? SupportedCategoryCandidate.PlanForBatchedVerification(purchase, revision, taxonomy, terminals)
+			: SupportedCategoryCandidate.Plan(purchase, revision, taxonomy, terminals), null, null);
 	}
 
 	private static ShortlistResult Failed() => new(null, null, "invalid-or-incomplete-shortlist-response");
@@ -150,6 +154,14 @@ public static class ExhaustiveShortlist
 
 	public static ExhaustiveShortlistPlan Prepare(CandidatePurchase purchase, string taxonomyRevision,
 		IReadOnlyList<SuggestionCategory> taxonomy, string model)
+		=> PrepareCore(purchase, taxonomyRevision, taxonomy, model, false);
+
+	public static ExhaustiveShortlistPlan PrepareForBatchedVerification(CandidatePurchase purchase, string taxonomyRevision,
+		IReadOnlyList<SuggestionCategory> taxonomy, string model)
+		=> PrepareCore(purchase, taxonomyRevision, taxonomy, model, true);
+
+	private static ExhaustiveShortlistPlan PrepareCore(CandidatePurchase purchase, string taxonomyRevision,
+		IReadOnlyList<SuggestionCategory> taxonomy, string model, bool batchedVerification)
 	{
 		ArgumentNullException.ThrowIfNull(taxonomy);
 		if (model != CandidateWire.SupportedEvaluationModel)
@@ -167,7 +179,7 @@ public static class ExhaustiveShortlist
 			.Plan(purchase, taxonomyRevision, snapshot, [category.Id]).Paths.Single(path => path.CategoryId == category.Id)).ToArray();
 		string binding = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
 		{
-			version = Version,
+			version = batchedVerification ? Version + "-batched-verification" : Version,
 			verifierVersion = SupportedCategoryCandidate.Version,
 			model,
 			purchase,
@@ -211,7 +223,7 @@ public static class ExhaustiveShortlist
 			mapping.Add(id, path.CategoryId);
 		}
 		Flush();
-		return new(purchase, taxonomyRevision, snapshot, paths, model, binding, batches.ToArray(), mapping);
+		return new(purchase, taxonomyRevision, snapshot, paths, model, binding, batches.ToArray(), mapping, batchedVerification);
 
 		byte[] Bytes(Dictionary<string, object> batchQuestions) => JsonSerializer.SerializeToUtf8Bytes(new
 		{
