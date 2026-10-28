@@ -39,8 +39,9 @@ an assumption of this offline evaluation, not independent proof of completeness.
 
 ## Fingerprint contract
 
-The candidate has no TypeSafe wire serializer or model selection. This adapter
-defines `candidate-offline-plan-v1`, an **offline snapshot**, not a provider request.
+The plan parity command defines `candidate-offline-plan-v1`, an **offline snapshot**,
+not a provider request. The separate offline wire API below provides typed request
+serialization and raw response parsing; it does not change this snapshot contract.
 The output `plan` contains the format, candidate policy version, evidence rule,
 support/rejection thresholds, four candidate question/criterion templates and the
 actual immutable plan (purchase, taxonomy revision, taxonomy and expanded paths).
@@ -71,6 +72,72 @@ do not echo fixture content or exception text.
 This is experimental plan/reducer parity only. The separate production parity
 adapter calls production question serialization and policy; its question hash and
 this plan hash have different contracts and must not be compared as equal requests.
-This adapter does not establish production/provider parity, raw response parsing,
+This plan parity command does not establish production/provider parity, raw response parsing,
 transport behavior, authorization, model quality, shortlist recall or activation
 readiness. There is no inference capability or production registration.
+
+## Offline typed wire API
+
+`CandidateWire.Prepare(plan, model)` creates a deterministic TypeSafe-shaped request
+from the actual candidate plan. The only supported evaluation model is the pinned
+`jev-1.14.0`, which must be supplied explicitly. Aliases, other versions and missing
+model names are rejected before serialization. The adapter has no credentials,
+HTTP, configuration or registration.
+Its immutable `Payload` is the complete UTF-8 JSON text that an independently
+authorized evaluator could send. This change supplies a C# API only; the CLI above
+still evaluates typed fixture judgments and does not send or parse wire responses.
+
+```csharp
+CandidateVerificationPlan plan = SupportedCategoryCandidate.Plan(
+    syntheticPurchase, taxonomyRevision, syntheticTaxonomy, shortlistedIds);
+CandidateWireRequest request = CandidateWire.Prepare(plan, explicitEvaluationModel);
+string exactPayload = request.Payload;
+CandidateWireResult result = request.ParseResponse(savedRawResponse);
+```
+
+There are two global Noul questions (purchase evidence and an unlisted alternative),
+plus independent support and context Nouls for each expanded full path, including
+ancestors. All wording, criteria, evidence rules and reducer thresholds come from
+`SupportedCategoryCandidate`; path questions carry their exact full path in their
+instructions. State includes the purchase, full taxonomy, revision and verified
+paths so the unlisted-alternative judgment can inspect categories outside them.
+The candidate's constants are unchanged; no holdout data was used.
+
+`PlanSha256` is lowercase SHA-256 over compact camelCase JSON containing
+`{format: "candidate-typesafe-wire-v1", model, snapshot}`. `snapshot` has exactly
+the `CandidatePlanSnapshot` contract described above. Every question ID starts
+with that full hash and ends with `purchase`, `unlisted`, or
+`path_<zero-based expanded-path index>_support/context`. Thus answers from changed
+evidence, taxonomy, revision, expanded paths, questions, policy or requested model
+cannot be replayed unchanged against a different prepared request. Preserve the
+exact payload, raw response, code revision and chosen model for reproducibility.
+This is deterministic binding, not cryptographic proof of provider provenance:
+someone able to edit answers can also rewrite IDs. Equivalent taxonomy orders
+remain distinct snapshots, as in plan parity.
+
+`ParseResponse` accepts only the exact response model requested. The public API
+allows a resolved model name to differ from an alias; aliases are rejected at
+preparation here to avoid that mismatch. Root fields must be
+exactly `model`, `answers`, `usage`; each answer must have exactly `type: "noul"`
+and a finite numeric `noul` between 0 and 1. Answers must match the exact question
+ID set. Missing, extra and duplicate properties are rejected at each object level,
+as are missing, fractional, negative or overflowing token counts. Requests are
+bounded to 8 MiB and responses to 1 MiB of UTF-8 with nesting at most 32.
+These byte bounds do not enforce the model's 64k request or 32k per-question token
+limits. Token-limit validation before any provider dispatch is a required future
+evaluation-harness responsibility; this offline API is not provider-ready.
+
+Valid answers map to a `CandidateJudgment` and call the existing candidate reducer.
+Selections, abstentions and failures remain distinct. Invalid raw responses return
+`Decision.Failure = "invalid-response"`, with no judgment, category or usage; they
+do not become negative evidence or abstentions. Errors never echo response content.
+The adapter cannot persist or authorize the returned category as an assignment.
+
+Request/answer shapes were checked against the public
+[TypeSafe OpenAPI contract](https://api.typesafe.ai/openapi.json) on 2026-10-28.
+No live API inference was performed. Synthetic tests exercise serialization,
+binding, mapping, malformed responses and the offline assembly boundary. This is
+wire/reducer plumbing evidence only: it establishes no model accuracy, real
+shortlist recall, provider provenance, transport behavior or activation readiness.
+A live evaluation harness, separately authorized data/budget and an independent
+holdout assessment remain required before any activation decision.
