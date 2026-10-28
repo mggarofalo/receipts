@@ -83,3 +83,102 @@ Focused synthetic verification:
 python -m unittest discover -s scripts/offline-evaluation -v
 dotnet test tests/Infrastructure.Tests --filter FullyQualifiedName~PairedReplayTests
 ```
+
+
+## Persistent offline stage binding (bounded subset)
+
+`scripts/offline-evaluation/stage_campaign.py` adds a synthetic-only Python API.
+`StageCampaign(ledger, plan, artifacts=..., private_root=...)` uses the SAME
+`CampaignLedger` journal/lock for immutable binding, starts, reservation/outcomes
+and completions. The plan object is exactly:
+
+```json
+{"case":"invented-case","plan_sha256":"<paired plan SHA-256>",
+ "production":"<exact exported payload string>",
+ "shortlist":["<exact batch 0 payload>","<exact batch 1 payload>"]}
+```
+
+This journal now retains exact plan payload strings, so it must have the same
+private access protections as request/response artifacts. The ledger byte cap
+remains 1 MiB; oversized evidence fails closed. Labels/gold answers never belong
+in the plan. Constructor/reopen verifies the same case, plan, source/executable
+hashes, private evidence location and every completed request/response/receipt.
+An optional `dependency` hash group is also retained and verified.
+
+Use `exchange('baseline', RecordedTransport(reply))`, then
+`exchange('shortlist:0', ...)` through EVERY batch in original order. After all
+those completions, `bind_verifier(exact_utf8_payload, verification_sha256)` binds
+the dynamic export to the ordered response hashes, or `bind_verifier(None, None)`
+records explicit abstention. Only then can `exchange('verifier', ...)` run.
+`complete` requires the verifier completion or explicit abstention. No stage may
+be replayed, skipped or reordered. A durable start is written BEFORE reservation;
+any interrupted stage stops permanently, including a crash AFTER an exchange's
+success outcome but BEFORE its stage completion. Inspect retained evidence;
+there is no recovery/retry/release API. The process-wide nonblocking exchange
+owner covers the entire transition and prevents concurrent reservations.
+
+This subset binds ONE case per existing campaign journal. Multi-case continuation
+under the SAME aggregate campaign budget is still missing. Do not create new
+journals to evade aggregate limits. The old raw `exchange_recorded` API remains
+an offline primitive; it does not implement stage ordering. StageCampaign rejects
+attempts interleaved through that API. There is no live entry point.
+
+## Executed offline artifact identity
+
+`frozen_runner.FrozenRunner(roots, artifacts, host=..., assembly=...)` accepts
+three complete, explicitly reviewed inventories: `source`, `executable` (publish
+output), and `dependency` (runtime). Each `roots` value is an absolute frozen
+directory; the matching artifact group maps EVERY file's absolute path to its
+SHA-256. Missing/extra files, hash drift, and reparse ancestry fail validation.
+The explicit `dotnet.exe` must belong to the runtime inventory and the explicit
+`Receipts.JevPairedRunner.dll` must belong to the publish inventory.
+`run('prepare'|'replay', input_path, replies_path, new_output_path)` launches those
+absolute files without a shell, PATH lookup, build/restore or inherited environment.
+The bridge discards child stdout/stderr, checks exit status, and verifies inventories
+and input hashes again after exit. Output is bounded, private and CreateNew through
+the existing C# command. Tests fake this subprocess; they do not claim a successful
+real .NET invocation. No revision string substitutes for file hashing.
+
+These inventories establish identity of supplied files only. An independent build
+review must establish their completeness: source snapshot, transitive project and
+package inputs, publish dependencies and runtime/native dependency closure. The
+bridge cannot prove provenance, hermetic loading, reproducibility or defeat malicious
+concurrent file replacement. Its Python interpreter/modules and OS remain part of
+the trusted environment. It cannot make arbitrary supplied binaries safe.
+
+## Exact remaining route to live integration
+
+1. Add multi-case state transitions to the SAME campaign journal; preserve the
+   original aggregate policy and historical uncertain carry/reservations.
+2. Couple StageCampaign initialization to the reviewed FrozenRunner's actual
+   `prepare` output, and couple verifier binding to its actual `prepare` output
+   over the exact retained ordered shortlist responses. Currently those APIs are
+   separate: supplied verifier hashes/payloads are bound, not authenticated as
+   actual reducer output. Explicit abstention is likewise caller supplied.
+3. Add actual production/shortlist/verifier parser validation BEFORE another
+   exchange can advance, including sanitized context-error classification. The
+   current stage completion proves the strict wire envelope only. Preserve parser
+   failure/abstention; never turn provider context errors into successful answers.
+4. Independently review/freeze source and full executable/dependency closure;
+   exercise the real offline executable bridge end to end, including crash,
+   dynamic verifier, malformed answer, inventory drift and restart tests.
+5. Implement a separate reviewed transport using the already authorized campaign
+   budget and data scope. Keep an explicit externally supplied key, fixed
+   `https://api.typesafe.ai/v1/systemone`, pinned `jev-1.14.0`, and no redirects,
+   proxy discovery or retries. Preserve reserve-before-every-send and stop on
+   any uncertain outcome. There is no new permission gate in these offline APIs;
+   they expose no credentials, HTTP client or live switch.
+6. Retain private exact requests/responses and both actual decisions; join held-out
+   labels only afterward. Check actual billing/usage against reservation assumptions
+   before claiming budget compliance or model-quality results.
+
+Synthetic evidence added here: stage restart/order/replay, immutable plan, retained
+response drift, malformed response, early/duplicate verifier binding, abstention,
+thread interleaving, and real child-process crash between exchange success and stage
+completion; inventory membership/hash drift and exact subprocess arguments. Run
+`python -m unittest discover -s scripts/offline-evaluation -v` (40 tests at staging).
+
+Journal and lock checkout ancestry is rejected before opening either file. Frozen
+artifact hashes are verified again after response persistence and before success
+outcome/stage completion. Payload snapshots are immutable tuples derived from the
+canonical private plan; public plan/binding properties return detached copies.

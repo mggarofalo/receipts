@@ -41,7 +41,7 @@ def verify_artifacts(artifacts):
     Hashes identify the files inspected, not a trusted build or race-proof attestation.
     Caller must freeze the build and supply its complete dependency/source closure.
     """
-    if not artifacts or set(artifacts) != {"source", "executable"}:
+    if not artifacts or set(artifacts) not in ({"source", "executable"}, {"source", "executable", "dependency"}):
         raise LedgerError("source and executable artifacts required")
     result = {}
     for kind, entries in artifacts.items():
@@ -154,5 +154,8 @@ def _exchange_recorded_owned(ledger, payload, transport, *, artifacts, private_o
         json.dump(receipt, stream, sort_keys=True)
         stream.flush()
         os.fsync(stream.fileno())
+    # No success is recorded if any frozen file changed while consuming or
+    # persisting the response. The attempt stays unresolved after restart.
+    verify_artifacts(artifacts)
     ledger.record_outcome(attempt, "success")
     return receipt

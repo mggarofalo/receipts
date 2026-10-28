@@ -105,6 +105,11 @@ class CampaignLedger:
     def __init__(self, path, *, create_policy=None):
         self.path = require_plain_absolute_path(path, allow_missing_leaf=create_policy is not None)
         require_plain_absolute_path(str(self.path) + ".lock", allow_missing_leaf=True)
+        # Stage events may contain exact private payloads. Reject checkout
+        # ancestry before creating either the journal or its persistent lock.
+        for candidate in (self.path, Path(str(self.path) + ".lock")):
+            if any((parent / ".git").exists() for parent in (candidate.parent, *candidate.parents)):
+                raise LedgerError("private journal and lock outside a checkout required")
         self._lock_file = None
         self._journal = None
         self._mutex = threading.Lock()
@@ -214,6 +219,9 @@ class CampaignLedger:
                             or any(c not in "0123456789abcdef" for c in body["payload_sha256"])):
                         raise LedgerError("invalid attempt")
                     attempts[body["id"]] = body
+                elif body["kind"] == "stage":
+                    if set(body) != {"kind", "event"} or not isinstance(body["event"], dict):
+                        raise LedgerError("invalid stage event")
                 elif body["kind"] == "outcome":
                     if (set(body) != {"kind", "id", "status"} or body["id"] not in attempts
                             or body["id"] in outcomes or body["status"] not in ("success", "error", "unknown")):
@@ -264,3 +272,17 @@ class CampaignLedger:
             if attempt_id not in attempts or attempt_id in outcomes or status not in ("success", "error", "unknown"):
                 raise LedgerError("invalid or duplicate outcome")
             self._append({"kind": "outcome", "id": attempt_id, "status": status}, records)
+
+    def stage_history(self):
+        """Read immutable stage evidence under the same lifetime campaign lock."""
+        with self._operation():
+            records, _, _, _, _ = self._read()
+            return [row["body"] for row in records[1:]]
+
+    def append_stage_event(self, event):
+        """Durable offline controller evidence; never releases a reservation."""
+        with self._operation():
+            records, _, _, _, _ = self._read()
+            if not isinstance(event, dict):
+                raise LedgerError("stage event object required")
+            self._append({"kind": "stage", "event": event}, records)
