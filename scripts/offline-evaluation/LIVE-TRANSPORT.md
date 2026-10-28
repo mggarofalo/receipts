@@ -86,3 +86,19 @@ They fake HTTPS/subprocesses and test durable reservation/failure ordering with
 the real Windows ledger. Run the separate frozen integration evidence with
 `python -B -m unittest discover -s scripts/offline-evaluation -p test_live_frozen_campaign.py -v`.
 It requires restored local .NET assets and never sends a provider request.
+
+The self-contained campaign journal is capped at 2,097,152 bytes. Each full
+canonical record, including chain metadata and its terminating newline, has a
+separate byte cap: policy 2,048; bind 1,179,648; verifier 524,288; and start,
+attempt, outcome and finish 512 each. Append and replay both enforce these caps,
+known record/event kinds, one policy/bind/verifier, and at most the policy's
+allowed count of each request record. Replay rejects noncanonical or malformed
+records without repair. The exact payload/artifact binding stays in this journal.
+
+Before a stage start or request reservation, capacity is checked for the whole
+policy: policy + bind + verifier + four records per allowed request. At 96 calls
+this requires at most 1,902,592 bytes. Insufficient capacity fails before that
+start/reservation is written. The larger journal changes no call, spend, payload,
+path, locking, fsync, poison, pending-stage or no-retry safeguards. This remains
+one immutable case under the existing aggregate ledger; it adds no continuation,
+reservation reset, refund, network action or credential access.

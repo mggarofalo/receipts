@@ -16,7 +16,107 @@ TOKENS_PER_ATTEMPT = 65_536
 # USD 0.042 / million input tokens = 42 nanodollars / input token.
 NANODOLLARS_PER_TOKEN = 42
 RESERVATION_NANODOLLARS = TOKENS_PER_ATTEMPT * NANODOLLARS_PER_TOKEN
-MAX_LEDGER_BYTES = 1_048_576
+MAX_LEDGER_BYTES = 2_097_152
+# Complete canonical record bytes, including chain metadata and terminating LF.
+RECORD_BYTE_CAPS = {"policy": 2_048, "bind": 1_179_648, "verifier": 524_288,
+                    "start": 512, "attempt": 512, "outcome": 512, "finish": 512}
+
+
+def required_capacity(policy):
+    """Worst case: one binding/verifier and four records per allowed request."""
+    return (RECORD_BYTE_CAPS["policy"] + RECORD_BYTE_CAPS["bind"]
+            + RECORD_BYTE_CAPS["verifier"] + policy.max_calls * 4 * 512)
+
+
+def _record_kind(body):
+    if not isinstance(body, dict):
+        raise LedgerError("record body object required")
+    kind = body.get("kind")
+    if kind == "stage":
+        if set(body) != {"kind", "event"} or not isinstance(body["event"], dict):
+            raise LedgerError("invalid stage event")
+        event = body["event"]
+        kind = event.get("op")
+        fields = {
+            "start": {"op", "index", "request_sha256"},
+            "finish": {"op", "index", "receipt_sha256"},
+            "verifier": {"op", "payload", "plan_sha256", "responses"},
+        }
+        if kind == "bind":
+            required = {"op", "format", "plan", "artifacts", "private_root"}
+            if (not required <= set(event) or set(event) - required - {"executor", "transport"}
+                    or event["format"] not in ("offline-stage-v1", "offline-paired-stage-v1", "live-paired-stage-v1")
+                    or not isinstance(event["plan"], dict) or not isinstance(event["artifacts"], dict)
+                    or not isinstance(event["private_root"], str)):
+                raise LedgerError("invalid binding event")
+            plan = event["plan"]
+            if (set(plan) != {"case", "plan_sha256", "production", "shortlist"}
+                    or not isinstance(plan["case"], str) or not 0 < len(plan["case"]) <= 100
+                    or not _sha(plan["plan_sha256"]) or not isinstance(plan["production"], str)
+                    or not isinstance(plan["shortlist"], list) or not 1 <= len(plan["shortlist"]) <= 94
+                    or any(not isinstance(value, str) for value in plan["shortlist"])
+                    or any(key in event and not isinstance(event[key], dict) for key in ("executor", "transport"))):
+                raise LedgerError("invalid bound plan")
+        elif kind in fields:
+            if set(event) != fields[kind]:
+                raise LedgerError("invalid stage fields")
+            if kind in ("start", "finish"):
+                key = "request_sha256" if kind == "start" else "receipt_sha256"
+                if type(event["index"]) is not int or not 0 <= event["index"] < 96 or not _sha(event[key]):
+                    raise LedgerError("invalid stage index/hash")
+            elif (not isinstance(event["responses"], list) or len(event["responses"]) > 95
+                  or any(not _sha(value) for value in event["responses"])
+                  or (event["payload"] is None and event["plan_sha256"] is not None)
+                  or (event["payload"] is not None and
+                      (not isinstance(event["payload"], str) or not event["payload"] or not _sha(event["plan_sha256"])))):
+                raise LedgerError("invalid verifier event")
+        else:
+            raise LedgerError("unknown stage kind")
+    elif kind == "policy":
+        if (set(body) != {"kind", "version", "policy"} or type(body["version"]) is not int
+                or body["version"] != 1 or not isinstance(body["policy"], dict)
+                or set(body["policy"]) != set(Policy.__dataclass_fields__)):
+            raise LedgerError("invalid policy header")
+        Policy(**body["policy"]).validate()
+    elif kind == "attempt":
+        if (set(body) != {"kind", "id", "payload_sha256", "payload_bytes"}
+                or not isinstance(body["id"], str) or len(body["id"]) != 36
+                or not _sha(body["payload_sha256"]) or type(body["payload_bytes"]) is not int):
+            raise LedgerError("invalid attempt fields")
+    elif kind == "outcome":
+        if (set(body) != {"kind", "id", "status"} or not isinstance(body["id"], str)
+                or body["status"] not in ("success", "error", "unknown")):
+            raise LedgerError("invalid outcome fields")
+    else:
+        raise LedgerError("unknown record kind")
+    return kind
+
+
+def _sha(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def _check_record(body, data):
+    kind = _record_kind(body)
+    if len(data) > RECORD_BYTE_CAPS[kind]:
+        raise LedgerError("record size limit reached")
+    return kind
+
+
+def _check_counts(records, policy):
+    counts = {}
+    for row in records:
+        kind = _record_kind(row["body"])
+        counts[kind] = counts.get(kind, 0) + 1
+        cap = 1 if kind in ("policy", "bind", "verifier") else policy.max_calls
+        if counts[kind] > cap:
+            raise LedgerError("record count exceeds campaign policy")
+    return counts
+
+
+def _check_capacity(policy):
+    if required_capacity(policy) > MAX_LEDGER_BYTES:
+        raise LedgerError("insufficient journal capacity for campaign policy")
 
 
 class LedgerError(ValueError):
@@ -83,7 +183,7 @@ class Policy:
 
 
 def _canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
 
 
 def _unique(pairs):
@@ -171,6 +271,11 @@ class CampaignLedger:
         record = {"sequence": len(records), "previous": previous, "body": body}
         record["hash"] = hashlib.sha256(_canonical(record)).hexdigest()
         data = _canonical(record) + b"\n"
+        kind = _check_record(body, data)
+        policy = Policy(**(records[0]["body"]["policy"] if records else body["policy"]))
+        _check_counts([*records, record], policy)
+        if kind in ("start", "attempt"):
+            _check_capacity(policy)
         self._journal.seek(0, os.SEEK_END)
         if self._journal.tell() + len(data) > MAX_LEDGER_BYTES:
             raise LedgerError("journal size limit reached")
@@ -192,16 +297,19 @@ class CampaignLedger:
         outcomes = set()
         policy = None
         try:
-            for line in data.splitlines():
+            for line in data[:-1].split(b"\n"):
                 row = json.loads(line, object_pairs_hook=_unique)
-                if set(row) != {"sequence", "previous", "body", "hash"}:
+                if not isinstance(row, dict) or set(row) != {"sequence", "previous", "body", "hash"}:
                     raise LedgerError("invalid record fields")
                 unsigned = {key: row[key] for key in ("sequence", "previous", "body")}
                 if (type(row["sequence"]) is not int or row["sequence"] != len(records)
                         or row["previous"] != (records[-1]["hash"] if records else "0" * 64)
                         or row["hash"] != hashlib.sha256(_canonical(unsigned)).hexdigest()):
                     raise LedgerError("journal integrity check failed")
+                if line + b"\n" != _canonical(row) + b"\n":
+                    raise LedgerError("noncanonical journal record")
                 body = row["body"]
+                _check_record(body, line + b"\n")
                 if not records:
                     if set(body) != {"kind", "version", "policy"} or body["kind"] != "policy" or type(body["version"]) is not int or body["version"] != 1:
                         raise LedgerError("invalid policy header")
@@ -232,6 +340,7 @@ class CampaignLedger:
                 records.append(row)
         except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as error:
             raise LedgerError("malformed journal; no automatic repair") from error
+        _check_counts(records, policy)
         reserved = policy.unknown_carry_nanodollars + len(attempts) * RESERVATION_NANODOLLARS
         if len(attempts) > policy.max_calls or reserved > policy.budget_nanodollars:
             raise LedgerError("journal exceeds campaign policy")
