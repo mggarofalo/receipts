@@ -92,6 +92,8 @@ public class BackupService(
 			{
 				var history = await PortableTaxonomyArchive.ReadAsync(sqlite, cancellationToken);
 				await PortableTaxonomyArchive.ExportEffectsCandidateAsync(source, sqlite, history, cancellationToken, transaction);
+				var effects = await PortableTaxonomyArchive.ReadEffectsCandidateAsync(sqlite, history, cancellationToken);
+				PortableTaxonomyArchive.ValidateEffectAssignmentAuthorityCandidate(history, effects);
 			}
 			await WriteMetadataAsync(sqlite, cancellationToken, effectsCandidate ? PortableTaxonomyArchive.EffectsCandidateVersion : PortableBackupFormat.CurrentVersion);
 

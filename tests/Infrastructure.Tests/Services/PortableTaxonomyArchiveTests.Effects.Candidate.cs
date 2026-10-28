@@ -18,6 +18,8 @@ public sealed partial class PortableTaxonomyArchiveTests
 	[InlineData("columns")]
 	[InlineData("history")]
 	[InlineData("membership")]
+	[InlineData("read-authority")]
+	[InlineData("export-authority")]
 	public async Task Effects_CandidateBackupComposesOrdinaryHistoryAndSealedEffects(string mutation)
 	{
 		var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
@@ -41,6 +43,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 			var manifest = manifestJson.Deserialize<OrganizationEffectManifestEntity>()!;
 			var itemJson = JsonSerializer.SerializeToNode(evidence.Items[0])!;
 			itemJson["TaxonomyRevisionId"] = revision.Id;
+			if (mutation == "export-authority") { itemJson["ApplyOperationId"] = revision.OperationId; }
 			var item = itemJson.Deserialize<OrganizationEffectItemEntity>()!;
 			db.TaxonomyIdentities.Add(new() { Id = evidence.Items[0].TargetCategoryId });
 			db.TaxonomyRevisions.Add(revision);
@@ -60,6 +63,12 @@ public sealed partial class PortableTaxonomyArchiveTests
 			await db.SaveChangesAsync();
 		}
 		var service = new BackupService(new Factory(options), NullLogger<BackupService>.Instance);
+		if (mutation == "export-authority")
+		{
+			Func<Task> export = () => service.ExportV14CandidateAsync();
+			await export.Should().ThrowAsync<InvalidDataException>().WithMessage("*collides with ordinary*");
+			return;
+		}
 		string path = await service.ExportV14CandidateAsync();
 		try
 		{
@@ -77,6 +86,27 @@ public sealed partial class PortableTaxonomyArchiveTests
 				_ => "SELECT 1"
 			};
 			await command.ExecuteNonQueryAsync();
+			if (mutation == "read-authority")
+			{
+				var archive = await PortableTaxonomyArchive.ReadV14CandidateAsync(sqlite, CancellationToken.None);
+				var json = JsonSerializer.SerializeToNode(archive.Effects.Items[0])!;
+				json["ApplyOperationId"] = archive.History.Operations[0].OperationId;
+				var item = json.Deserialize<OrganizationEffectItemEntity>()!;
+				var effects = archive.Effects with
+				{
+					Items = [item],
+					Manifests = [PortableTaxonomyArchive.SealEffectManifest(archive.Effects.Manifests[0].Manifest, [item])]
+				};
+				foreach (var row in PortableTaxonomyArchive.WriteEffectEvidence(effects))
+				{
+					command.CommandText = "UPDATE organization_effect_archive SET payload=$payload WHERE kind=$kind AND id=$id";
+					command.Parameters.Clear();
+					command.Parameters.AddWithValue("$payload", row.Payload);
+					command.Parameters.AddWithValue("$kind", row.Kind);
+					command.Parameters.AddWithValue("$id", row.Id);
+					await command.ExecuteNonQueryAsync();
+				}
+			}
 			if (mutation == "none")
 			{
 				var archive = await PortableTaxonomyArchive.ReadV14CandidateAsync(sqlite, CancellationToken.None);

@@ -171,3 +171,33 @@ Request hashes still have syntax validation only; no versioned request contract
 exists to recompute them. Decision evidence has structural, size and canonical
 membership validation only, with no policy authorization or semantic guarantee.
 No production writer or archive version is enabled by this integration seam.
+
+## Inactive assignment authority barrier
+
+`ValidateEffectAssignmentAuthorityCandidate` now runs in the internal full v14
+export and reader. It preserves the complete ordinary history validation and the
+structural effect validator, then rejects every applied effect outcome. A manual
+classification operation with a syntactically valid hash cannot promote matching
+effect evidence into automatic assignment authority. Pending and skipped evidence
+may pass, but effect apply/undo reservations cannot reuse ordinary taxonomy,
+classification or migration operation IDs, including under a different actor.
+This conservative candidate namespace rule is additional to the structural
+effect/historical reservation checks.
+
+This barrier is intentionally fail closed. The current manifest has an opaque
+request hash, arbitrary decision JSON and no versioned assignment command contract.
+It cannot prove source/reason provenance, recompute the requested action, authorize
+policy evidence, or pin the undo path/revision intent. Matching operation, actor,
+item, category, prior assignment and timestamps alone cannot supply those missing
+semantics. Before admitting applied effects, define and verify a versioned request
+and decision contract covering both phases, exact category path/revision and prior
+lineage, the request hash and policy evidence, and the terminal outcome. Add
+adversarial tests for every mismatched field and real full backup/import evidence.
+
+Low-level effect codec, prefix and restore primitives still perform structural
+validation only; they are inactive and must not be treated as an authority gate.
+The v13 public exporter, import/historical validation and version rejection remain
+unchanged. Tests cover pending/skipped acceptance, rejection of applied evidence
+with and without ordinary manual authority, preservation of ordinary history
+errors, both cross-actor reservation phases, and the full candidate export/read
+barriers. No v14 format or production writer is activated.

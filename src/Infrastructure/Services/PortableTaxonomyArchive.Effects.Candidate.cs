@@ -41,6 +41,7 @@ internal static partial class PortableTaxonomyArchive
 		// Validate ordinary history first; effect validation is never a substitute for it.
 		var history = await ReadAsync(sqlite, ct, 13);
 		var effects = await ReadEffectsCandidateAsync(sqlite, history, ct);
+		ValidateEffectAssignmentAuthorityCandidate(history, effects);
 		return new(history, effects);
 	}
 }
