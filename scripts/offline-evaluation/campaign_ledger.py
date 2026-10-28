@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import stat
 import threading
@@ -113,7 +114,9 @@ def _record_kind(body):
             raise LedgerError("invalid policy header")
         Policy(**body["policy"]).validate()
     elif kind == "attempt":
-        if (set(body) != {"kind", "id", "payload_sha256", "payload_bytes"}
+        if (set(body) not in ({"kind", "id", "payload_sha256", "payload_bytes"},
+                              {"kind", "id", "payload_sha256", "payload_bytes", "stage_id"})
+                or ("stage_id" in body and not _valid_stage_id(body["stage_id"]))
                 or not isinstance(body["id"], str) or len(body["id"]) != 36
                 or not _sha(body["payload_sha256"]) or type(body["payload_bytes"]) is not int):
             raise LedgerError("invalid attempt fields")
@@ -124,6 +127,13 @@ def _record_kind(body):
     else:
         raise LedgerError("unknown record kind")
     return kind
+
+
+def _valid_stage_id(value):
+    return (isinstance(value, list) and len(value) == 4
+            and all(isinstance(part, str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,31}", part)
+                    for part in value[:3])
+            and type(value[3]) is int and 0 <= value[3] < 96)
 
 
 def _sha(value):
@@ -331,6 +341,7 @@ class CampaignLedger:
         records = []
         attempts = {}
         outcomes = set()
+        stage_ids = set()
         policy = None
         try:
             for line in data[:-1].split(b"\n"):
@@ -354,8 +365,11 @@ class CampaignLedger:
                     policy = Policy(**body["policy"])
                     policy.validate()
                 elif body["kind"] == "attempt":
-                    if set(body) != {"kind", "id", "payload_sha256", "payload_bytes"}:
-                        raise LedgerError("invalid attempt fields")
+                    if "stage_id" in body:
+                        stage_id = tuple(body["stage_id"])
+                        if stage_id in stage_ids:
+                            raise LedgerError("duplicate stage reservation")
+                        stage_ids.add(stage_id)
                     if (str(uuid.UUID(body["id"])) != body["id"] or body["id"] in attempts
                             or type(body["payload_bytes"]) is not int
                             or not 0 < body["payload_bytes"] <= policy.max_payload_bytes
@@ -389,7 +403,7 @@ class CampaignLedger:
                     "missing_outcomes": len(attempts) - len(outcomes),
                     "reserved_nanodollars": reserved}
 
-    def reserve_attempt(self, payload):
+    def reserve_attempt(self, payload, *, stage_id=None):
         """Durably count an attempt BEFORE dispatch; returns a single-use audit ID.
 
         No dispatch exists here. The caller must never reuse an ID or retry a
@@ -399,12 +413,20 @@ class CampaignLedger:
             records, policy, attempts, _, reserved = self._read()
             if type(payload) is not bytes or not 0 < len(payload) <= policy.max_payload_bytes:
                 raise LedgerError("payload must be nonempty bytes within the byte cap")
+            if stage_id is not None:
+                if not _valid_stage_id(stage_id):
+                    raise LedgerError("invalid stage identity")
+                if any(a.get("stage_id") == stage_id for a in attempts.values()):
+                    raise LedgerError("stage already reserved; no retry")
             if len(attempts) >= policy.max_calls or reserved + RESERVATION_NANODOLLARS > policy.budget_nanodollars:
                 raise LedgerError("campaign call/spend allowance exhausted")
             attempt_id = str(uuid.uuid4())
-            self._append({"kind": "attempt", "id": attempt_id,
-                          "payload_sha256": hashlib.sha256(payload).hexdigest(),
-                          "payload_bytes": len(payload)}, records)
+            body = {"kind": "attempt", "id": attempt_id,
+                    "payload_sha256": hashlib.sha256(payload).hexdigest(),
+                    "payload_bytes": len(payload)}
+            if stage_id is not None:
+                body["stage_id"] = stage_id
+            self._append(body, records)
             return attempt_id
 
     def record_outcome(self, attempt_id, status):

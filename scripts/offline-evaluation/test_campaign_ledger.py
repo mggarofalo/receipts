@@ -47,6 +47,31 @@ class CampaignLedgerTests(unittest.TestCase):
             self.assertNotIn("synthetic example", self.path.read_text())
             self.assertEqual(ledger.snapshot()["reserved_nanodollars"], RESERVATION_NANODOLLARS)
 
+    def test_named_reservations_survive_restart_and_share_allowance(self):
+        first = ["case-a", "baseline", "production", 0]
+        second = ["case-b", "candidate", "shortlist", 0]
+        with CampaignLedger(self.path, create_policy=self.policy(2)) as ledger:
+            attempt = ledger.reserve_attempt(b"request-a", stage_id=first)
+            self.assertEqual(ledger.stage_history()[-1]["stage_id"], first)
+        with CampaignLedger(self.path) as ledger:
+            with self.assertRaises(LedgerError):
+                ledger.reserve_attempt(b"different request", stage_id=first)
+            ledger.reserve_attempt(b"request-b", stage_id=second)
+            self.assertEqual(ledger.snapshot()["missing_outcomes"], 2)
+            ledger.record_outcome(attempt, "unknown")
+            with self.assertRaises(LedgerError):
+                ledger.reserve_attempt(b"request-c", stage_id=["case-a", "candidate", "shortlist", 0])
+            self.assertEqual(ledger.snapshot()["attempts"], 2)
+
+    def test_named_reservation_validates_identity_before_charging(self):
+        with CampaignLedger(self.path, create_policy=self.policy(2)) as ledger:
+            for invalid in (["case", "arm", "phase", True], ["case", "arm", "phase", -1],
+                            ["case", "arm", "phase", 96], ["case", "arm", "phase"],
+                            ["case/escape", "arm", "phase", 0], ["x" * 33, "arm", "phase", 0]):
+                with self.subTest(invalid=invalid), self.assertRaises(LedgerError):
+                    ledger.reserve_attempt(b"request", stage_id=invalid)
+            self.assertEqual(ledger.snapshot()["attempts"], 0)
+
     def test_all_statuses_and_missing_usage_retain_full_reservation(self):
         with CampaignLedger(self.path, create_policy=self.policy(4, carry=10)) as ledger:
             for status in ("success", "error", "unknown"):

@@ -24,6 +24,15 @@ with CampaignLedger(explicit_path, create_policy=policy) as ledger:
     ledger.record_outcome(attempt_id, "unknown")
 ```
 
+For a multicase coordinator, `reserve_attempt(payload, stage_id=[case, arm, phase, batch])`
+atomically records that stable identity with the request hash and reservation. The
+first three components are lowercase ASCII identifiers of at most 32 characters;
+`batch` is an integer from 0 through 95. A stage identity can be reserved only
+once, including across restarts and regardless of outcome. Different identities
+share the same allowance. This is only an accounting primitive: it does not
+persist responses, parse them, schedule cases, or authorize a transport. Callers
+must establish those properties before using it to coordinate an experiment.
+
 Before returning an attempt ID, the module appends and `fsync`s a reservation.
 A crash after reservation consumes the slot even if nothing was dispatched.
 Every success, error, unknown outcome, or missing outcome retains the entire
