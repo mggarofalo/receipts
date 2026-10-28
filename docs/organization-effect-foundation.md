@@ -113,6 +113,24 @@ be removed or rewritten. Retained effects must still close over incoming assignm
 and taxonomy evidence. Reservations are checked against both retained and incoming
 historical operations and across the combined effect manifests. The returned union
 does not attach or write database rows. The caller must separately validate ordinary
-history and hold the restore coordination locks through commit. Transactional
-manifest/item restoration, trigger reconstruction and apply-before-undo insertion
-are still unimplemented; these checks do not establish portable recovery.
+history and hold the restore coordination locks through commit.
+
+Candidate transactional restoration exists in
+`PortableTaxonomyArchive.Effects.Restore.cs`, also unwired. It requires an existing
+PostgreSQL restore transaction and saved ordinary dependencies. It loads destination
+effects and applies the candidate prefix checks before attaching portable copies.
+Each new manifest and its complete item set are inserted in that transaction;
+PostgreSQL owns the new stamp and reconstructs both operation reservations. Apply
+outcomes are saved before undo outcomes after their assignment dependencies.
+Existing rows are retained without updates. A private savepoint rolls back all
+candidate inserts and detaches their tracked copies on failure, even if the caller
+catches the failure and commits its outer transaction. The caller still owns locks,
+ordinary history validation and the final transaction commit or rollback.
+
+Real PostgreSQL tests cover candidate SQLite round-trip, destination restamping,
+sealed membership, exact reservation reconstruction, unordered apply/undo input,
+repeat restoration, older-format retention, invalid lineage, missing transaction
+rejection, and failure after item insertion with no partial rows surviving commit.
+These primitives do not establish portable recovery: version/table integration,
+consistent export snapshots, ordinary retained-history integration, offline
+inspection/normalization and older-format compatibility remain required together.
