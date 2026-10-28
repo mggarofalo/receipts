@@ -3,6 +3,45 @@
 This schema is inert. No production capture, application, undo, scheduler, provider,
 or UI path uses it. It supports category assignment effects only.
 
+## Inactive typed capture and execution fences
+
+`OrganizationEffectFenceContractV1` defines immutable version 1 evidence values.
+Capture evidence binds the manifest's canonical request hash to
+`category_assistance.Settings.Revision` and `Settings.RestoreGeneration`.
+These are authoritative deployment-local fences: the settings store rotates Revision
+on every settings update, and `CategoryAssistanceRestoreFence` rotates both values
+while disabling assistance during restore. `organization.Runs.PolicyRevision` is
+only a mutable discovery cache of Settings.Revision and is never an authority source.
+The manifest's textual PolicyVersion remains a contract version, not a consent revision.
+
+Capture hashing uses SHA-256 over the UTF-8 domain
+`receipts.organization-effect.capture-fences.v1`, a NUL separator and canonical JSON.
+Execution evidence separately binds that capture hash, the existing item request hash
+and phase command hash under `receipts.organization-effect.execution-fences.v1`.
+The values contain no mutable arrays and do not change the existing V1 request,
+witness, phase or archive format.
+
+The pure validator compares supplied captured and current authoritative projections.
+Apply requires enabled valid settings with the captured Revision and restore generation,
+the exact source tuple and both source business revisions, the expected assignment,
+current mapping revision and taxonomy revision, selectable target and existing purchase
+preservation rules. Disable then re-enable cannot revive an old capture. Reverting
+source text cannot revive it after a business revision changes. Manual null assignments
+remain deliberate choices. Undo compares restore generation, exact source and assignment,
+taxonomy and previous-category selectability; it does not require an enabled provider,
+unchanged settings Revision or a still-current mapping. Undo's authenticated applied
+assignment and prior-category lineage remain separate mandatory prerequisites.
+
+These types and hashes are **unauthenticated semantic evidence**. A null mismatch result
+only means the supplied facts agree. A future database transaction must derive and seal
+the capture facts from authoritative rows under the established locks, persist the
+evidence durably and compare fresh authoritative execution facts before writing.
+The existing `OrganizationEffectCaptureWitnessesV1` does not attest these settings or
+restore fields; this contract does not retrofit it or provide that transaction.
+Actor authorization, complete capture membership, mapping authority and undo lineage
+still require transactional authentication. No writer, provider call, approval gate,
+archive version or production activation is added. The applied-effect barrier stays closed.
+
 A manifest stores actor, request hash, policy version, pinned taxonomy revision and
 capture time. Each item freezes source identity/text, receipt and item business
 revisions, the expected prior assignment (including absence), target category and
