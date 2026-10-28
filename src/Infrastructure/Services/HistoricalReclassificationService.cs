@@ -18,7 +18,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		{ throw new ArgumentException("Actor, nonnegative offset and limit of 1 to 25 are required."); }
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		List<HistoricalOperationEntity> rows = await db.HistoricalOperations.AsNoTracking()
-				.Where(x => x.Actor == actor).OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
+				.Where(x => x.Actor == actor && x.Kind == HistoricalOperationKind.ManualV1).OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
 				.Skip(offset).Take(limit + 1).ToListAsync(ct);
 		List<HistoricalOperationSummary> summaries = [];
 		foreach (HistoricalOperationEntity row in rows.Take(limit))
@@ -38,7 +38,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 				request.OperationId == Guid.Empty ||
 				request.Disposition is not (null or HistoricalGroupDisposition.Later or HistoricalGroupDisposition.LeaveAsIs))
 		{ throw new TaxonomyException(400, "Valid exact source, disposition, version and operation ID are required."); }
-		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request.Group)));
+		string hash = DispositionSourceHash(request.Group);
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		// Operation ID precedes source in the lock order, including when the ID is reused across sources.
@@ -59,7 +59,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 					previous.ResultUpdatedAt);
 		}
 		// Serialize first insert and updates for this actor/source without taking the classification write gate.
-		await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({actor + hash}, 0))", ct);
+		await LockDispositionSourceAsync(db, actor, hash, ct);
 		HistoricalGroupDispositionEntity? row = await db.HistoricalGroupDispositions
 				.SingleOrDefaultAsync(x => x.Actor == actor && x.SourceHash == hash, ct);
 		if (row != null && (row.Store != request.Group.Store ||
@@ -102,6 +102,12 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await transaction.CommitAsync(ct);
 		return ToRecord(row);
 	}
+
+	internal static string DispositionSourceHash(HistoricalGroupKey group) =>
+		Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(group)));
+
+	internal static Task<int> LockDispositionSourceAsync(ApplicationDbContext db, string actor, string hash, CancellationToken ct) =>
+		db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({actor + hash}, 0))", ct);
 
 	private static HistoricalDispositionRecord ToRecord(HistoricalGroupDispositionEntity row) =>
 			new(new(row.Store, row.RawDescription, row.ItemCode), row.Disposition,
@@ -181,13 +187,13 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	public async Task<HistoricalProgress> ReadAsync(string actor, Guid id, CancellationToken ct = default)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
-		return await ProgressAsync(db, await OwnedAsync(db, actor, id, false, ct), ct);
+		return await ProgressAsync(db, await ManualOwnedAsync(db, actor, id, ct), ct);
 	}
 
 	public async Task<HistoricalOperationSummary> ReadSummaryAsync(string actor, Guid id, CancellationToken ct = default)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
-		return await SummaryAsync(db, await OwnedAsync(db, actor, id, false, ct), ct);
+		return await SummaryAsync(db, await ManualOwnedAsync(db, actor, id, ct), ct);
 	}
 
 	private static async Task<HistoricalOperationSummary> SummaryAsync(ApplicationDbContext db,
@@ -203,7 +209,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		ValidateLimit(limit);
 		if (offset < 0) { throw new ArgumentOutOfRangeException(nameof(offset)); }
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
-		await OwnedAsync(db, actor, id, false, ct);
+		await ManualOwnedAsync(db, actor, id, ct);
 		List<HistoricalOperationItemEntity> rows = await db.HistoricalOperationItems.AsNoTracking().Where(x => x.OperationId == id)
 			.OrderBy(x => x.ItemId).Skip(offset).Take(limit + 1).ToListAsync(ct);
 		return new(rows.Take(limit).Select(x => new HistoricalItemResult(x.Evidence(), x.State, x.AppliedAssignmentId, x.Reason)).ToArray(),
@@ -299,6 +305,14 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 
 	private static Task<TaxonomyHeadEntity> HeadAsync(ApplicationDbContext db, CancellationToken ct) =>
 		db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(ct);
+
+	private static async Task<HistoricalOperationEntity> ManualOwnedAsync(ApplicationDbContext db, string actor, Guid id, CancellationToken ct)
+	{
+		HistoricalOperationEntity row = await OwnedAsync(db, actor, id, false, ct);
+		if (row.Kind != HistoricalOperationKind.ManualV1)
+		{ throw new TaxonomyException(404, "Historical operation does not exist."); }
+		return row;
+	}
 
 	private static async Task<HistoricalOperationEntity> OwnedAsync(ApplicationDbContext db, string actor, Guid id, bool locked, CancellationToken ct)
 	{
