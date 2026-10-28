@@ -2,7 +2,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Application.Classification;
 using Application.Normalization;
+using Application.Taxonomy;
 using Infrastructure.Entities.Organization;
+using Infrastructure.Entities.Taxonomy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -42,6 +44,14 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 
 	private static bool CanDiscover(Entities.CategoryAssistance.CategoryAssistanceSettingsEntity settings) =>
 		settings.Enabled && CategoryAssistancePolicy.IsValid(CategoryAssistanceSettingsStore.Read(settings));
+
+	private static bool EligibleAssignment(PurchaseClassificationEntity? current) =>
+			OrganizationEffectPolicy.Eligibility(current == null ? null : new PurchaseClassification(
+					current.Id, current.ReceiptItemId, current.Sequence, current.PreviousAssignmentId,
+					current.CategoryId, current.TaxonomyRevisionId, current.RecordedAt, current.Actor,
+					current.Source, current.Reason, current.OperationId, [], current.LegacyCategory,
+					current.LegacySubcategory, current.LegacyResolution), available: true,
+					leaveAsIs: false, suppressed: false) == OrganizationEligibility.Eligible;
 	private sealed class SourceCandidate
 	{
 		public Guid Id { get; set; }
@@ -226,12 +236,14 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 		var assignments = await (from current in db.CurrentClassifications.AsNoTracking()
 								 join assignment in db.Classifications.AsNoTracking() on current.AssignmentId equals assignment.Id
 								 where ids.Contains(current.ReceiptItemId)
-								 select new { current.ReceiptItemId, current.AssignmentId, assignment.CategoryId }).ToDictionaryAsync(x => x.ReceiptItemId, ct);
+								 select assignment).ToDictionaryAsync(x => x.ReceiptItemId, ct);
 		Dictionary<Guid, OrganizationItemEntity> existing = await db.OrganizationItems
 			.Where(x => x.RunId == run.Id && ids.Contains(x.ItemId)).ToDictionaryAsync(x => x.ItemId, ct);
 		var factsById = facts.ToDictionary(x => x.Id);
-		var candidatesById = facts.Where(x => x.Live && !assignments.ContainsKey(x.Id) &&
-			string.IsNullOrWhiteSpace(x.Category) && string.IsNullOrWhiteSpace(x.Subcategory)).ToDictionary(x => x.Id);
+		// A null legacy observation is not a deliberate manual clear. Preserve every other
+		// assignment and raw label; discovery still grants no authority to apply an effect.
+		var candidatesById = facts.Where(x => x.Live && EligibleAssignment(assignments.GetValueOrDefault(x.Id)) &&
+	string.IsNullOrWhiteSpace(x.Category) && string.IsNullOrWhiteSpace(x.Subcategory)).ToDictionary(x => x.Id);
 		Guid[] candidateIds = candidatesById.Keys.ToArray();
 		// Two correlated existence checks produce a bounded set of IDs in one round trip.
 		HashSet<Guid> suppressed = (await (from item in db.ReceiptItems.IgnoreQueryFilters().AsNoTracking()
@@ -278,10 +290,9 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 			manifest.ItemRevision = fact.ItemRevision;
 			manifest.ReceiptRevision = fact.ReceiptRevision;
 			assignments.TryGetValue(id, out var assignment);
-			manifest.ExpectedAssignmentId = assignment?.AssignmentId;
+			manifest.ExpectedAssignmentId = assignment?.Id;
 			manifest.PreviousCategoryId = assignment?.CategoryId;
-			manifest.State = !fact.Live ? "unavailable" : assignment != null ||
-				!string.IsNullOrWhiteSpace(fact.Category) || !string.IsNullOrWhiteSpace(fact.Subcategory) ? "protected" : "observed";
+			manifest.State = !fact.Live ? "unavailable" : candidatesById.ContainsKey(id) ? "observed" : "protected";
 			if (manifest.State != "observed" || suppressed.Contains(id))
 			{
 				manifest.SourceId = null;
