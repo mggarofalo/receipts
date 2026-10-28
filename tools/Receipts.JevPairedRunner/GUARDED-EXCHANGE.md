@@ -182,3 +182,43 @@ Journal and lock checkout ancestry is rejected before opening either file. Froze
 artifact hashes are verified again after response persistence and before success
 outcome/stage completion. Payload snapshots are immutable tuples derived from the
 canonical private plan; public plan/binding properties return detached copies.
+
+
+## Coupled actual-parser offline stages
+
+`paired_stage_campaign.PairedStageCampaign(ledger, frozen_runner, input_path,
+case=..., private_root=...)` is the single-case executable-backed controller.
+It accepts no caller plan, verifier payload, or abstention decision. Construction
+runs actual frozen `prepare`; `bind_verifier()` runs it again over the exact
+retained ordered shortlist. Every exchange runs the actual C# `validate` command
+before recording exchange success or stage completion. This command uses the real
+production provider with a sealed recorded handler, the same exhaustive shortlist
+parser (accepting an ordered prefix while staging), and the actual candidate
+parser. Valid abstention remains distinct from parser failure. A parser failure,
+crash or inventory/input drift leaves the started stage terminal; reservations
+already made remain unresolved and charged. Reservation still precedes response
+consumption. The distinct journal format also prevents reopening this binding
+through the lower-level caller-plan StageCampaign API.
+
+The journal binds exact input bytes/path, host/assembly paths, roots and all three
+inventories. Reopen re-exports the same plan and verifies completed evidence. Each
+prepare/validate invocation retains new private replies/output files, outside git,
+with no overwrite. This authenticates derivation relative to the explicitly
+supplied executable; independent closure/provenance review remains required.
+Caller-provided binaries and the interpreter/OS remain trusted. No malicious
+concurrent path/file replacement protection is claimed.
+
+`test_paired_stage_campaign.py` requires already restored local assets and publishes
+with `--no-restore` (never implicit NuGet access). It snapshots tracked
+source, copies an explicit .NET 10 host/runtime, hashes complete frozen inventory
+directories, and executes real child processes with no inherited environment.
+Synthetic checks cover dynamic verification, abstention, restart, malformed
+parser input, input drift before reservation, and terminal malformed exchange.
+A child exits immediately after actual parser validation to exercise the unresolved
+reservation crash gap. This is offline integration evidence only.
+
+Earlier route-to-live items 2 and 3 are now supplied by this controller; the raw
+StageCampaign API remains an offline lower-level primitive. Multi-case journal
+continuation, live HTTP/credential transport, sanitized provider status/context
+classification and independently reviewed frozen dependency closure remain out of
+scope. No live switch was introduced and no paid/model-quality claim is made.

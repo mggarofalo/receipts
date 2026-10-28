@@ -40,7 +40,7 @@ class FrozenRunner:
         return verify_artifacts(self.artifacts)
 
     def run(self, command, input_path, replies_path, output_path):
-        if command not in ('prepare', 'replay'):
+        if command not in ('prepare', 'replay', 'validate'):
             raise LedgerError('offline command required')
         self.verify()
         inputs = [require_plain_absolute_path(p) for p in (input_path, replies_path)]

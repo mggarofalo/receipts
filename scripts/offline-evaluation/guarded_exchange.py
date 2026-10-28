@@ -120,7 +120,7 @@ def exchange_recorded(ledger, payload, transport, *, artifacts, private_output):
         _EXCHANGE_OWNER.release()
 
 
-def _exchange_recorded_owned(ledger, payload, transport, *, artifacts, private_output):
+def _exchange_recorded_owned(ledger, payload, transport, *, artifacts, private_output, validate_response=None):
     if type(ledger) is not CampaignLedger or type(transport) is not RecordedTransport:
         raise LedgerError("only durable ledger and recorded transport are supported")
     output = require_plain_absolute_path(private_output, allow_missing_leaf=True)
@@ -157,5 +157,8 @@ def _exchange_recorded_owned(ledger, payload, transport, *, artifacts, private_o
     # No success is recorded if any frozen file changed while consuming or
     # persisting the response. The attempt stays unresolved after restart.
     verify_artifacts(artifacts)
+    if validate_response is not None:
+        validate_response(response)
+        verify_artifacts(artifacts)
     ledger.record_outcome(attempt, "success")
     return receipt

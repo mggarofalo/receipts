@@ -11,9 +11,9 @@ namespace Receipts.JevPairedRunner
 	{
 		public static async Task<int> RunAsync(string[] args)
 		{
-			if (args.Length != 4 || args[0] is not ("prepare" or "replay"))
+			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate"))
 			{
-				Console.Error.WriteLine("Usage: prepare|replay <absolute-input.json> <absolute-replies.json> <absolute-output.json>");
+				Console.Error.WriteLine("Usage: prepare|replay|validate <absolute-input.json> <absolute-replies.json> <absolute-output.json>");
 				return 2;
 			}
 			try
@@ -32,7 +32,12 @@ namespace Receipts.JevPairedRunner
 				ReplayReplies replies = Read<ReplayReplies>(args[2]);
 				PairedReplayPlan plan = PairedReplay.Prepare(input);
 				object result;
-				if (args[0] == "prepare")
+				if (args[0] == "validate")
+				{
+					await plan.ValidateAsync(replies);
+					result = new { validated = true, maximumNetworkCalls = 0 };
+				}
+				else if (args[0] == "prepare")
 				{
 					// An empty shortlist requests initial payloads. Otherwise the actual
 					// reducer validates every supplied shortlist response before verification.

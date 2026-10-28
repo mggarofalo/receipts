@@ -37,16 +37,16 @@ public sealed class ExhaustiveShortlistPlan
 	public IReadOnlyList<ShortlistBatch> Batches { get; }
 
 	/// <summary>Responses must be in batch order, with exactly one valid response for every batch.</summary>
-	public ShortlistResult Aggregate(IReadOnlyList<string> responses)
+	public ShortlistResult Aggregate(IReadOnlyList<string> responses, bool allowPrefix = false)
 	{
-		if (responses is null || responses.Count != Batches.Count)
+		if (responses is null || responses.Count > Batches.Count || (!allowPrefix && responses.Count != Batches.Count))
 		{
 			return Failed();
 		}
 		Dictionary<string, double> values = new(StringComparer.Ordinal);
 		try
 		{
-			for (int i = 0; i < Batches.Count; i++)
+			for (int i = 0; i < responses.Count; i++)
 			{
 				string raw = responses[i];
 				if (raw is null || raw.Length > CandidateWire.MaximumResponseBytes ||
@@ -87,6 +87,11 @@ public sealed class ExhaustiveShortlistPlan
 			FormatException or OverflowException or ArgumentException)
 		{
 			return Failed();
+		}
+
+		if (responses.Count < Batches.Count)
+		{
+			return new(null, null, null);
 		}
 
 		// Independent judgments never prune another branch. Uncertain answers remain competitors.

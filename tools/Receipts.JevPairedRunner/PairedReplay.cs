@@ -74,16 +74,38 @@ public sealed class PairedReplayPlan
 			throw new ArgumentException("Verification reply must be present exactly when shortlist permits verification.", nameof(replies));
 		}
 
-		using ReplayHandler handler = new(ProductionPayload, replies.Production);
-		using HttpClient client = new(handler);
-		using JevSuggestionConcurrency concurrency = new();
-		JevSuggestionProvider provider = new(client, new ReplayOptions(), concurrency);
-		CategorySuggestionResult baseline = await provider.SuggestAsync(production, cancellationToken);
+		CategorySuggestionResult baseline = await ParseProductionAsync(replies.Production, cancellationToken);
 		CandidateDecision candidate = verification is null
 			? new(null, [], selected.AbstentionReason, selected.Failure)
 			: verification.ParseResponse(replies.Verification!).Decision;
-		return new(baseline, candidate, handler.Calls + shortlist.Batches.Count + (verification is null ? 0 : 1),
+		return new(baseline, candidate, 1 + shortlist.Batches.Count + (verification is null ? 0 : 1),
 			verification?.Payload, verification?.PlanSha256);
+	}
+
+	public async Task ValidateAsync(ReplayReplies replies)
+	{
+		if ((await ParseProductionAsync(replies.Production)).Failure is not null ||
+			shortlist.Aggregate(replies.Shortlist, allowPrefix: true).Failure is not null)
+		{
+			throw new ArgumentException();
+		}
+		if (replies.Verification is not null)
+		{
+			var verification = PrepareVerification(replies.Shortlist) ?? throw new ArgumentException();
+			if (verification.ParseResponse(replies.Verification).Decision.Failure is not null)
+			{
+				throw new ArgumentException();
+			}
+		}
+	}
+
+	private async Task<CategorySuggestionResult> ParseProductionAsync(string response, CancellationToken cancellationToken = default)
+	{
+		using ReplayHandler handler = new(ProductionPayload, response);
+		using HttpClient client = new(handler);
+		using JevSuggestionConcurrency concurrency = new();
+		JevSuggestionProvider provider = new(client, new ReplayOptions(), concurrency);
+		return await provider.SuggestAsync(production, cancellationToken);
 	}
 
 	internal static int CountQuestions(string payload)

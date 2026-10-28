@@ -41,6 +41,11 @@ class StageCampaign:
     replace the campaign journal to work around this limitation.
     """
 
+    FORMAT = 'offline-stage-v1'
+
+    def _binding_extra(self):
+        return {}
+
     def __init__(self, ledger, plan, *, artifacts, private_root):
         if type(ledger) is not CampaignLedger:
             raise LedgerError('durable campaign ledger required')
@@ -61,7 +66,8 @@ class StageCampaign:
             raise LedgerError('private output outside checkout required')
         with owner():
             hashes = verify_artifacts(self.artifacts)
-            self._binding_bytes = _canonical({'op': 'bind', 'format': 'offline-stage-v1', 'plan': self.plan,
+            self._binding_bytes = _canonical({'op': 'bind', 'format': self.FORMAT, 'plan': self.plan,
+                            **self._binding_extra(),
                             'artifacts': hashes, 'private_root': str(self.root)})
             history = self.ledger.stage_history()
             if not history:
@@ -156,6 +162,9 @@ class StageCampaign:
             return verifier['payload'].encode('utf-8')
         raise LedgerError('no stage available')
 
+    def _validate_response(self, index, response):
+        pass
+
     def _finish(self, index, receipt):
         verify_artifacts(self.artifacts)
         raw = (self.root / f'stage-{index}' / 'receipt.json').read_bytes()
@@ -173,7 +182,8 @@ class StageCampaign:
                 raise LedgerError('stage skipping/reordering/replay rejected')
             self.ledger.append_stage_event({'op': 'start', 'index': index, 'request_sha256': digest(payload)})
             receipt = _exchange_recorded_owned(self.ledger, payload, transport,
-                         artifacts=self.artifacts, private_output=self.root / f'stage-{index}')
+                         artifacts=self.artifacts, private_output=self.root / f'stage-{index}',
+                         validate_response=lambda response: self._validate_response(index, response))
             self._finish(index, receipt)
             return receipt
 
