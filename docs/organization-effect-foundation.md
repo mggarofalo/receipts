@@ -270,3 +270,53 @@ manifest's opaque `RequestHash` is not compared to the item request hash: those
 are different scopes and their relationship remains undefined. No persisted
 arbitrary JSON is upgraded automatically. No archive caller invokes this method,
 and the applied-effect authority barrier remains fail closed.
+
+## Inactive mapping authority journal replay v1
+
+`MappingAuthorityJournalPolicyV1` is a pure candidate ordering policy in Application.
+It is not registered or called by a writer, importer, archive validator, or assignment
+authority gate. It adds no persistence, archive version, provider calls, or migration.
+
+A future durable stream must start with a complete snapshot of current exact-source
+mapping heads (including revocation heads), sealed while holding the existing
+`taxonomy.Head` lock. Its seal must live in an independently trusted store. The v1
+baseline digest is uppercase SHA-256 over the UTF-8 domain
+`receipts.mapping-authority.baseline.v1`, a zero byte, and the policy's JSON baseline
+projection. Heads are sorted by ordinal location, description, then item code;
+version, stream identity, baseline identity, exact source tuple and revision identity
+are bound. This is a candidate internal digest definition, not a portable codec.
+Hashes are not signatures: recomputing a digest does not authenticate a baseline.
+The caller must establish the provenance and completeness of the seal and snapshot.
+
+The baseline authenticates the starting state for future events only. It cannot
+retroactively prove when an old capture occurred, and replay emits no capture from
+a baseline head alone. Existing predecessor chains and wall-clock timestamps cannot
+be upgraded into this evidence. A future producer must append every head transition
+and capture in the same transaction as its business change, under `taxonomy.Head`,
+allocating contiguous stream positions without consuming committed positions on
+rollback. Baseline creation, transition, and capture must share that lock. No such
+producer exists in this increment.
+
+Replay accepts the complete ordered prefix after the baseline and an independently
+trusted terminal position. It rejects gaps, forks, repeated event identities, unknown
+versions/kinds, missing mapping evidence and terminal-prefix truncation. Event IDs
+and their predecessor links check ordering consistency; they do not authenticate
+payloads. Trusted append-only storage and authenticated export/checkpoint provenance
+remain necessary. An untrusted journal cannot supply its own trusted seal or terminal
+checkpoint. Suffix omission cannot be detected without an independent terminal anchor.
+
+Each transition must extend the replayed head for its normalized exact ordinal source
+tuple and fingerprint. Null-category revisions remain heads after revocation. A capture
+must reference the current head for that same tuple, and that head must have a category.
+The capture identity is unique within the replayed prefix. A later revocation does not
+invalidate an earlier recorded capture; a prior revocation blocks old approval reuse.
+Revision timestamps, including equal timestamps, have no ordering role. Failure returns
+no partial capture results.
+
+Revision evidence must separately pass ordinary immutable mapping command/request,
+actor, operation, predecessor history and approval-taxonomy semantic validation. This
+policy checks source binding and ordering, not taxonomy selectability at capture,
+purchase eligibility, actor authorization, item/manifest request binding, execution
+head revalidation, assignment lineage, or undo authority. Its capture IDs require a
+future typed durable binding to the actual frozen effects. Replay success grants no
+assignment authority; the existing applied-effect barrier remains closed.
