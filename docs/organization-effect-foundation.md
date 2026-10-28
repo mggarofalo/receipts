@@ -245,3 +245,28 @@ manifest request and its item membership hash, and its relationship to persisted
 decision JSON and opaque request hashes cannot be upgraded or reinterpreted as v1
 authority. New typed persistence/portable envelopes, adversarial semantic tests,
 and real full backup/import evidence remain required before changing the barrier.
+
+## Inactive mapping claim consistency
+
+`ValidateEffectMappingClaimCandidate` is an unwired pure consistency validator.
+It first runs ordinary history validation, including reconstruction of mapping
+commands, request hashes, predecessor chains and approval semantic fingerprints.
+It binds the typed request to the frozen manifest and item (including raw source
+text, revisions, nullable prior assignment, both operations and stored typed
+decision), then checks the referenced mapping's normalized exact source tuple,
+fingerprint, category and original approval taxonomy. The target path must match
+its immutable taxonomy snapshot and its semantic fingerprint must still match the
+approval. Approval and target taxonomy cannot postdate capture. No self-asserted
+approval field is accepted.
+
+Success establishes reference consistency only. It does not establish that the
+referenced mapping was the eligible head at capture or execution. Mapping chains
+order their revisions but capture stores no observed mapping-head revision or
+shared ordering token; equal timestamps cannot order capture against revocation.
+This increment deliberately supplies no historical eligibility check. It also
+does not prove source eligibility, prior-assignment lineage, manifest membership
+request hashing, phase command binding, outcome authority or undo intent. The
+manifest's opaque `RequestHash` is not compared to the item request hash: those
+are different scopes and their relationship remains undefined. No persisted
+arbitrary JSON is upgraded automatically. No archive caller invokes this method,
+and the applied-effect authority barrier remains fail closed.
