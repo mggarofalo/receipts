@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Taxonomy;
@@ -68,7 +70,8 @@ public sealed class PortableEffectImportCandidateTests(PostgresFixture server) :
 		await migration.ApplyAsync(LegacyMigrationFreeze.Source(plan));
 		var exporter = new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance);
 		string olderPath = await exporter.ExportToSqliteAsync();
-		string? candidatePath = null;
+		string? candidatePath = null, originalCandidatePath = null;
+		Guid canonicalId = Guid.NewGuid();
 		try
 		{
 			PortableTaxonomyArchive.State history;
@@ -123,7 +126,14 @@ public sealed class PortableEffectImportCandidateTests(PostgresFixture server) :
 				await PortableTaxonomyArchive.RestoreEffectsCandidateAsync(db, history, history, evidence, default);
 				await tx.CommitAsync();
 			}
-			candidatePath = await exporter.ExportV14CandidateAsync();
+			originalCandidatePath = await exporter.ExportV14CandidateAsync();
+			await using (SqliteConnection sqlite = new($"Data Source={originalCandidatePath};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				evidence = (await PortableTaxonomyArchive.ReadV14CandidateAsync(sqlite, default)).Effects;
+				item = evidence.Items.Single();
+			}
+			candidatePath = await NormalizeCandidateAsync(originalCandidatePath, canonicalId);
 			await ReplaceDatabaseAsync();
 			var importer = new BackupImportService(new Factory(fixture), NullLogger<BackupImportService>.Instance);
 			async Task Import(string path, bool candidate = true)
@@ -165,7 +175,11 @@ public sealed class PortableEffectImportCandidateTests(PostgresFixture server) :
 				generation = (await db.CategoryAssistanceSettings.SingleAsync()).RestoreGeneration;
 				normalizationGeneration = (await db.NormalizationAiConnection.SingleAsync()).Generation;
 				(await db.OrganizationEffectItems.CountAsync()).Should().Be(1);
-				(await db.OrganizationEffectOutcomes.SingleAsync()).Disposition.Should().Be("skipped");
+				(await db.NormalizedDescriptions.SingleAsync(n => n.Id == canonicalId)).CanonicalName.Should().Be("Reviewed milk product");
+				(await db.OrganizationEffectItems.AsNoTracking().SingleAsync()).Should().BeEquivalentTo(item);
+				var storedManifest = await db.OrganizationEffectManifests.AsNoTracking().SingleAsync();
+				PortableTaxonomyArchive.SealEffectManifest(storedManifest, [item]).Should().BeEquivalentTo(evidence.Manifests[0]);
+				(await db.OrganizationEffectOutcomes.AsNoTracking().SingleAsync()).Should().BeEquivalentTo(evidence.Outcomes[0]);
 				(await db.OrganizationEffectOperations.CountAsync()).Should().Be(2);
 			}
 			await Import(candidatePath);
@@ -259,7 +273,39 @@ public sealed class PortableEffectImportCandidateTests(PostgresFixture server) :
 		finally
 		{
 			File.Delete(olderPath);
-			if (candidatePath != null) { File.Delete(candidatePath); }
+			if (candidatePath != null)
+			{
+				foreach (string suffix in new[] { "", ".manifest.json", ".lineage.json" }) { File.Delete(candidatePath + suffix); }
+			}
+			if (originalCandidatePath != null)
+			{
+				File.Delete(originalCandidatePath);
+				File.Delete(originalCandidatePath + ".review.json");
+			}
 		}
 	}
+
+	private static async Task<string> NormalizeCandidateAsync(string source, Guid canonicalId)
+	{
+		byte[] original = await File.ReadAllBytesAsync(source);
+		var inspection = new OfflinePortableBackupInspection(true);
+		var baseline = await inspection.InspectAsync(source);
+		var now = DateTimeOffset.UtcNow.AddMinutes(-1);
+		Guid decision = Guid.NewGuid();
+		var manifest = new OfflineNormalizationManifest(1, baseline.SourceSha256, 14,
+				baseline.FactualBaselineSha256, "synthetic-postgres-restore", "proposer", now,
+				[new(decision, canonicalId, "Reviewed milk product", null)], [], [], [],
+				new("reviewer", now, [new(decision, "Reviewed product name")]));
+		string manifestPath = source + ".review.json", output = source + ".normalized";
+		await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, OfflineNormalizationManifestPolicy.JsonOptions));
+		var normalizer = new PortableBackupNormalizationService(true);
+		await normalizer.ApplyAsync(source, manifestPath, output);
+		await normalizer.VerifyAsync(source, manifestPath, output);
+		(await File.ReadAllBytesAsync(source)).Should().Equal(original);
+		var normalized = await inspection.InspectAsync(output);
+		normalized.FormatVersion.Should().Be(14);
+		normalized.FactualTableSha256["organization_effect_archive"].Should().Be(baseline.FactualTableSha256["organization_effect_archive"]);
+		return output;
+	}
+
 }

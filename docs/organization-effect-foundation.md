@@ -588,7 +588,7 @@ and outcomes while preserving the original generation. Pre-v12 imports lack the
 archived source-revision evidence; a later replay of the original newer archive
 can therefore fail ordinary source-revision prefix validation.
 This is bounded integration evidence, not archive activation. Offline inspection/
-normalization preservation, typed witnesses, independent journal trust anchors,
+normalization preservation is covered by the inactive seam below; typed witnesses, independent journal trust anchors,
 applied assignment authority and broader version compatibility remain prerequisites.
 
 
@@ -632,3 +632,44 @@ The registry foundation alone does not establish global enforcement. No effect
 application or automatic categorization is enabled.
 
 Verification (2026-10-28): all 53 OrganizationEffectCaptureWitnessTests passed on real PostgreSQL (zero skipped), including SQL/.NET canonical parity, disabled/generation lock races, gate-before-baseline composition, immutable/retroactive-fact rejection and outer rollback. Build completed with zero warnings/errors. Independent review found no blocker in the SQL fence foundation. Additional reverse-contention evidence uses the actual settings update store and CategoryAssistanceRestoreFence inside a gate-protected restore transaction, confirming that capture blocks later policy changes and that restore rotation, disable and audit commit or roll back together while captured evidence remains unchanged. This exercises the restore fence transaction, not a complete portable archive import.
+
+
+## Inactive candidate offline preservation
+
+Internal candidate constructors on OfflinePortableBackupInspection and
+PortableBackupNormalizationService now compose the strict v14 reader with the
+ordinary offline workflow. Public constructors, manifest parsing, current-format
+export and import remain v13. The internal manifest reader permits only the v14
+version extension and delegates all ordinary review, identity, duplicate JSON,
+source binding and decision validation to the existing policy.
+
+Candidate inspection and normalization compare the complete exported v13 schema
+plus the exact effect archive schema, reject unsupported objects, and run ordinary
+catalog/history/deletion checks plus sealed-effect membership and assignment
+authority checks. Applied effects remain rejected. The transformer copies the
+original artifact, changes only the ordinary normalization state/lineage, retains
+version 14 and never rewrites effect rows. Every effect column and its SQLite
+storage class contributes to the factual baseline. Verification rejects a changed
+payload even when its JSON meaning and the refreshed whole-file checksum agree.
+
+Synthetic SQLite coverage includes manifest/item/skipped-outcome content bytes,
+source immutability, candidate-only access, repeated apply/verify, and corruption
+with a refreshed lineage checksum. This does not activate a format or complete
+portable journal checkpoints, typed capture witnesses/fences or global registry
+portability. Those remain prerequisites to restorable execution authority.
+
+The inactive effect reader requires TEXT storage and decodes raw SQLite bytes
+with strict UTF-8 before parsing. Malformed TEXT cannot be normalized by provider
+replacement fallback into identical history facts. A regression replaces a valid
+literal U+FFFD in a skipped outcome with CAST(X'FF' AS TEXT), refreshes lineage,
+and requires both inspection and verification to reject the artifact. Direct
+reader cases cover malformed UTF-8 and BLOB storage in each envelope column.
+
+Real PostgreSQL composition evidence now runs the four candidate-import cases
+with a normalized artifact: export v14, apply a reviewed canonical creation,
+verify the source bytes and complete effect-table digest, restore into a fresh
+migrated database, and compare exported manifest/item/skipped-outcome content.
+The cases retain repeated import, immutable conflict rejection, atomic rollback
+and older-format v10/v11/v12/v13 evidence retention checks. PostgreSQL jsonb
+formatting is compared against the original exported evidence, while SQLite
+normalization preserves the exported payload bytes exactly.

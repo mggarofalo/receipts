@@ -9,9 +9,17 @@ using Microsoft.Data.Sqlite;
 namespace Infrastructure.Services;
 
 /// <summary>Transforms a closed portable artifact only. It never connects to an application database.</summary>
-public sealed class PortableBackupNormalizationService(IOfflinePortableBackupInspection? inspection = null) : IOfflinePortableBackupNormalization
+public sealed class PortableBackupNormalizationService : IOfflinePortableBackupNormalization
 {
-	private readonly IOfflinePortableBackupInspection inspection = inspection ?? new OfflinePortableBackupInspection();
+	private readonly IOfflinePortableBackupInspection inspection;
+	public PortableBackupNormalizationService(IOfflinePortableBackupInspection? inspection = null) => this.inspection = inspection ?? new OfflinePortableBackupInspection();
+	// Deliberately internal: no public API, DI registration or CLI enables the candidate.
+	internal PortableBackupNormalizationService(bool candidate) => inspection = new OfflinePortableBackupInspection(candidate);
+	private bool Candidate => inspection is OfflinePortableBackupInspection concrete && concrete.CandidateEnabled;
+	private OfflineNormalizationManifest ReadManifest(byte[] bytes) => Candidate
+		? OfflineNormalizationManifestPolicy.ReadV14Candidate(new UTF8Encoding(false, true).GetString(bytes), true, DateTimeOffset.UtcNow)
+		: OfflineNormalizationManifestPolicy.Read(new UTF8Encoding(false, true).GetString(bytes), true, DateTimeOffset.UtcNow);
+
 	private sealed record Lineage(string SourceSha256, string ManifestSha256, string ToolRevision, string OutputSha256);
 
 	public async Task<OfflineBackupNormalizationResult> ApplyAsync(string sourcePath, string manifestPath, string outputPath, CancellationToken cancellationToken = default)
@@ -21,7 +29,7 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 		await using FileStream sourceLease = new(source, FileMode.Open, FileAccess.Read, FileShare.Read);
 		byte[] bytes = await File.ReadAllBytesAsync(manifestFile, cancellationToken);
 		string digest = Convert.ToHexString(SHA256.HashData(bytes));
-		OfflineNormalizationManifest manifest = OfflineNormalizationManifestPolicy.Read(new UTF8Encoding(false, true).GetString(bytes), true, DateTimeOffset.UtcNow);
+		OfflineNormalizationManifest manifest = ReadManifest(bytes);
 		OfflineBackupInspection baseline = await inspection.InspectAsync(source, cancellationToken);
 		inspection.ValidateManifest(manifest, baseline, true, DateTimeOffset.UtcNow);
 		await ValidateFileAsync(source, baseline.FormatVersion, cancellationToken);
@@ -76,7 +84,7 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 		await using FileStream sourceLease = new(source, FileMode.Open, FileAccess.Read, FileShare.Read);
 		byte[] bytes = await File.ReadAllBytesAsync(manifestFile, cancellationToken);
 		string digest = Convert.ToHexString(SHA256.HashData(bytes));
-		OfflineNormalizationManifest manifest = OfflineNormalizationManifestPolicy.Read(new UTF8Encoding(false, true).GetString(bytes), true, DateTimeOffset.UtcNow);
+		OfflineNormalizationManifest manifest = ReadManifest(bytes);
 		OfflineBackupInspection baseline = await inspection.InspectAsync(source, cancellationToken);
 		inspection.ValidateManifest(manifest, baseline, true, DateTimeOffset.UtcNow);
 		await ValidateFileAsync(source, baseline.FormatVersion, cancellationToken);
@@ -295,13 +303,14 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 
 	private static int OutputVersion(int sourceVersion) => sourceVersion >= 10 ? sourceVersion : 9;
 
-	private static async Task ValidateFileAsync(string path, int version, CancellationToken ct)
+	internal async Task ValidateFileAsync(string path, int version, CancellationToken ct)
 	{
 		await using SqliteConnection sqlite = Open(path, true);
 		await sqlite.OpenAsync(ct);
 		await using SqliteConnection expected = new("Data Source=:memory:");
 		await expected.OpenAsync(ct);
-		await BackupService.CreateSchemaAsync(expected, ct, version);
+		if (version == 14 && !Candidate) { throw new InvalidDataException("Unsupported backup version 14."); }
+		await BackupService.CreateSchemaAsync(expected, ct, version == 14 ? 13 : version);
 		if (version >= 8)
 		{
 			await using SqliteCommand catalogSchema = expected.CreateCommand();
@@ -315,7 +324,13 @@ public sealed class PortableBackupNormalizationService(IOfflinePortableBackupIns
 			if (version >= 11) { taxonomySchema.CommandText += " CREATE TABLE category_mapping_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id));"; }
 			if (version >= 12) { taxonomySchema.CommandText += " CREATE TABLE historical_operation_archive(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id)); CREATE TABLE source_revision_archive(kind TEXT NOT NULL, id TEXT NOT NULL, revision TEXT NOT NULL, PRIMARY KEY(kind,id));"; }
 			await taxonomySchema.ExecuteNonQueryAsync(ct);
-			var taxonomy = await PortableTaxonomyArchive.ReadAsync(sqlite, ct, version);
+			if (version == 14)
+			{
+				await using var effectsSchema = expected.CreateCommand();
+				effectsSchema.CommandText = "CREATE TABLE organization_effect_archive (kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id))";
+				await effectsSchema.ExecuteNonQueryAsync(ct);
+			}
+			var taxonomy = version == 14 ? (await PortableTaxonomyArchive.ReadV14CandidateAsync(sqlite, ct)).History : await PortableTaxonomyArchive.ReadAsync(sqlite, ct, version);
 			await PortableTaxonomyArchive.ReadDeletionStateAsync(sqlite, taxonomy, ct);
 		}
 		await using (SqliteCommand objects = sqlite.CreateCommand())

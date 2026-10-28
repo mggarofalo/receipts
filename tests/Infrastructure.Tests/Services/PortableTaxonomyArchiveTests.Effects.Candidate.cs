@@ -45,6 +45,17 @@ public sealed partial class PortableTaxonomyArchiveTests
 			itemJson["TaxonomyRevisionId"] = revision.Id;
 			if (mutation == "export-authority") { itemJson["ApplyOperationId"] = revision.OperationId; }
 			var item = itemJson.Deserialize<OrganizationEffectItemEntity>()!;
+			db.OrganizationEffectOutcomes.Add(new()
+			{
+				ManifestId = item.ManifestId,
+				ItemId = item.ItemId,
+				Phase = "apply",
+				Disposition = "skipped",
+				Reason = "source changed",
+				ItemRevision = Guid.NewGuid(),
+				ReceiptRevision = Guid.NewGuid(),
+				RecordedAt = manifest.CapturedAt
+			});
 			db.TaxonomyIdentities.Add(new() { Id = evidence.Items[0].TargetCategoryId });
 			db.TaxonomyRevisions.Add(revision);
 			db.TaxonomyOperations.Add(new()
@@ -113,6 +124,8 @@ public sealed partial class PortableTaxonomyArchiveTests
 				archive.Effects.Manifests.Should().ContainSingle();
 				archive.Effects.Items.Should().ContainSingle();
 				archive.History.Revisions.Should().HaveCount(2);
+				await sqlite.CloseAsync();
+				await VerifyCandidateNormalizationAsync(path);
 				string currentPath = await service.ExportToSqliteAsync();
 				try
 				{

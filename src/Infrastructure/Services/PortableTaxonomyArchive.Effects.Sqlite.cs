@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -43,14 +44,28 @@ internal static partial class PortableTaxonomyArchive
 		List<EffectRecord> records = [];
 		await using var command = sqlite.CreateCommand();
 		// Check SQLite byte lengths before materializing potentially oversized payload strings.
-		command.CommandText = "SELECT kind,id,payload,length(CAST(payload AS BLOB)),length(CAST(kind AS BLOB)),length(CAST(id AS BLOB)) FROM organization_effect_archive ORDER BY kind,id";
+		command.CommandText = "SELECT CAST(kind AS BLOB),CAST(id AS BLOB),CAST(payload AS BLOB),length(CAST(payload AS BLOB)),length(CAST(kind AS BLOB)),length(CAST(id AS BLOB)),typeof(kind),typeof(id),typeof(payload) FROM organization_effect_archive ORDER BY kind,id";
 		await using var reader = await command.ExecuteReaderAsync(ct);
 		while (await reader.ReadAsync(ct))
 		{
 			Require(!reader.IsDBNull(0) && !reader.IsDBNull(1) && !reader.IsDBNull(2)
 				&& reader.GetInt64(3) <= MaximumEffectPayloadBytes && reader.GetInt64(4) <= 8 && reader.GetInt64(5) <= 256,
 				"Invalid or oversized effect archive row.");
-			records.Add(new(reader.GetString(0), reader.GetString(1), reader.GetString(2)));
+			Require(reader.GetString(6) == "text" && reader.GetString(7) == "text" && reader.GetString(8) == "text",
+								"Invalid effect archive storage class.");
+			// GetString uses replacement fallback for malformed SQLite TEXT. Read
+			// raw bytes and reject invalid UTF-8 before any JSON/identity parsing,
+			// so distinct evidence bytes cannot collapse to the same factual digest.
+			var utf8 = new UTF8Encoding(false, true);
+			try
+			{
+				records.Add(new(utf8.GetString((byte[])reader.GetValue(0)),
+						utf8.GetString((byte[])reader.GetValue(1)), utf8.GetString((byte[])reader.GetValue(2))));
+			}
+			catch (DecoderFallbackException exception)
+			{
+				throw new InvalidDataException("Invalid UTF-8 in effect archive evidence.", exception);
+			}
 		}
 		var evidence = ReadEffectEvidence(records);
 		ValidateEffectEvidence(retained, evidence);
