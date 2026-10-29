@@ -1,5 +1,28 @@
 # Offline evaluation primitives
 
+Jev classification evaluation on real data uses the tools below together with
+the C# runner in [`tools/Receipts.JevProductionParity`](../../tools/Receipts.JevProductionParity/README.md).
+The current protocol is [round 3](AUTO-EVAL-NEXT-V3.md); rounds
+[1](AUTO-EVAL-NEXT.md) and [2](AUTO-EVAL-NEXT-V2.md) are historical.
+
+- `backup_cohort.py` builds a private packet from a portable SQLite backup,
+  opened read-only. Labels are the owner's existing category decisions; see
+  round 3 for the derivation. It writes a runner packet (no labels) and a
+  separate label directory, outside any git checkout:
+
+  ```bash
+  python3 scripts/offline-evaluation/backup_cohort.py --backup <backup.db> \
+    --repository . --output-dir <private-dir> --seed <seed> --size 20 \
+    --prior-carry-nanodollars 4873863040 [--exclude <earlier membership.private.json>]
+  ```
+
+- `journal_exchanges.py` converts a live journal into recorded exchanges.
+- `aggregate_scoring.py` regenerates the production replay from those
+  exchanges, joins the frozen labels and reports aggregate counts and gates.
+
+`campaign_ledger.py` (below) is a Windows-only reservation journal. The C#
+live runner keeps its own durable journal and does not use it.
+
 The separate [campaign reservation foundation](CAMPAIGN-LEDGER.md) provides
 offline durable attempted-call accounting for a future provider adapter. It
 contains no dispatch integration and makes no provider billing guarantee.
