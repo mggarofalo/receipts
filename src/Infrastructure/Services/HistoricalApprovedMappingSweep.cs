@@ -37,7 +37,6 @@ internal sealed class HistoricalApprovedMappingSweep(IDbContextFactory<Applicati
 		if (sweep == null)
 		{
 			sweep = new() { Id = request.SweepId, RequestHash = intentHash, RestoreGeneration = request.ExpectedRestoreGeneration };
-			sweeps.Add(sweep);
 		}
 		else if (sweep.RestoreGeneration != request.ExpectedRestoreGeneration ||
 				 sweep.RequestHash != intentHash)
@@ -67,16 +66,15 @@ internal sealed class HistoricalApprovedMappingSweep(IDbContextFactory<Applicati
 			await tx.RollbackToSavepointAsync("capture_page", ct);
 			db.ChangeTracker.Clear();
 			sweep = await sweeps.SingleOrDefaultAsync(x => x.Id == request.SweepId, ct);
-			if (sweep == null)
-			{
-				sweep = new() { Id = request.SweepId, RequestHash = intentHash, RestoreGeneration = request.ExpectedRestoreGeneration };
-				sweeps.Add(sweep);
-			}
+			// An initial no-op scan has no durable identity. Existing sweeps still
+			// retain their completed checkpoint and intent/idempotence checks.
+			if (sweep == null) { return new(null, 0, true); }
 			sweep.PendingOperationId = null;
 			sweep.Completed = true;
 		}
 		else
 		{
+			if (db.Entry(sweep).State == EntityState.Detached) { sweeps.Add(sweep); }
 			sweep.Cursor = await db.HistoricalOperationItems.Where(x => x.OperationId == operationId)
 				.OrderByDescending(x => x.ItemId).Select(x => x.ItemId).FirstAsync(ct);
 			sweep.PendingOperationId = operationId;

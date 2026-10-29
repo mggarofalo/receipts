@@ -1,8 +1,12 @@
+using System.Data.Common;
 using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
+using Infrastructure.Entities.Taxonomy;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SampleData.Entities;
@@ -13,6 +17,102 @@ public sealed partial class ClassificationTests
 {
 	private ApprovedMappingBackgroundWorker MappingWorker(bool enabled = true) => new(new Factory(fixture), TimeProvider.System,
 		Options.Create(new ClassificationOptions { WritesEnabled = enabled }), NullLogger<ApprovedMappingBackgroundWorker>.Instance);
+
+	[Theory]
+	[InlineData("none")]
+	[InlineData("failure")]
+	[InlineData("timeout")]
+	public async Task BackgroundMappingRotatesUnfinishedSourcesAfterEachBoundedPass(string failure)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingFairnessCore(failure);
+	}
+
+	private sealed class MappingPassFailure(string failure) : DbCommandInterceptor
+	{
+		private int gates;
+		public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command,
+			CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+		{
+			if (command.CommandText.Contains("pg_advisory_xact_lock") && command.Parameters.Count == 2 &&
+				++gates == 2)
+			{
+				if (failure == "failure") { throw new InvalidOperationException("Injected apply failure"); }
+				if (failure == "timeout") { throw new OperationCanceledException("Injected pass timeout"); }
+			}
+			return ValueTask.FromResult(result);
+		}
+	}
+
+	private sealed class MappingFailureFactory(PostgresFixture database, MappingPassFailure failure)
+		: IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(database.CreateOptions())
+			.AddInterceptors(failure).Options);
+	}
+
+	private async Task BackgroundMappingFairnessCore(string failure)
+	{
+		var captured = await CaptureExecutableAsync();
+		await using var db = fixture.CreateDbContext();
+		var original = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == captured.Item);
+		string otherDescription = "fairness-" + Guid.NewGuid();
+		var items = Enumerable.Range(0, 410).Select(n =>
+		{
+			var item = ReceiptItemEntityGenerator.Generate(original.ReceiptId);
+			item.Description = n < 205 ? original.Description : otherDescription;
+			item.ReceiptItemCode = original.ReceiptItemCode;
+			item.Category = ""; item.Subcategory = null;
+			return item;
+		}).ToList();
+		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).CreateAsync(items, default);
+		var source = new NormalizationSourceKey(captured.Request.Group.Store, otherDescription, original.ReceiptItemCode);
+		var other = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
+			new(source, NormalizationCatalogPolicy.Hash(source), null, captured.Request.TaxonomyRevisionId,
+				captured.Category, Guid.NewGuid(), "Approve second source"));
+		using var worker = new ApprovedMappingBackgroundWorker(new MappingFailureFactory(fixture, new(failure)), TimeProvider.System,
+			Options.Create(new ClassificationOptions { WritesEnabled = true }), NullLogger<ApprovedMappingBackgroundWorker>.Instance);
+		if (failure == "none") { await worker.RunOnceAsync(); }
+		else if (failure == "failure") { await Assert.ThrowsAsync<InvalidOperationException>(() => worker.RunOnceAsync()); }
+		else { await Assert.ThrowsAsync<OperationCanceledException>(() => worker.RunOnceAsync()); }
+		Guid first = await db.Set<HistoricalMappingSweepEntity>().Join(db.HistoricalOperations,
+			x => x.PendingOperationId, x => x.Id, (sweep, operation) => operation.ApprovedMappingRevisionId!.Value).SingleAsync();
+		Guid second = first == other.Id ? captured.Request.MappingRevisionId : other.Id;
+		await worker.RunOnceAsync();
+		(await db.HistoricalOperationItems.CountAsync(x => x.ApprovedMappingRevisionId == second && x.AppliedAssignmentId != null))
+			.Should().Be(100, "the other source gets a turn while the first has unfinished work");
+		await worker.RunOnceAsync();
+		(await db.HistoricalOperationItems.CountAsync(x => x.ApprovedMappingRevisionId == first && x.AppliedAssignmentId != null))
+			.Should().Be(failure == "none" ? 200 : 100, "the first source resumes its frozen page after yielding");
+	}
+
+	[Fact]
+	public async Task BackgroundMappingRepeatedIdleScansDoNotGrowDurableHistory()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingIdleCore();
+	}
+
+	private async Task BackgroundMappingIdleCore()
+	{
+		await CaptureExecutableAsync();
+		using var worker = MappingWorker();
+		await worker.RunOnceAsync();
+		await worker.RunOnceAsync();
+		await using var db = fixture.CreateDbContext();
+		int sweeps = await db.Set<HistoricalMappingSweepEntity>().CountAsync();
+		int operations = await db.HistoricalOperations.CountAsync();
+		int items = await db.HistoricalOperationItems.CountAsync();
+		for (int n = 0; n < 20; n++)
+		{
+			await worker.RunOnceAsync();
+			using var restarted = MappingWorker();
+			await restarted.RunOnceAsync();
+		}
+		(await db.Set<HistoricalMappingSweepEntity>().CountAsync()).Should().Be(sweeps);
+		(await db.HistoricalOperations.CountAsync()).Should().Be(operations);
+		(await db.HistoricalOperationItems.CountAsync()).Should().Be(items);
+	}
 
 	[Fact]
 	public async Task BackgroundMappingResumesPagesWithoutProviderAndPublicUndoPreservesManualClear()

@@ -46,11 +46,23 @@ public sealed class ApprovedMappingBackgroundWorker(
 		if (!options.Value.WritesEnabled) { return; }
 		await using var db = await factory.CreateDbContextAsync(ct);
 		Guid generation = await db.CategoryAssistanceSettings.AsNoTracking().Select(x => x.RestoreGeneration).SingleAsync(ct);
-		var pending = await (from sweep in db.Set<HistoricalMappingSweepEntity>().AsNoTracking()
-							 join operation in db.HistoricalOperations.AsNoTracking() on sweep.PendingOperationId equals operation.Id
-							 where !sweep.Completed && sweep.RestoreGeneration == generation
-							 orderby operation.CapturedAt, operation.Id
-							 select new { Sweep = sweep, Operation = operation }).FirstOrDefaultAsync(ct);
+		var pendingQuery = from sweep in db.Set<HistoricalMappingSweepEntity>().AsNoTracking()
+						   join operation in db.HistoricalOperations.AsNoTracking() on sweep.PendingOperationId equals operation.Id
+						   where !sweep.Completed && sweep.RestoreGeneration == generation
+						   select new { Sweep = sweep, Operation = operation };
+		var sources = (from head in db.CategoryMappingHeads.AsNoTracking()
+					   join revision in db.CategoryMappingRevisions.AsNoTracking() on head.RevisionId equals revision.Id
+					   where revision.CategoryId != null
+					   select revision.Id)
+			.Union(pendingQuery.Select(x => x.Operation.ApprovedMappingRevisionId!.Value));
+		Guid? mappingId = await sources.Where(id => !mappingCursor.HasValue || id.CompareTo(mappingCursor.Value) > 0)
+			.OrderBy(id => id).Select(id => (Guid?)id).FirstOrDefaultAsync(ct);
+		mappingId ??= await sources.OrderBy(id => id).Select(id => (Guid?)id).FirstOrDefaultAsync(ct);
+		if (mappingId == null) { mappingCursor = null; return; }
+		// Rotate before any capture/apply: even a failed or timed-out source yields its turn.
+		mappingCursor = mappingId;
+		var pending = await pendingQuery.Where(x => x.Operation.ApprovedMappingRevisionId == mappingId)
+			.OrderBy(x => x.Operation.CapturedAt).ThenBy(x => x.Operation.Id).FirstOrDefaultAsync(ct);
 		ApprovedMappingSweepRequest request;
 		if (pending != null)
 		{
@@ -72,13 +84,7 @@ public sealed class ApprovedMappingBackgroundWorker(
 		}
 		else
 		{
-			var mapping = await (from head in db.CategoryMappingHeads.AsNoTracking()
-								 join revision in db.CategoryMappingRevisions.AsNoTracking() on head.RevisionId equals revision.Id
-								 where revision.CategoryId != null && (!mappingCursor.HasValue || revision.Id.CompareTo(mappingCursor.Value) > 0)
-								 orderby revision.Id
-								 select revision).FirstOrDefaultAsync(ct);
-			if (mapping == null) { mappingCursor = null; return; }
-			mappingCursor = mapping.Id;
+			var mapping = await db.CategoryMappingRevisions.AsNoTracking().SingleAsync(x => x.Id == mappingId, ct);
 			Guid taxonomy = await db.TaxonomyHeads.AsNoTracking().Select(x => x.RevisionId).SingleAsync(ct);
 			request = new(Guid.NewGuid(), mapping.Actor, taxonomy, mapping.Id,
 				new(mapping.Location, mapping.Description, mapping.ItemCode), [], generation);
