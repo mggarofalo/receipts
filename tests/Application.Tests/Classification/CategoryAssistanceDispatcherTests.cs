@@ -208,7 +208,7 @@ public class CategoryAssistanceDispatcherTests
 		CategoryAssistanceDispatchClaim claim = ArrangeStartedClaim();
 		CategorySuggestion suggestion = Suggestion();
 		CategorySuggestion verified = suggestion with { SelectedPathSupport = 0.7 };
-		store.Setup(x => x.TryStartSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), 10, 5, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), suggestion, It.IsAny<CancellationToken>())).ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Authorized);
 		provider.Setup(x => x.VerifySelectedAsync(work.Request, suggestion, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new CategorySuggestionResult(verified, null));
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
@@ -300,8 +300,8 @@ public class CategoryAssistanceDispatcherTests
 		var baseline = Suggestion();
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new CategorySuggestionResult(baseline, null));
-		store.Setup(x => x.TryStartSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), 10, 5, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(authorized);
+		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(authorized ? CategoryAssistanceSecondDispatchDecision.Authorized : CategoryAssistanceSecondDispatchDecision.Rejected);
 		if (authorized)
 		{
 			provider.Setup(x => x.VerifySelectedAsync(work.Request, baseline, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
@@ -317,6 +317,44 @@ public class CategoryAssistanceDispatcherTests
 		Assert.Null(saved.Suggestion);
 		provider.Verify(x => x.VerifySelectedAsync(work.Request, baseline, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()),
 			authorized ? Times.Once : Times.Never);
+	}
+
+	[Fact]
+	public async Task StagedDecisionLeavesClaimQueuedWithoutCompletingOrVerifying()
+	{
+		var claim = ArrangeStartedClaim();
+		var baseline = Suggestion();
+		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new CategorySuggestionResult(baseline, null));
+		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Staged);
+		Assert.True(await Dispatcher().DispatchOneAsync());
+		store.Verify(x => x.CompleteAsync(It.IsAny<CategoryAssistanceDispatchClaim>(), It.IsAny<CategoryAssistanceCompletion>(),
+			It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()), Times.Never);
+		provider.Verify(x => x.VerifySelectedAsync(It.IsAny<CategorySuggestionRequest>(), It.IsAny<CategorySuggestion>(),
+			It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task ResumedClaimVerifiesWithoutSendingBaselineAgain()
+	{
+		var baseline = Suggestion();
+		var staged = work with { StagedBaseline = baseline };
+		Queue(staged);
+		var ready = Ready();
+		capabilities.Setup(x => x.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync(ready);
+		provider.SetupGet(x => x.IsAvailable).Returns(true);
+		var claim = new CategoryAssistanceDispatchClaim(staged, Guid.NewGuid());
+		store.Setup(x => x.TryStartDispatchAsync(staged, ready, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(claim);
+		provider.Setup(x => x.VerifySelectedAsync(staged.Request, baseline, staged.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new CategorySuggestionResult(baseline with { SelectedPathSupport = 0.9 }, null));
+		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), ready, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+		await Dispatcher().DispatchOneAsync();
+		provider.Verify(x => x.SuggestAsync(It.IsAny<CategorySuggestionRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+		store.Verify(x => x.TryStartOrStageSecondDispatchAsync(It.IsAny<CategoryAssistanceDispatchClaim>(), It.IsAny<CategoryAssistanceCapability>(),
+			It.IsAny<CategorySuggestion>(), It.IsAny<CancellationToken>()), Times.Never);
+		store.Verify(x => x.CompleteAsync(claim, It.Is<CategoryAssistanceCompletion>(c => c.Outcome == CategoryAssistanceAttemptOutcome.Suggested),
+			ready, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	private CategoryAssistanceDispatchClaim ArrangeStartedClaim()

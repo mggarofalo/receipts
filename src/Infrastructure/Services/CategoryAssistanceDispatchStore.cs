@@ -177,6 +177,8 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		await using var tx = await db.Database.BeginTransactionAsync(ct);
 		var head = await LockHeadAsync(db, ct);
 		var settings = await LockSettingsAsync(db, ct);
+		// The caller timestamp may predate lock contention, midnight, or claim expiry.
+		now = clock.GetUtcNow();
 		await ExpireAsync(db, now, ct);
 		var row = await db.CategoryAssistanceAttempts.SingleOrDefaultAsync(x => x.Id == work.AttemptId
 			&& x.State == "queued" && x.ClaimToken == work.QueueClaimToken && x.LeaseExpiresAt > now, ct);
@@ -215,14 +217,15 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 
 	public async Task<bool> TryStartSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
 		CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens, CancellationToken ct)
-				=> await DecideSecondAsync(claim, capability, firstInputTokens, firstOutputTokens, null, ct);
+				=> await DecideSecondAsync(claim, capability, firstInputTokens, firstOutputTokens, null, ct)
+			== CategoryAssistanceSecondDispatchDecision.Authorized;
 
-	public async Task<bool> TryStartOrStageSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+	public async Task<CategoryAssistanceSecondDispatchDecision> TryStartOrStageSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
 			CategoryAssistanceCapability capability, CategorySuggestion baseline, CancellationToken ct)
 			=> await DecideSecondAsync(claim, capability, baseline.Provenance.InputTokens,
 					baseline.Provenance.OutputTokens, baseline, ct);
 
-	private async Task<bool> DecideSecondAsync(CategoryAssistanceDispatchClaim claim,
+	private async Task<CategoryAssistanceSecondDispatchDecision> DecideSecondAsync(CategoryAssistanceDispatchClaim claim,
 			CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens,
 			CategorySuggestion? baseline, CancellationToken ct)
 	{
@@ -239,7 +242,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		var row = await db.CategoryAssistanceAttempts.SingleOrDefaultAsync(x => x.Id == claim.Work.AttemptId
 			&& (x.State == "dispatching" || x.State == "indeterminate") && x.DispatchToken == claim.ClaimToken
 			&& x.SecondStageDecidedAt == null, ct);
-		if (row == null) { await tx.CommitAsync(ct); return false; }
+		if (row == null) { await tx.CommitAsync(ct); return CategoryAssistanceSecondDispatchDecision.Rejected; }
 
 		// Record usage even on denial; a repeated call must not change the decision.
 		row.FirstStageInputTokens = firstInputTokens;
@@ -248,6 +251,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		bool allowed = row.State == "dispatching" && row.ClaimToken == claim.ClaimToken && row.LeaseExpiresAt > now
 			&& CategoryAssistancePolicy.CanSuggest(CategoryAssistanceSettingsStore.Read(settings), capability)
 			&& await CurrentAsync(db, row, head.RevisionId, settings, ct);
+		bool staged = false;
 		if (allowed)
 		{
 			DateOnly day = DateOnly.FromDateTime(now.UtcDateTime);
@@ -257,6 +261,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 				allowed = false;
 				if (baseline != null)
 				{
+					staged = true;
 					row.ResultJson = StagedPrefix + JsonSerializer.Serialize(baseline);
 					row.State = "queued"; row.ClaimToken = null; row.LeaseExpiresAt = null;
 					row.NextEligibleAt = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1), TimeSpan.Zero);
@@ -273,7 +278,8 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		}
 		await db.SaveChangesAsync(ct);
 		await tx.CommitAsync(ct);
-		return allowed;
+		return allowed ? CategoryAssistanceSecondDispatchDecision.Authorized
+			: staged ? CategoryAssistanceSecondDispatchDecision.Staged : CategoryAssistanceSecondDispatchDecision.Rejected;
 	}
 
 	public async Task CompleteAsync(CategoryAssistanceDispatchClaim claim, CategoryAssistanceCompletion completion,

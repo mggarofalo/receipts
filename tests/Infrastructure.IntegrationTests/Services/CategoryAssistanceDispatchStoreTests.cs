@@ -19,6 +19,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
+using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
@@ -43,6 +44,52 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 	{
 		public DateTimeOffset Now { get; set; } = now;
 		public override DateTimeOffset GetUtcNow() => Now;
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task DispatchAdmissionUsesClockAfterWaitingForLock(bool leaseExpires)
+	{
+		await SeedAsync("locked admission " + Guid.NewGuid(), 1);
+		var before = new DateTimeOffset(2026, 10, 28, 23, 59, 30, TimeSpan.Zero);
+		var clock = new MutableClock(before);
+		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
+		var work = (await store.ClaimQueuedAsync(default))!;
+		await using var locker = fixture.CreateDbContext();
+		await using var tx = await locker.Database.BeginTransactionAsync();
+		await locker.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\"=1 FOR UPDATE").SingleAsync();
+		var admission = store.TryStartDispatchAsync(work, Ready, before, default);
+		await using var observer = new NpgsqlConnection(fixture.ConnectionString);
+		await observer.OpenAsync();
+		await using var waiting = new NpgsqlCommand("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%taxonomy.%Head%FOR UPDATE%'", observer);
+		bool blocked = false;
+		for (int i = 0; i < 200; i++)
+		{
+			if ((long)(await waiting.ExecuteScalarAsync())! > 0) { blocked = true; break; }
+			await Task.Delay(20);
+		}
+		blocked.Should().BeTrue("the admission must be waiting before the clock advances");
+		clock.Now = leaseExpires ? before.AddMinutes(3) : before.AddSeconds(40);
+		await tx.CommitAsync();
+		var claim = await admission;
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		if (leaseExpires)
+		{
+			claim.Should().BeNull();
+			row.State.Should().Be("queued");
+			(await verify.CategoryAssistanceDailyUsage.CountAsync()).Should().Be(0);
+		}
+		else
+		{
+			claim.Should().NotBeNull();
+			row.DebitUtcDay.Should().Be(new DateOnly(2026, 10, 29));
+			row.LeaseExpiresAt.Should().Be(clock.Now.AddMinutes(2));
+			var usage = await verify.CategoryAssistanceDailyUsage.SingleAsync();
+			usage.UtcDay.Should().Be(new DateOnly(2026, 10, 29));
+			usage.DispatchAttempts.Should().Be(1);
+		}
 	}
 
 	[Fact]
@@ -79,7 +126,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		var baseline = new CategorySuggestion(category.Id, CategorySuggestionPolicy.PathFor(firstWork.Request, category.Id), null,
 				0.9, 0.8, 0.8, new(firstWork.Provider, firstWork.Model, firstWork.QuestionPolicyVersion,
 						firstWork.Request.TaxonomyRevision, 8, 2));
-		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().BeFalse();
+		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Staged);
 		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed), Ready, default);
 		await using (var db = fixture.CreateDbContext())
 		{
@@ -125,8 +172,8 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		var baseline = new CategorySuggestion(category.Id, CategorySuggestionPolicy.PathFor(work.Request, category.Id), null,
 				0.9, 0.8, 0.8, new(work.Provider, work.Model, work.QuestionPolicyVersion,
 						work.Request.TaxonomyRevision, 8, 2));
-		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().BeFalse();
-		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().BeFalse();
+		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Staged);
+		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Rejected);
 		await Connection().InvalidateAsync();
 		clock.Now = clock.Now.AddDays(1);
 		(await store.ClaimQueuedAsync(default)).Should().BeNull();
@@ -158,7 +205,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		var baseline = new CategorySuggestion(category.Id, CategorySuggestionPolicy.PathFor(work.Request, category.Id), null,
 				0.9, 0.8, 0.8, new(work.Provider, work.Model, work.QuestionPolicyVersion,
 						work.Request.TaxonomyRevision, 8, 2));
-		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().BeFalse();
+		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Staged);
 		clock.Now = new DateTimeOffset(2026, 10, 29, 0, 0, 0, TimeSpan.Zero);
 		CategoryAssistanceQueuedWork? resumed = corruptAfterClaim ? await store.ClaimQueuedAsync(default) : null;
 		if (corruptAfterClaim) { resumed.Should().NotBeNull(); }
@@ -478,7 +525,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 
 	[Theory]
 	[InlineData("second-fails", 100, 2, "failed")]
-	[InlineData("daily-cap", 1, 1, "failed")]
+	[InlineData("daily-cap", 1, 1, "queued")]
 	[InlineData("revoked", 100, 1, "stale")]
 	public async Task ComposedWorkerNeverPublishesBaselineWhenSecondStageFails(string scenario, int limit, int calls, string state)
 	{
@@ -522,12 +569,70 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			completion!.Outcome.Should().Be(CategoryAssistanceAttemptOutcome.Failed);
 			completion.Suggestion.Should().BeNull();
 		}
+		else if (state == "queued")
+		{
+			row.ResultJson.Should().StartWith("selected-baseline-v1:");
+		}
 		else
 		{
 			row.ResultJson.Should().BeNull();
 		}
 
 		(await db.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(calls);
+	}
+
+	[Fact]
+	public async Task WorkerResumesSelectedVerificationOnNextUtcDayWithoutPublishingBaseline()
+	{
+		var seed = await SeedAsync("worker rollover " + Guid.NewGuid(), 1);
+		var clock = new MutableClock(new DateTimeOffset(2026, 10, 28, 12, 0, 0, TimeSpan.Zero));
+		var handler = new CountingSuggestionHandler(seed.CategoryId);
+		var options = new JevOptions { Enabled = true, ApiKey = "jev-test-key" };
+		var monitor = new Mock<IOptionsMonitor<JevOptions>>();
+		monitor.SetupGet(x => x.CurrentValue).Returns(options);
+		var coordinator = Connection();
+		var factory = new Factory(fixture);
+		var store = new CategoryAssistanceDispatchStore(factory, clock);
+		ServiceCollection registrations = new();
+		registrations.AddSingleton<ICategoryAssistanceSettingsStore>(Settings());
+		registrations.AddSingleton<ICategoryAssistanceConnectionReconciler>(coordinator);
+		registrations.AddSingleton<ICategoryAssistanceConnectionBinding>(coordinator);
+		registrations.AddSingleton<ICategoryAssistanceDispatchStore>(store);
+		registrations.AddSingleton<IOptionsMonitor<JevOptions>>(monitor.Object);
+		registrations.AddSingleton(new JevSuggestionConcurrency());
+		registrations.AddSingleton(new HttpClient(handler));
+		registrations.AddSingleton<JevSuggestionProvider>();
+		registrations.AddSingleton<JevCategoryAssistanceSelectedProvider>();
+		registrations.AddSingleton<ICategoryAssistanceSelectedProvider>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+		registrations.AddSingleton<ICategoryAssistanceCapabilitySource>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+		registrations.AddSingleton<TimeProvider>(clock);
+		registrations.AddScoped<CategoryAssistanceDispatcher>();
+		using ServiceProvider services = registrations.BuildServiceProvider();
+		var worker = new CategoryAssistanceWorker(services.GetRequiredService<IServiceScopeFactory>(), monitor.Object,
+			NullLogger<CategoryAssistanceWorker>.Instance);
+		(await worker.RunOnceAsync()).Should().BeTrue();
+		handler.Calls.Should().Be(1);
+		Guid attemptId;
+		await using (var db = fixture.CreateDbContext())
+		{
+			var row = await db.CategoryAssistanceAttempts.SingleAsync(x => x.ItemId == seed.ItemId);
+			attemptId = row.Id;
+			row.State.Should().Be("queued");
+			row.FirstStageInputTokens.Should().Be(1);
+		}
+		var reads = new CategoryAssistanceReadStore(factory, clock);
+		(await reads.GetSuggestionAsync(attemptId, default)).Should().BeNull();
+		(await reads.ListSuggestionsAsync(0, 10, default)).Total.Should().Be(0);
+		(await worker.RunOnceAsync()).Should().BeFalse();
+		clock.Now = new DateTimeOffset(2026, 10, 29, 0, 0, 0, TimeSpan.Zero);
+		(await worker.RunOnceAsync()).Should().BeTrue();
+		handler.Calls.Should().Be(2);
+		await using var verify = fixture.CreateDbContext();
+		var completed = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == attemptId);
+		completed.State.Should().Be("suggested");
+		JsonSerializer.Deserialize<CategoryAssistanceCompletion>(completed.ResultJson!)!.Suggestion!.SelectedPathSupport.Should().Be(0.9);
+		(await verify.CategoryAssistanceDailyUsage.OrderBy(x => x.UtcDay).Select(x => x.DispatchAttempts).ToArrayAsync()).Should().Equal(1, 1);
+		(await reads.GetSuggestionAsync(attemptId, default)).Should().NotBeNull();
 	}
 
 	private sealed class CountingSuggestionHandler(Guid categoryId, bool failSecond = false, Func<Task>? afterFirst = null) : HttpMessageHandler

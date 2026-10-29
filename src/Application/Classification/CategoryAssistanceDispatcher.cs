@@ -17,6 +17,7 @@ public sealed record CategoryAssistanceDispatchClaim(CategoryAssistanceQueuedWor
 public enum CategoryAssistanceAttemptOutcome { Suggested, Abstained, Failed, Stale, Indeterminate }
 public sealed record CategoryAssistanceCompletion(CategoryAssistanceAttemptOutcome Outcome,
 	CategorySuggestion? Suggestion = null, SuggestionFailure? Failure = null);
+public enum CategoryAssistanceSecondDispatchDecision { Authorized, Staged, Rejected }
 public enum CategoryAssistanceQueuedDeferral { CapabilityUnavailable, StartRejected }
 
 public static class CategoryAssistanceQueuePolicy
@@ -68,7 +69,7 @@ public interface ICategoryAssistanceDispatchStore
 		CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens, CancellationToken ct);
 
 	/// <summary>As above, but retain an already validated baseline for next-day retry when only the daily cap prevents the selected send.</summary>
-	Task<bool> TryStartOrStageSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+	Task<CategoryAssistanceSecondDispatchDecision> TryStartOrStageSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
 			CategoryAssistanceCapability capability, CategorySuggestion baseline, CancellationToken ct);
 
 	/// <summary>
@@ -159,36 +160,44 @@ public sealed class CategoryAssistanceDispatcher(
 		try
 		{
 			ct.ThrowIfCancellationRequested();
-			CategorySuggestionResult result = await provider.SuggestAsync(claim.Work.Request,
-				claim.Work.Fence.ConnectionGeneration, ct);
-			completion = ValidateResult(claim.Work, result, requireSelectedSupport: false);
+			CategorySuggestion? baseline = claim.Work.StagedBaseline;
+			if (baseline is not null)
+			{
+				completion = IsValidStagedBaseline(claim.Work, baseline)
+					? new(CategoryAssistanceAttemptOutcome.Suggested, baseline)
+					: new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidInput);
+			}
+			else
+			{
+				var first = await provider.SuggestAsync(claim.Work.Request, claim.Work.Fence.ConnectionGeneration, ct);
+				completion = ValidateResult(claim.Work, first, requireSelectedSupport: false);
+				baseline = completion.Suggestion;
+				if (completion.Outcome == CategoryAssistanceAttemptOutcome.Suggested)
+				{
+					var decision = await store.TryStartOrStageSecondDispatchAsync(claim, capability, baseline!, ct);
+					if (decision == CategoryAssistanceSecondDispatchDecision.Staged) { return true; }
+					if (decision != CategoryAssistanceSecondDispatchDecision.Authorized)
+					{
+						completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Disabled);
+					}
+				}
+			}
 			if (completion.Outcome == CategoryAssistanceAttemptOutcome.Suggested)
 			{
-				var baseline = completion.Suggestion!;
-				bool authorized = await store.TryStartSecondDispatchAsync(claim, capability,
-						baseline.Provenance.InputTokens, baseline.Provenance.OutputTokens, ct);
-				if (!authorized)
+				ct.ThrowIfCancellationRequested();
+				var result = await provider.VerifySelectedAsync(claim.Work.Request, baseline!, claim.Work.Fence.ConnectionGeneration, ct);
+				completion = ValidateResult(claim.Work, result, requireSelectedSupport: true);
+				if (completion.Suggestion is { } verified &&
+					(verified.FitProbability != baseline!.FitProbability ||
+					 verified.CategoryProbability != baseline.CategoryProbability ||
+					 verified.Confidence != baseline.Confidence ||
+					 verified.ProbabilityScope != baseline.ProbabilityScope ||
+					 verified.Provenance.InputTokens < baseline.Provenance.InputTokens ||
+					 verified.Provenance.OutputTokens < baseline.Provenance.OutputTokens ||
+					 (verified.CategoryId is not null && (verified.CategoryId != baseline.CategoryId ||
+						!verified.Path.SequenceEqual(baseline.Path)))))
 				{
-					completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Disabled);
-				}
-				else
-				{
-					ct.ThrowIfCancellationRequested();
-					result = await provider.VerifySelectedAsync(claim.Work.Request, baseline,
-							claim.Work.Fence.ConnectionGeneration, ct);
-					completion = ValidateResult(claim.Work, result, requireSelectedSupport: true);
-					if (completion.Suggestion is { } verified &&
-							(verified.FitProbability != baseline.FitProbability ||
-							 verified.CategoryProbability != baseline.CategoryProbability ||
-							 verified.Confidence != baseline.Confidence ||
-							 verified.ProbabilityScope != baseline.ProbabilityScope ||
-							 verified.Provenance.InputTokens < baseline.Provenance.InputTokens ||
-							 verified.Provenance.OutputTokens < baseline.Provenance.OutputTokens ||
-							 (verified.CategoryId is not null && (verified.CategoryId != baseline.CategoryId ||
-									!verified.Path.SequenceEqual(baseline.Path)))))
-					{
-						completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
-					}
+					completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
 				}
 			}
 		}
