@@ -111,6 +111,11 @@ public sealed partial class ClassificationTests
 		(await Assert.ThrowsAsync<Application.Taxonomy.TaxonomyException>(() => sweep.NextAsync(request with { Actor = "another" }))).Status.Should().Be(409);
 		// A later sweep revisits the protected items without reapplying the manual clear.
 		var laterRequest = request with { SweepId = Guid.NewGuid() };
+		(await sweep.NextAsync(laterRequest)).Count.Should().Be(0, "review exclusions are filtered before a new page is persisted");
+		var preference = await db.CategoryAssistanceReviewPreferences.SingleAsync();
+		preference.ExcludedItemIdsJson = "[]";
+		preference.Revision = Guid.NewGuid();
+		await db.SaveChangesAsync();
 		var later = await sweep.NextAsync(laterRequest);
 		later.Count.Should().Be(99);
 		var settings = await db.CategoryAssistanceSettings.SingleAsync();

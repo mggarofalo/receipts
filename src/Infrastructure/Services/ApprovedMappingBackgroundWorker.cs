@@ -18,7 +18,8 @@ public sealed class ApprovedMappingBackgroundWorker(
 	IOptions<ClassificationOptions> options, ILogger<ApprovedMappingBackgroundWorker> logger,
 	ICommittedChangePublisher? publisher = null) : BackgroundService
 {
-	private Guid? mappingCursor;
+	// Vary the first source across restarts; subsequent passes rotate deterministically.
+	private Guid? mappingCursor = Guid.NewGuid();
 	private sealed record Selection(HistoricalGroupKey Group, Guid TargetCategoryId, Guid[] ExcludedItemIds);
 
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)

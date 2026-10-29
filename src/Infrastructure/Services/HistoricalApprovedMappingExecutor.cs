@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Application.Normalization;
 using Application.Taxonomy;
-using Infrastructure.Entities.CategoryAssistance;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
@@ -75,14 +74,8 @@ internal sealed class HistoricalApprovedMappingExecutor(
 			var source = NormalizationCatalogPolicy.Normalize(new(row.Store, row.RawDescription, row.ItemCode));
 			string fingerprint = NormalizationCatalogPolicy.Hash(source);
 			var resolution = await CategoryMappingService.ResolveInTransactionAsync(db, source, fingerprint, head.RevisionId, null, ct);
-			var preferences = await db.CategoryAssistanceReviewPreferences.FromSqlInterpolated($"""
-                SELECT * FROM category_assistance."ReviewPreferences"
-                WHERE md5("Location" || chr(31) || "Description" || chr(31) || "ItemCodeKey") =
-                    md5({source.Location} || chr(31) || {source.Description} || chr(31) || {source.ItemCode ?? ""})
-                  AND "Location" = {source.Location} AND "Description" = {source.Description}
-                  AND "ItemCodeKey" = {source.ItemCode ?? ""}
-                """).AsNoTracking().ToListAsync(ct);
-			bool protectedByPreference = preferences.Any(p => ProtectsItem(p, row.ItemId));
+			Guid[]? excludedItems = await HistoricalApprovedMappingReviewProtection.ExcludedItemsAsync(db, source, ct);
+			bool protectedByPreference = excludedItems == null || excludedItems.Contains(row.ItemId);
 			bool eligibleAssignment = assignment == null || (assignment.CategoryId == null &&
 				(assignment.Source == "legacy_import" || (assignment.Source == "legacy_write" && assignment.LegacyResolution == "unresolved_path")));
 			bool eligible = !deferred && !protectedByPreference && item != null && receipt != null &&
@@ -148,21 +141,6 @@ internal sealed class HistoricalApprovedMappingExecutor(
 			ExcludedItemIds = scope.ExcludedItemIds
 		})));
 		return hash == operation.RequestHash;
-	}
-
-	private static bool ProtectsItem(CategoryAssistanceReviewPreferenceEntity preference, Guid itemId)
-	{
-		if (string.IsNullOrWhiteSpace(preference.Actor) || preference.AttemptId == Guid.Empty || preference.Revision == Guid.Empty ||
-			preference.State is not ("active" or "later" or "left_as_is")) { return true; }
-		try
-		{
-			var ids = JsonSerializer.Deserialize<Guid[]>(preference.ExcludedItemIdsJson);
-			if (ids == null || ids.Length > 1000 || ids.Any(x => x == Guid.Empty) || ids.Distinct().Count() != ids.Length)
-			{ return true; }
-			return preference.State != "active" || ids.Contains(itemId);
-		}
-		catch (JsonException) { return true; }
-		catch (ArgumentNullException) { return true; }
 	}
 
 	private static async Task<HistoricalProgress> ProgressAsync(ApplicationDbContext db, HistoricalOperationEntity operation, CancellationToken ct)

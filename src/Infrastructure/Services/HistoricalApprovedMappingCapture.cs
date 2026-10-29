@@ -67,6 +67,11 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
 			NormalizationCatalogPolicy.Hash(source), head.RevisionId, null, ct);
 		if (resolution.Disposition != "approved" || resolution.MappingRevisionId != request.MappingRevisionId || resolution.CategoryId == null)
 		{ throw new TaxonomyException(409, "Approved mapping changed or is no longer valid."); }
+		// The write gate also serializes preference updates. Apply rechecks these
+		// protections under its own lock because a frozen page may outlive capture.
+		Guid[]? reviewExclusions = await HistoricalApprovedMappingReviewProtection.ExcludedItemsAsync(db, source, ct);
+		bool protectedSource = reviewExclusions == null;
+		Guid[] protectedItems = reviewExclusions ?? [];
 		var operation = new HistoricalOperationEntity
 		{
 			Id = request.OperationId,
@@ -98,6 +103,7 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
               AND i."Description" COLLATE "C" = {request.Group.RawDescription}
               AND i."ReceiptItemCode" COLLATE "C" IS NOT DISTINCT FROM {request.Group.ItemCode}
               AND NOT (i."Id" = ANY ({excluded}))
+              AND NOT {protectedSource} AND NOT (i."Id" = ANY ({protectedItems}))
               AND (CAST({after} AS uuid) IS NULL OR i."Id" > CAST({after} AS uuid))
               AND nullif(btrim(i."Category"), '') IS NULL AND nullif(btrim(i."Subcategory"), '') IS NULL
               AND (c."AssignmentId" IS NULL OR (a."CategoryId" IS NULL AND

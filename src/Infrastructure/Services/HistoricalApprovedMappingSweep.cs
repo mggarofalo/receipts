@@ -67,7 +67,8 @@ internal sealed class HistoricalApprovedMappingSweep(IDbContextFactory<Applicati
 			db.ChangeTracker.Clear();
 			sweep = await sweeps.SingleOrDefaultAsync(x => x.Id == request.SweepId, ct);
 			// An initial no-op scan has no durable identity. Existing sweeps still
-			// retain their completed checkpoint and intent/idempotence checks.
+			// retain their completed checkpoint and intent/idempotence checks. Reusing
+			// an empty scan ID may capture later eligible purchases; it is not a ledger.
 			if (sweep == null) { return new(null, 0, true); }
 			sweep.PendingOperationId = null;
 			sweep.Completed = true;

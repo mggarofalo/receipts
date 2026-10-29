@@ -2,6 +2,7 @@ using System.Data.Common;
 using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
+using Infrastructure.Entities.CategoryAssistance;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
@@ -84,6 +85,72 @@ public sealed partial class ClassificationTests
 		await worker.RunOnceAsync();
 		(await db.HistoricalOperationItems.CountAsync(x => x.ApprovedMappingRevisionId == first && x.AppliedAssignmentId != null))
 			.Should().Be(failure == "none" ? 200 : 100, "the first source resumes its frozen page after yielding");
+	}
+
+	[Theory]
+	[InlineData("active")]
+	[InlineData("later")]
+	[InlineData("left_as_is")]
+	[InlineData("malformed")]
+	public async Task BackgroundMappingProtectedSourceDoesNotGrowHistoryAcrossActors(string state)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingProtectedCore(state);
+	}
+
+	private async Task BackgroundMappingProtectedCore(string state)
+	{
+		var captured = await CaptureExecutableAsync();
+		await using var db = fixture.CreateDbContext();
+		var group = captured.Request.Group;
+		CategoryAssistanceReviewPreferenceEntity Preference(string actor, string store, string description, string code, string preferenceState) =>
+			new()
+			{
+				Actor = actor,
+				AttemptId = Guid.NewGuid(),
+				Revision = Guid.NewGuid(),
+				Location = store,
+				Description = description,
+				ItemCodeKey = code,
+				State = preferenceState,
+				ExcludedItemIdsJson = System.Text.Json.JsonSerializer.Serialize(new[] { captured.Item })
+			};
+		var protection = Preference("another-reviewer", group.Store, group.RawDescription, group.ItemCode ?? "",
+			state == "malformed" ? "active" : state);
+		if (state == "malformed") { protection.ExcludedItemIdsJson = "malformed"; }
+		db.CategoryAssistanceReviewPreferences.AddRange(protection,
+			Preference(Actor, group.Store + "-other", group.RawDescription, group.ItemCode ?? "", "later"),
+			Preference(Actor, group.Store, group.RawDescription + "-other", group.ItemCode ?? "", "left_as_is"),
+			Preference(Actor, group.Store, group.RawDescription, (group.ItemCode ?? "") + "-other", "later"));
+		await db.SaveChangesAsync();
+		var scan = new ApprovedMappingSweepRequest(Guid.NewGuid(), Actor, captured.Request.TaxonomyRevisionId,
+			captured.Request.MappingRevisionId, group, [], captured.Request.ExpectedRestoreGeneration);
+		var sweep = new HistoricalApprovedMappingSweep(new Factory(fixture), TimeProvider.System);
+		(await sweep.NextAsync(scan)).OperationId.Should().BeNull();
+		int sweeps = await db.Set<HistoricalMappingSweepEntity>().CountAsync();
+		int operations = await db.HistoricalOperations.CountAsync();
+		int items = await db.HistoricalOperationItems.CountAsync();
+		using var worker = MappingWorker();
+		for (int n = 0; n < 10; n++)
+		{
+			await worker.RunOnceAsync();
+			using var restarted = MappingWorker();
+			await restarted.RunOnceAsync();
+		}
+		(await db.Set<HistoricalMappingSweepEntity>().CountAsync()).Should().Be(sweeps);
+		(await db.HistoricalOperations.CountAsync()).Should().Be(operations);
+		(await db.HistoricalOperationItems.CountAsync()).Should().Be(items);
+		(await Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Id.Should().Be(captured.Assignment);
+		// Empty internal scans do not reserve their identity. Removing only the matching
+		// source's protection makes the same scan eligible, despite unrelated preferences.
+		protection.State = "active"; protection.ExcludedItemIdsJson = "[]"; protection.Revision = Guid.NewGuid();
+		await db.SaveChangesAsync();
+		var page = await sweep.NextAsync(scan);
+		page.Count.Should().Be(1);
+		(await sweep.NextAsync(scan)).Should().Be(page, "nonempty frozen pages retain their durable identity");
+		using var resumed = MappingWorker();
+		await resumed.RunOnceAsync();
+		(await Service().HistoryAsync(captured.Item, null, 1)).Items.Single().CategoryId.Should().Be(captured.Category);
 	}
 
 	[Fact]
