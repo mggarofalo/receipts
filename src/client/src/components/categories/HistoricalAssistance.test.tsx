@@ -12,6 +12,7 @@ import {
 } from "@/test/test-utils";
 import { QueryClientProvider } from "@tanstack/react-query";
 import mockClient, { resetMockClient } from "@/test/mock-api-client";
+import { findStorageMethodOwner } from "@/test/storage-spy";
 import { HistoricalAssistance } from "./HistoricalAssistance";
 import { AuthContext } from "@/contexts/auth-context";
 
@@ -334,7 +335,7 @@ it("restores an uncertain request after reload and cannot expand its selected gr
 
 it("does not submit when retry intent cannot be saved", async () => {
   const storage = vi
-    .spyOn(Storage.prototype, "setItem")
+    .spyOn(findStorageMethodOwner(sessionStorage, "setItem"), "setItem")
     .mockImplementation(() => {
       throw new DOMException("Quota exceeded", "QuotaExceededError");
     });
@@ -497,7 +498,7 @@ it.each([401, 403, 404, 408, 429, 502])(
 
 it("shows a storage clearing failure after acknowledgement while preserving a safe saved identity", async () => {
   const remove = vi
-    .spyOn(Storage.prototype, "removeItem")
+    .spyOn(findStorageMethodOwner(sessionStorage, "removeItem"), "removeItem")
     .mockImplementation(() => {
       throw new Error("blocked");
     });
@@ -700,7 +701,7 @@ it("polls pending progress and recent requests without repeating submission", as
 
 it("shows unreadable saved retry storage and prevents a potentially duplicate submission", async () => {
   const read = vi
-    .spyOn(Storage.prototype, "getItem")
+    .spyOn(findStorageMethodOwner(sessionStorage, "getItem"), "getItem")
     .mockImplementation((key) => {
       if (key === savedKey())
         throw new DOMException("Blocked", "SecurityError");
@@ -741,7 +742,7 @@ it.each(["{broken-json", JSON.stringify({ operationId: "lost-body" })])(
 it("reports cleanup failure when direct recovery confirms the saved operation", async () => {
   sessionStorage.setItem(savedKey(), JSON.stringify(savedBody()));
   const remove = vi
-    .spyOn(Storage.prototype, "removeItem")
+    .spyOn(findStorageMethodOwner(sessionStorage, "removeItem"), "removeItem")
     .mockImplementation(() => {
       throw new Error("Blocked");
     });

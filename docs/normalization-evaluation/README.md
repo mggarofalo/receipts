@@ -23,7 +23,7 @@ There are no quality scores or provider runs to report.
 
 ## Run the offline checks
 
-From the repository root, with Node 24:
+From the repository root, with Node 26:
 
 ```sh
 node scripts/validate-normalization-corpus.mjs

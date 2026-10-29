@@ -4,26 +4,27 @@ using System.Diagnostics;
 
 string repoRoot = GetRepoRoot();
 bool checkOnly = args.Length > 0 && args[0] == "--check";
-const string requiredNodeVersion = "v24.21.0";
-const string requiredNpmVersion = "11.19.0";
+// Same major line, at or above the floor. CI and Docker pin the exact versions.
+Version minimumNodeVersion = new(26, 13, 0);
+Version minimumNpmVersion = new(11, 20, 0);
 
 string? installedNodeVersion = await GetCommandOutputAsync("node", ["--version"], repoRoot);
-if (installedNodeVersion != requiredNodeVersion)
+if (!IsCompatible(installedNodeVersion?.TrimStart('v'), minimumNodeVersion))
 {
     Console.Error.WriteLine(
         installedNodeVersion is null
-            ? $"Node.js {requiredNodeVersion[1..]} is required but node was not found. Run 'nvm install {requiredNodeVersion[1..]} && nvm use {requiredNodeVersion[1..]}'."
-            : $"Node.js {requiredNodeVersion[1..]} is required, but {installedNodeVersion.TrimStart('v')} is active. Run 'nvm install {requiredNodeVersion[1..]} && nvm use {requiredNodeVersion[1..]}'.");
+            ? $"Node.js {minimumNodeVersion.Major}.x (>= {minimumNodeVersion}) is required but node was not found."
+            : $"Node.js {minimumNodeVersion.Major}.x (>= {minimumNodeVersion}) is required, but {installedNodeVersion.TrimStart('v')} is active.");
     return 1;
 }
 
 string? installedNpmVersion = await GetCommandOutputAsync("npm", ["--version"], repoRoot);
-if (installedNpmVersion != requiredNpmVersion)
+if (!IsCompatible(installedNpmVersion, minimumNpmVersion))
 {
     Console.Error.WriteLine(
         installedNpmVersion is null
-            ? $"npm {requiredNpmVersion} is required but npm was not found. Reinstall Node.js {requiredNodeVersion[1..]}."
-            : $"npm {requiredNpmVersion} is required, but {installedNpmVersion} is active. Reinstall Node.js {requiredNodeVersion[1..]}.");
+            ? $"npm {minimumNpmVersion.Major}.x (>= {minimumNpmVersion}) is required but npm was not found."
+            : $"npm {minimumNpmVersion.Major}.x (>= {minimumNpmVersion}) is required, but {installedNpmVersion} is active.");
     return 1;
 }
 
@@ -214,3 +215,8 @@ static string ResolveModelDirectory()
 
     return Path.Combine(root, "Receipts", "models", "BgeLargeEnV15");
 }
+
+static bool IsCompatible(string? installed, Version minimum) =>
+    Version.TryParse(installed, out Version? version)
+    && version.Major == minimum.Major
+    && version >= minimum;

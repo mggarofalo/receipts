@@ -5,7 +5,7 @@ workspaces also report zero production advisories with development packages omit
 
 ## Audit results
 
-All commands ran with the repository's pinned Node 24.21.0 and npm 11.19.0.
+All commands ran with Node 24.21.0 and npm 11.19.0, the versions pinned at the time.
 
 | Workspace | Before full audit | Before production audit | After full audit | After production audit |
 |---|---:|---:|---:|---:|

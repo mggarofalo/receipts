@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { findStorageMethodOwner } from "@/test/storage-spy";
 import { getPersistedPageSize, persistPageSize } from "./page-size";
 
 describe("getPersistedPageSize", () => {
@@ -44,7 +45,11 @@ describe("getPersistedPageSize", () => {
   );
 
   it("returns null when localStorage.getItem throws", () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    localStorage.setItem("table-page-size:receipts", "50");
+    vi.spyOn(
+      findStorageMethodOwner(localStorage, "getItem"),
+      "getItem",
+    ).mockImplementation(() => {
       throw new Error("storage disabled");
     });
     expect(getPersistedPageSize("receipts")).toBeNull();
@@ -74,10 +79,13 @@ describe("persistPageSize", () => {
   });
 
   it("does not throw when localStorage.setItem throws", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("quota exceeded");
-    });
+    const setItem = vi
+      .spyOn(findStorageMethodOwner(localStorage, "setItem"), "setItem")
+      .mockImplementation(() => {
+        throw new Error("quota exceeded");
+      });
     expect(() => persistPageSize("receipts", 25)).not.toThrow();
+    expect(setItem).toHaveBeenCalledWith("table-page-size:receipts", "25");
     vi.restoreAllMocks();
   });
 });

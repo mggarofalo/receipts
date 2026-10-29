@@ -3,10 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "packageManager": "npm@11.19.0",
+  "packageManager": "npm@11.20.0",
   "engines": {
-    "node": "24.21.0",
-    "npm": "11.19.0"
+    "node": ">=26.13.0 <27",
+    "npm": ">=11.20.0 <12"
   },
   "allowScripts": {
     "@sentry/cli@2.58.6": true,
@@ -76,7 +76,7 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/diff-match-patch": "^1.0.36",
-    "@types/node": "^24.10.1",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
