@@ -2757,6 +2757,32 @@ namespace Infrastructure.Migrations
                     b.ToTable("HistoricalGroupDispositions", "taxonomy");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalMappingSweepEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Completed")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("Cursor")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PendingOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestoreGeneration")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("HistoricalMappingSweeps", "taxonomy");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", b =>
                 {
                     b.Property<Guid>("Id")

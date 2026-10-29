@@ -16,6 +16,19 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
 {
 	internal async Task<int> CaptureAsync(ApprovedMappingCaptureRequest request, CancellationToken ct = default)
 	{
+		await using var db = await factory.CreateDbContextAsync(ct);
+		await using var transaction = await db.Database.BeginTransactionAsync(ct);
+		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
+		await HistoricalRestoreGeneration.RequireCurrentAsync(db, request.ExpectedRestoreGeneration, ct);
+		int count = await CapturePageInTransactionAsync(db, request, null, false, ct);
+		await transaction.CommitAsync(ct);
+		return count;
+	}
+
+	// Caller owns the write gate, restore fence, and transaction.
+	internal async Task<int> CapturePageInTransactionAsync(ApplicationDbContext db, ApprovedMappingCaptureRequest request,
+		Guid? after, bool paged, CancellationToken ct)
+	{
 		if (request.OperationId == Guid.Empty || request.TaxonomyRevisionId == Guid.Empty ||
 			request.MappingRevisionId == Guid.Empty || string.IsNullOrWhiteSpace(request.Actor) || request.Actor.Contains('\0') ||
 			request.Group == null || string.IsNullOrWhiteSpace(request.Group.Store) || string.IsNullOrWhiteSpace(request.Group.RawDescription) ||
@@ -30,10 +43,6 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
 		{ throw new TaxonomyException(400, "Source must exactly match the approved mapping key."); }
 		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
 		{ request.Actor, request.TaxonomyRevisionId, request.MappingRevisionId, request.Group, ExcludedItemIds = excluded })));
-		await using var db = await factory.CreateDbContextAsync(ct);
-		await using var tx = await db.Database.BeginTransactionAsync(ct);
-		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
-		await HistoricalRestoreGeneration.RequireCurrentAsync(db, request.ExpectedRestoreGeneration, ct);
 		var existing = await db.HistoricalOperations.SingleOrDefaultAsync(x => x.Id == request.OperationId, ct);
 		if (existing != null)
 		{
@@ -89,13 +98,14 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
               AND i."Description" COLLATE "C" = {request.Group.RawDescription}
               AND i."ReceiptItemCode" COLLATE "C" IS NOT DISTINCT FROM {request.Group.ItemCode}
               AND NOT (i."Id" = ANY ({excluded}))
+              AND (CAST({after} AS uuid) IS NULL OR i."Id" > CAST({after} AS uuid))
               AND nullif(btrim(i."Category"), '') IS NULL AND nullif(btrim(i."Subcategory"), '') IS NULL
               AND (c."AssignmentId" IS NULL OR (a."CategoryId" IS NULL AND
                    (a."Source" = 'legacy_import' OR (a."Source" = 'legacy_write' AND a."LegacyResolution" = 'unresolved_path'))))
-            LIMIT 101
+            ORDER BY i."Id"
+            LIMIT {(paged ? 100 : 101)}
             """, ct);
 		if (inserted > 100) { throw new TaxonomyException(400, "An exact source cannot capture more than 100 eligible purchases."); }
-		await tx.CommitAsync(ct);
 		return inserted;
 	}
 }
