@@ -7,6 +7,13 @@ internal static partial class PortableTaxonomyArchive
 	// Caller must hold the restore coordination lock and taxonomy head lock until commit.
 	// This method is read-only: no archived row is attached to the destination context.
 	internal static async Task PreflightDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
+				=> await PreflightDestinationCoreAsync(db, incoming, ct, candidate: false);
+
+	// Candidate validation is not wired to public import or restore.
+	internal static Task PreflightCandidateDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
+			=> PreflightDestinationCoreAsync(db, incoming, ct, candidate: true);
+
+	private static async Task PreflightDestinationCoreAsync(ApplicationDbContext db, State incoming, CancellationToken ct, bool candidate)
 	{
 		var existing = new State(await db.TaxonomyIdentities.AsNoTracking().ToListAsync(ct),
 			await db.TaxonomyHeads.AsNoTracking().ToListAsync(ct), await db.TaxonomyRevisions.AsNoTracking().ToListAsync(ct),
@@ -22,15 +29,21 @@ internal static partial class PortableTaxonomyArchive
 			MappingRevisions = await db.CategoryMappingRevisions.AsNoTracking().ToListAsync(ct),
 			MappingHeads = await db.CategoryMappingHeads.AsNoTracking().ToListAsync(ct)
 		};
-		ValidateDestination(existing, incoming);
+		ValidateDestination(existing, incoming, candidate);
 		await PreflightSourceRevisionsAsync(db, incoming, ct);
 	}
 
-	internal static void ValidateDestination(State existing, State incoming)
+	internal static void ValidateDestination(State existing, State incoming) => ValidateDestination(existing, incoming, candidate: false);
+
+	internal static void ValidateCandidateDestination(State existing, State incoming) => ValidateDestination(existing, incoming, candidate: true);
+
+	private static void ValidateDestination(State existing, State incoming, bool candidate)
 	{
-		Validate(existing); Validate(incoming);
+		if (candidate) { ValidateCandidate(existing); ValidateCandidate(incoming); }
+		else { Validate(existing); Validate(incoming); }
 		ValidateMappingDestination(existing, incoming);
-		ValidateHistoricalDestination(existing, incoming);
+		if (candidate) { ValidateHistoricalCandidateDestination(existing, incoming); }
+		else { ValidateHistoricalDestination(existing, incoming); }
 		// A destination is a strict prefix of the archive, including all immutable rows.
 		// Reject stale backups even when their head happens to share a revision ID.
 		Require(existing.Revisions.Count <= incoming.Revisions.Count, "Restore would rewind taxonomy head.");

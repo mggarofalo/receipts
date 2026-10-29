@@ -7,6 +7,109 @@ namespace Infrastructure.Tests.Services;
 public sealed partial class PortableTaxonomyArchiveTests
 {
 	[Fact]
+	public void CandidateDestination_LegacyOmissionRetainsMappingEvidenceForAutomaticHistory()
+	{
+		var (basis, header, item) = AutomaticState();
+		var existing = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
+		// v10 has neither mapping nor historical tables; restoration retains both.
+		var legacy = basis with { IncludesMappings = false, MappingRevisions = [], MappingHeads = [], IncludesHistorical = false };
+		PortableTaxonomyArchive.ValidateCandidateDestination(existing, legacy);
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateDestination(existing, legacy))
+				.Should().Throw<InvalidDataException>().WithMessage("*cannot be restored yet*");
+
+		// A format that does contain mappings must still preserve all existing evidence.
+		var missingMappings = legacy with { IncludesMappings = true };
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(existing, missingMappings))
+				.Should().Throw<InvalidDataException>();
+	}
+
+	[Fact]
+	public async Task CandidateReader_ValidatesCompleteSqliteArchive()
+	{
+		var (basis, header, item) = AutomaticState();
+		var state = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
+		await using var sqlite = new SqliteConnection("Data Source=:memory:");
+		await sqlite.OpenAsync();
+		await using var command = sqlite.CreateCommand();
+		command.CommandText = """
+                        CREATE TABLE taxonomy_archive(kind TEXT,id TEXT,payload TEXT);
+                        CREATE TABLE category_mapping_archive(kind TEXT,id TEXT,payload TEXT);
+                        CREATE TABLE historical_operation_archive(kind TEXT,id TEXT,payload TEXT);
+                        CREATE TABLE source_revision_archive(kind TEXT,id TEXT,revision TEXT);
+                        CREATE TABLE receipts(id TEXT); CREATE TABLE receipt_items(id TEXT);
+                        """;
+		await command.ExecuteNonQueryAsync();
+		async Task Write<T>(string table, string kind, T row, object key)
+		{
+			command.CommandText = $"INSERT INTO {table} VALUES($kind,$id,$payload)";
+			command.Parameters.Clear();
+			command.Parameters.AddWithValue("$kind", kind);
+			command.Parameters.AddWithValue("$id", System.Text.Json.JsonSerializer.Serialize(key));
+			command.Parameters.AddWithValue("$payload", System.Text.Json.JsonSerializer.Serialize(row));
+			await command.ExecuteNonQueryAsync();
+		}
+		foreach (var row in state.Identities) { await Write("taxonomy_archive", "identity", row, row.Id); }
+		foreach (var row in state.Heads) { await Write("taxonomy_archive", "head", row, row.Id); }
+		foreach (var row in state.Revisions) { await Write("taxonomy_archive", "revision", row, row.Id); }
+		foreach (var row in state.Nodes) { await Write("taxonomy_archive", "node", row, new { row.RevisionId, row.CategoryId }); }
+		foreach (var row in state.Operations) { await Write("taxonomy_archive", "operation", row, new { row.Actor, row.OperationId }); }
+		foreach (var row in state.MappingRevisions) { await Write("category_mapping_archive", "revision", row, row.Id); }
+		foreach (var row in state.MappingHeads) { await Write("category_mapping_archive", "head", row, row.SourceFingerprint); }
+		await PortableTaxonomyArchive.WriteHistoricalCandidateAsync(sqlite, state, CancellationToken.None);
+
+		var read = await PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
+		read.HistoricalItems.Should().BeEquivalentTo(state.HistoricalItems);
+		read.MappingRevisions.Should().BeEquivalentTo(state.MappingRevisions);
+		Func<Task> legacy = () => PortableTaxonomyArchive.ReadAsync(sqlite, CancellationToken.None, 13);
+		await legacy.Should().ThrowAsync<InvalidDataException>();
+		command.Parameters.Clear();
+		command.CommandText = "UPDATE taxonomy_archive SET payload=json_set(payload,'$.RevisionId',$revision) WHERE kind='head'";
+		command.Parameters.AddWithValue("$revision", Guid.NewGuid().ToString());
+		await command.ExecuteNonQueryAsync();
+		Func<Task> invalid = () => PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
+		await invalid.Should().ThrowAsync<InvalidDataException>().WithMessage("*head*");
+	}
+
+	[Fact]
+	public void CandidateDestination_ValidatesWholeArchiveAndRejectsDivergence()
+	{
+		var (basis, header, item) = AutomaticState();
+		var incoming = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
+		var existing = basis with { IncludesHistorical = true, HistoricalOperations = [], HistoricalItems = [] };
+		PortableTaxonomyArchive.ValidateCandidate(incoming);
+		PortableTaxonomyArchive.ValidateCandidateDestination(existing, incoming);
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateDestination(existing, incoming))
+				.Should().Throw<InvalidDataException>();
+
+		// A valid automatic record must not bypass unrelated taxonomy checks.
+		incoming.Heads[0].RevisionId = Guid.NewGuid();
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidate(incoming))
+				.Should().Throw<InvalidDataException>().WithMessage("*head*");
+	}
+
+	[Fact]
+	public void CandidateDestination_RejectsSharedHistoricalProgressChanges()
+	{
+		var (basis, header, item) = AutomaticState();
+		var incoming = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
+		var different = new Infrastructure.Entities.Taxonomy.HistoricalOperationEntity
+		{
+			Id = header.Id,
+			Kind = header.Kind,
+			ApprovedMappingRevisionId = header.ApprovedMappingRevisionId,
+			Actor = header.Actor,
+			RequestHash = header.RequestHash,
+			SelectionJson = header.SelectionJson,
+			TaxonomyRevisionId = header.TaxonomyRevisionId,
+			CapturedAt = header.CapturedAt,
+			Reason = header.Reason,
+			State = Application.Taxonomy.HistoricalOperationState.Cancelled
+		};
+		var existing = basis with { IncludesHistorical = true, HistoricalOperations = [different], HistoricalItems = [item] };
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(existing, incoming))
+				.Should().Throw<InvalidDataException>().WithMessage("*destination progress or intent*");
+	}
+	[Fact]
 	public async Task HistoricalCandidate_RoundTripsMixedWireAndPublicReaderRejectsIt()
 	{
 		var (basis, header, item) = AutomaticState();

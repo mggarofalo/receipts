@@ -98,6 +98,13 @@ internal static partial class PortableTaxonomyArchive
 	}
 
 	internal static async Task<State> ReadAsync(SqliteConnection sqlite, CancellationToken ct, int version = PortableBackupFormat.CurrentVersion)
+				=> await ReadCoreAsync(sqlite, ct, version, candidate: false);
+
+	// Internal evaluation only; public backup does not admit v14.
+	internal static Task<State> ReadCandidateAsync(SqliteConnection sqlite, CancellationToken ct)
+			=> ReadCoreAsync(sqlite, ct, PortableAutomaticHistoricalV14.Version, candidate: true);
+
+	private static async Task<State> ReadCoreAsync(SqliteConnection sqlite, CancellationToken ct, int version, bool candidate)
 	{
 		Dictionary<string, List<(string Id, string Payload)>> records = [];
 		await using (var command = sqlite.CreateCommand())
@@ -130,16 +137,25 @@ internal static partial class PortableTaxonomyArchive
 			Read<LegacyMigrationItemEntity>("migration_item"));
 		Require(records.Count == 0, "Unknown taxonomy archive record kind.");
 		if (version >= 11) { state = await ReadMappingsAsync(sqlite, state, ct); }
-		if (version >= 12) { state = await ReadHistoricalAsync(sqlite, state, ct); state = await ReadSourceRevisionsAsync(sqlite, state, ct); }
-		Validate(state);
+		if (version >= 12)
+		{
+			state = candidate ? await ReadHistoricalCandidateAsync(sqlite, state, ct) : await ReadHistoricalAsync(sqlite, state, ct);
+			state = await ReadSourceRevisionsAsync(sqlite, state, ct);
+		}
+		Validate(state, candidate);
 		return state;
 	}
 
-	internal static void Validate(State state)
+	internal static void Validate(State state) => Validate(state, allowAutomatic: false);
+
+	internal static void ValidateCandidate(State state) => Validate(state, allowAutomatic: true);
+
+	private static void Validate(State state, bool allowAutomatic)
 	{
 		ValidateUniqueKeys(state);
 		ValidateMappings(state);
-		ValidateHistorical(state);
+		if (allowAutomatic) { ValidateHistoricalCandidate(state); }
+		else { ValidateHistorical(state); }
 		var revisions = state.Revisions.ToDictionary(r => r.Id);
 		var identities = state.Identities.Select(r => r.Id).ToHashSet();
 		Require(identities.Count == state.Identities.Count && !identities.Contains(Guid.Empty), "Invalid taxonomy identities.");

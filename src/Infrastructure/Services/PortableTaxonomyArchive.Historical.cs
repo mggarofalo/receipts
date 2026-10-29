@@ -210,6 +210,10 @@ internal static partial class PortableTaxonomyArchive
 		var incomingIds = incoming.HistoricalOperations.Select(h => h.Id).ToHashSet();
 		ValidateHistorical(incoming with
 		{
+			// v10 and earlier do not replace destination mappings. Retained
+			// automatic history must be checked against those retained mappings.
+			MappingRevisions = incoming.IncludesMappings ? incoming.MappingRevisions : existing.MappingRevisions,
+			MappingHeads = incoming.IncludesMappings ? incoming.MappingHeads : existing.MappingHeads,
 			HistoricalOperations = [.. incoming.HistoricalOperations, .. existing.HistoricalOperations.Where(h => !incomingIds.Contains(h.Id))],
 			HistoricalItems = [.. incoming.HistoricalItems, .. existing.HistoricalItems.Where(i => !incomingIds.Contains(i.OperationId))]
 		}, allowAutomatic);
