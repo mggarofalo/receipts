@@ -20,6 +20,41 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
 
 	[Fact]
+	public async Task ObsoleteSuggestionDoesNotExposeItsCategoryPath()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		var id = Guid.NewGuid(); var category = Guid.NewGuid();
+		await using (var db = isolated.CreateDbContext())
+		{
+			db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
+			{
+				Id = id,
+				RequestId = Guid.NewGuid(),
+				RestoreGeneration = Guid.NewGuid(),
+				SourceHash = new string('A', 64),
+				Location = "Shop",
+				Description = "Item",
+				Provider = "jev",
+				Model = CategorySuggestionPolicy.Model,
+				QuestionPolicyVersion = "obsolete",
+				State = "suggested",
+				CreatedAt = DateTimeOffset.UtcNow,
+				CompletedAt = DateTimeOffset.UtcNow,
+				ResultJson = JsonSerializer.Serialize(new CategoryAssistanceCompletion(
+					CategoryAssistanceAttemptOutcome.Suggested,
+					new CategorySuggestion(category.ToString(), [category.ToString()], null, 0.9, 0.9, 0.9,
+						new SuggestionProvenance("jev", CategorySuggestionPolicy.Model, "obsolete", Guid.NewGuid().ToString(), 1, 1))))
+			});
+			await db.SaveChangesAsync();
+		}
+		var store = new CategoryAssistanceReadStore(new Factory(isolated), TimeProvider.System);
+		var suggestion = (await store.GetSuggestionAsync(id, default))!;
+		suggestion.IsCurrent.Should().BeFalse(); suggestion.ProposedPath.Should().BeEmpty();
+		var activity = await store.GetActivityAsync(default);
+		activity.Suggested.Should().Be(0); activity.Stale.Should().Be(1);
+	}
+
+	[Fact]
 	public async Task ActivityBoundsRecentFailuresAndNeverExposesStoredProviderText()
 	{
 		await using var isolated = await fixture.CreateIsolatedAsync();

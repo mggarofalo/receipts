@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "taxonomy": [
+    {"id": "food", "name": "Food", "description": "Purchased food for human consumption, including kinds without a listed child. Classify the purchased kind regardless of buyer intent.", "parent": null},
+    {"id": "bread", "name": "Bread", "description": "Purchased loaves, rolls, and flatbreads.", "parent": "food"},
+    {"id": "fruit", "name": "Fruit", "description": "Purchased fresh whole fruit.", "parent": "food"},
+    {"id": "housewares", "name": "Housewares", "description": "Purchased reusable household utensils and textiles, including kinds without a listed child. Classify the purchased kind regardless of intended recipient or use.", "parent": null},
+    {"id": "mugs", "name": "Mugs", "description": "Purchased reusable drinking mugs.", "parent": "housewares"},
+    {"id": "towels", "name": "Towels", "description": "Purchased fabric drying towels.", "parent": "housewares"},
+    {"id": "services", "name": "Services", "description": "Purchased passenger travel or repair labor only. Other services fall outside this taxonomy.", "parent": null},
+    {"id": "travel", "name": "Passenger travel", "description": "Purchased bus, rail, or ferry rides for a passenger.", "parent": "services"},
+    {"id": "repairs", "name": "Repairs", "description": "Purchased labor to repair an existing physical object.", "parent": "services"}
+  ],
+  "cases": [
+    {"id": "s01", "group": "ledger-only", "description": "Opening balance carried forward: 17.00. No sale."},
+    {"id": "s02", "group": "ledger-only", "description": "Transfer between my two accounts. No goods or services purchased."},
+    {"id": "s03", "group": "quote-only", "description": "Quotation for two ceramic mugs. Not ordered or paid."},
+    {"id": "s04", "group": "quote-only", "description": "Shopping reminder: buy bread tomorrow. No purchase yet."},
+    {"id": "s05", "group": "opaque-codes", "description": "ZXQ-71 / 003 / 4.20"},
+    {"id": "s06", "group": "opaque-codes", "description": "Item [illegible]. Total 8.00."},
+    {"id": "s07", "group": "opaque-codes", "description": "Article 000009, quantity 1. No description available."},
+    {"id": "s08", "group": "outside-services", "description": "Purchased a haircut and hair styling appointment."},
+    {"id": "s09", "group": "outside-goods", "description": "Purchased one desktop computer processor."},
+    {"id": "s10", "group": "outside-services", "description": "Purchased one hour of legal document drafting."},
+    {"id": "s11", "group": "mixed-roots", "description": "Single unsplit line: one bread loaf plus one ceramic mug."},
+    {"id": "s12", "group": "uncertain-roots", "description": "Paid line is either a fabric towel or a passenger rail ticket; the item name is missing."},
+    {"id": "s13", "group": "mixed-roots", "description": "Combined charge for bicycle repair labor and a bag of fresh apples; no line amounts."},
+    {"id": "s14", "group": "unspecified-charge", "description": "Reservation fee paid. The reservation's purpose and purchased service are unspecified."},
+    {"id": "s15", "group": "unspecified-charge", "description": "Membership charge paid. The membership's purpose and benefits are unspecified."},
+    {"id": "s16", "group": "unspecified-charge", "description": "Session charge paid. No information about what the session was for or what was provided."},
+    {"id": "s17", "group": "broad-food", "description": "Prepared snack purchased for eating. Ingredients and item type not recorded."},
+    {"id": "s18", "group": "broad-housewares", "description": "Reusable kitchen utensil purchased. Exact utensil not recorded."},
+    {"id": "s19", "group": "broad-services", "description": "Paid service was either a passenger bus ride or bicycle repair labor; remaining text is unreadable."},
+    {"id": "s20", "group": "bread-intent-pair", "description": "Purchased one bread loaf for my own breakfast."},
+    {"id": "s21", "group": "bread-intent-pair", "description": "Purchased one bread loaf to give as a present; I will not eat it."},
+    {"id": "s22", "group": "mug-intent-pair", "description": "Purchased a ceramic drinking mug for use at my office desk."},
+    {"id": "s23", "group": "mug-intent-pair", "description": "Purchased a ceramic drinking mug as a birthday gift for a friend."},
+    {"id": "s24", "group": "repair-control", "description": "Purchased labor to repair the brakes on an existing bicycle."}
+  ]
+}

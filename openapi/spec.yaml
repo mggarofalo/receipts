@@ -9689,6 +9689,7 @@ components:
           completedAt,
           fitProbability,
           categoryProbability,
+          selectedPathSupport,
           probabilityScope,
         ]
       properties:
@@ -9701,6 +9702,7 @@ components:
         confidence: { type: [number, "null"], format: double }
         fitProbability: { type: [number, "null"], format: double }
         categoryProbability: { type: [number, "null"], format: double }
+        selectedPathSupport: { type: [number, "null"], format: double }
         probabilityScope: { type: string, enum: [global_choice, local_choice] }
         state: { type: string }
         reviewState: { type: string, enum: [active, later, left_as_is] }

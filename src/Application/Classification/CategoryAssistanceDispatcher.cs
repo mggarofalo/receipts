@@ -9,7 +9,7 @@ public sealed record CategoryAssistanceSource(NormalizationSourceKey Key, string
 public sealed record CategoryAssistanceQueuedWork(Guid AttemptId, Guid QueueClaimToken, Guid RequestId,
 	Guid ReceiptId, Guid ReceiptRevision, Guid ItemId, Guid ItemRevision,
 	CategoryAssistanceSource Source, CategoryAssistanceFence Fence, string Provider, string Model,
-	string QuestionPolicyVersion, CategorySuggestionRequest Request);
+		string QuestionPolicyVersion, CategorySuggestionRequest Request, CategorySuggestion? StagedBaseline = null);
 
 /// <summary>A dispatch-start commit has consumed one global UTC-day debit and owns this token.</summary>
 public sealed record CategoryAssistanceDispatchClaim(CategoryAssistanceQueuedWork Work, Guid ClaimToken);
@@ -17,6 +17,7 @@ public sealed record CategoryAssistanceDispatchClaim(CategoryAssistanceQueuedWor
 public enum CategoryAssistanceAttemptOutcome { Suggested, Abstained, Failed, Stale, Indeterminate }
 public sealed record CategoryAssistanceCompletion(CategoryAssistanceAttemptOutcome Outcome,
 	CategorySuggestion? Suggestion = null, SuggestionFailure? Failure = null);
+public enum CategoryAssistanceSecondDispatchDecision { Authorized, Staged, Rejected }
 public enum CategoryAssistanceQueuedDeferral { CapabilityUnavailable, StartRejected }
 
 public static class CategoryAssistanceQueuePolicy
@@ -61,6 +62,16 @@ public interface ICategoryAssistanceDispatchStore
 	Task<CategoryAssistanceDispatchClaim?> TryStartDispatchAsync(CategoryAssistanceQueuedWork work,
 		CategoryAssistanceCapability capability, DateTimeOffset now, CancellationToken ct);
 
+	/// <summary>Record first-stage usage and decide once whether this claim may start a second request.
+	/// True authorizes one send only; repeated calls return false. The store rechecks the current
+	/// fences and debits the current UTC day in the same transaction.</summary>
+	Task<bool> TryStartSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+		CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens, CancellationToken ct);
+
+	/// <summary>As above, but retain an already validated baseline for next-day retry when only the daily cap prevents the selected send.</summary>
+	Task<CategoryAssistanceSecondDispatchDecision> TryStartOrStageSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+			CategoryAssistanceCapability capability, CategorySuggestion baseline, CancellationToken ct);
+
 	/// <summary>
 	/// In one transaction with classification/source writers: match attempt, token and every fence;
 	/// recheck current consent, capability, source and taxonomy, then insert a valid result or terminal
@@ -91,6 +102,9 @@ public interface ICategoryAssistanceSelectedProvider
 	bool FitsPayload(CategorySuggestionRequest request);
 	/// <summary>Send with exactly the captured connection generation, or fail closed if it changed.</summary>
 	Task<CategorySuggestionResult> SuggestAsync(CategorySuggestionRequest request,
+		Guid connectionGeneration, CancellationToken ct);
+	/// <summary>Send one previously authorized selected-path check using the captured connection.</summary>
+	Task<CategorySuggestionResult> VerifySelectedAsync(CategorySuggestionRequest request, CategorySuggestion baseline,
 		Guid connectionGeneration, CancellationToken ct);
 }
 
@@ -146,9 +160,46 @@ public sealed class CategoryAssistanceDispatcher(
 		try
 		{
 			ct.ThrowIfCancellationRequested();
-			CategorySuggestionResult result = await provider.SuggestAsync(claim.Work.Request,
-				claim.Work.Fence.ConnectionGeneration, ct);
-			completion = ValidateResult(claim.Work, result);
+			CategorySuggestion? baseline = claim.Work.StagedBaseline;
+			if (baseline is not null)
+			{
+				completion = IsValidStagedBaseline(claim.Work, baseline)
+					? new(CategoryAssistanceAttemptOutcome.Suggested, baseline)
+					: new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidInput);
+			}
+			else
+			{
+				var first = await provider.SuggestAsync(claim.Work.Request, claim.Work.Fence.ConnectionGeneration, ct);
+				completion = ValidateResult(claim.Work, first, requireSelectedSupport: false);
+				baseline = completion.Suggestion;
+				if (completion.Outcome == CategoryAssistanceAttemptOutcome.Suggested)
+				{
+					var decision = await store.TryStartOrStageSecondDispatchAsync(claim, capability, baseline!, ct);
+					if (decision == CategoryAssistanceSecondDispatchDecision.Staged) { return true; }
+					if (decision != CategoryAssistanceSecondDispatchDecision.Authorized)
+					{
+						completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Disabled);
+					}
+				}
+			}
+			if (completion.Outcome == CategoryAssistanceAttemptOutcome.Suggested)
+			{
+				ct.ThrowIfCancellationRequested();
+				var result = await provider.VerifySelectedAsync(claim.Work.Request, baseline!, claim.Work.Fence.ConnectionGeneration, ct);
+				completion = ValidateResult(claim.Work, result, requireSelectedSupport: true);
+				if (completion.Suggestion is { } verified &&
+					(verified.FitProbability != baseline!.FitProbability ||
+					 verified.CategoryProbability != baseline.CategoryProbability ||
+					 verified.Confidence != baseline.Confidence ||
+					 verified.ProbabilityScope != baseline.ProbabilityScope ||
+					 verified.Provenance.InputTokens < baseline.Provenance.InputTokens ||
+					 verified.Provenance.OutputTokens < baseline.Provenance.OutputTokens ||
+					 (verified.CategoryId is not null && (verified.CategoryId != baseline.CategoryId ||
+						!verified.Path.SequenceEqual(baseline.Path)))))
+				{
+					completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
+				}
+			}
 		}
 		catch (OperationCanceledException) when (ct.IsCancellationRequested)
 		{
@@ -189,8 +240,20 @@ public sealed class CategoryAssistanceDispatcher(
 		&& work.Request.TaxonomyRevision == work.Fence.TaxonomyRevision.ToString("D")
 		&& CategorySuggestionPolicy.IsValid(work.Request);
 
+	/// <summary>Checks that a saved first-stage result still matches the durable request and provenance.</summary>
+	public static bool IsValidStagedBaseline(CategoryAssistanceQueuedWork work, CategorySuggestion? baseline)
+	{
+		try
+		{
+			return baseline != null && ValidateResult(work, new(baseline, null), false).Outcome
+					== CategoryAssistanceAttemptOutcome.Suggested;
+		}
+		catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or NullReferenceException)
+		{ return false; }
+	}
+
 	private static CategoryAssistanceCompletion ValidateResult(CategoryAssistanceQueuedWork work,
-		CategorySuggestionResult result)
+	CategorySuggestionResult result, bool requireSelectedSupport)
 	{
 		if (result is null || (result.Suggestion is null) == (result.Failure is null))
 		{
@@ -211,7 +274,9 @@ public sealed class CategoryAssistanceDispatcher(
 			|| suggestion.Provenance.OutputTokens is < 0 or > 9007199254740991
 			|| suggestion.Path is null || work.Request.Categories is null
 			|| !Probability(suggestion.FitProbability) || !Probability(suggestion.CategoryProbability)
-			|| !Probability(suggestion.Confidence))
+			|| !Probability(suggestion.Confidence)
+			|| (suggestion.SelectedPathSupport is double support && !Probability(support))
+			|| (!requireSelectedSupport && suggestion.SelectedPathSupport is not null))
 		{
 			return new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
 		}
@@ -221,12 +286,15 @@ public sealed class CategoryAssistanceDispatcher(
 			return suggestion.Path.Count == 0
 				&& (suggestion.AbstentionReason == "no-fit" && suggestion.FitProbability <= 0.3
 					|| suggestion.AbstentionReason == "uncertain-fit"
-						&& suggestion.FitProbability is > 0.3 and < 0.7)
+						&& suggestion.FitProbability is > 0.3 and < 0.7
+					|| requireSelectedSupport && suggestion.AbstentionReason == "uncertain-selected-path"
+						&& suggestion.FitProbability >= 0.7 && suggestion.SelectedPathSupport is >= 0 and < 0.7)
 				? new(CategoryAssistanceAttemptOutcome.Abstained, suggestion)
 				: new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
 		}
 
 		if (suggestion.FitProbability < 0.7 || suggestion.AbstentionReason is not null
+			|| (requireSelectedSupport && suggestion.SelectedPathSupport is not >= 0.7)
 			|| !work.Request.Categories.Any(x => x.Id == suggestion.CategoryId)
 			|| !suggestion.Path.SequenceEqual(CategorySuggestionPolicy.PathFor(work.Request, suggestion.CategoryId)))
 		{

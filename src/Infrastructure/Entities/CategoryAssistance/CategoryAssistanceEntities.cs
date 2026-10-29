@@ -84,10 +84,16 @@ public sealed class CategoryAssistanceAttemptEntity
 	public string? DecisionJson { get; set; }
 	public string State { get; set; } = "queued";
 	public Guid? ClaimToken { get; set; }
+	public Guid? DispatchToken { get; set; }
 	public DateTimeOffset? LeaseExpiresAt { get; set; }
 	public DateTimeOffset? NextEligibleAt { get; set; }
 	public int Deferrals { get; set; }
 	public DateOnly? DebitUtcDay { get; set; }
+	public long? FirstStageInputTokens { get; set; }
+	public long? FirstStageOutputTokens { get; set; }
+	public DateTimeOffset? SecondStageDecidedAt { get; set; }
+	public DateTimeOffset? SecondSendStartedAt { get; set; }
+	public DateOnly? SecondDebitUtcDay { get; set; }
 	public DateTimeOffset CreatedAt { get; set; }
 	public DateTimeOffset? CompletedAt { get; set; }
 }

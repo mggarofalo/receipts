@@ -14,15 +14,16 @@ public sealed class CategoryAssistanceDailyLimitMigrationTests(PostgresFixture f
 	private const string Foundation = "20261026114208_AddCategoryAssistanceFoundation";
 	private const string Predecessor = "20261026173332_AddHistoricalCategoryAssistanceRequests";
 
+	private const string DailyLimitMigration = "20261027110503_RaiseCategoryAssistanceDailyLimit";
+
 	[Fact]
 	public async Task DowngradeRefusesHighLimitWithoutChangingSettingsOrMigrationHistory()
 	{
 		await using var database = await MigrationDatabase.CreateAsync(fixture, "0");
 		await using var db = database.CreateDbContext();
 		var migrator = db.GetService<IMigrator>();
-		// Start at the guarded migration: EF can commit later migration rollbacks
-		// before reaching this migration's refusal.
-		await migrator.MigrateAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
+		// Start at the migration under test: EF commits each later downgrade separately.
+		await migrator.MigrateAsync(DailyLimitMigration);
 		var settings = await db.CategoryAssistanceSettings.SingleAsync();
 		settings.DailyLimit = 5000;
 		settings.Revision = Guid.NewGuid();
@@ -49,7 +50,8 @@ public sealed class CategoryAssistanceDailyLimitMigrationTests(PostgresFixture f
 		await using var database = await MigrationDatabase.CreateAsync(fixture, "0");
 		await using var db = database.CreateDbContext();
 		var migrator = db.GetService<IMigrator>();
-		await migrator.MigrateAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
+		// Start at the migration under test: EF commits each later downgrade separately.
+		await migrator.MigrateAsync(DailyLimitMigration);
 		var settings = await db.CategoryAssistanceSettings.SingleAsync();
 		settings.DailyLimit.Should().Be(100);
 		if (configured)

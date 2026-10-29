@@ -87,6 +87,7 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 				}
 			}
 
+			if (row.QuestionPolicyVersion != CategorySuggestionPolicy.Version) { path.Clear(); }
 			bool current = suggestion != null && await IsCurrentAsync(db, row, settings, head.RevisionId,
 				connection, path, ct);
 			int affected = (await CategoryAssistanceDecisionStore.GetEligibleObservationsAsync(
@@ -122,6 +123,7 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 								row.CreatedAt, row.CompletedAt,
 				suggestion?.FitProbability, suggestion?.CategoryProbability)
 			{
+				SelectedPathSupport = suggestion?.SelectedPathSupport,
 				ReviewState = preference?.State ?? "active",
 				ReviewRevision = preference?.Revision ?? Guid.Empty,
 				ExcludedItemCount = excluded.Length,
@@ -134,9 +136,13 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 	public async Task<CategoryAssistanceActivity> GetActivityAsync(CancellationToken ct)
 	{
 		await using var db = await factory.CreateDbContextAsync(ct);
-		var counts = await db.CategoryAssistanceAttempts.AsNoTracking().GroupBy(x => x.State)
-			.Select(g => new { State = g.Key, Count = g.Count() }).ToListAsync(ct);
-		int Count(string state) => counts.FirstOrDefault(x => x.State == state)?.Count ?? 0;
+		var counts = await db.CategoryAssistanceAttempts.AsNoTracking()
+			.GroupBy(x => new { x.State, x.QuestionPolicyVersion })
+			.Select(g => new { g.Key.State, g.Key.QuestionPolicyVersion, Count = g.Count() }).ToListAsync(ct);
+		int Count(string state) => counts.Where(x =>
+			(x.QuestionPolicyVersion != CategorySuggestionPolicy.Version &&
+				x.State is "queued" or "dispatching" or "suggested" or "abstained" ? "stale" : x.State) == state)
+			.Sum(x => x.Count);
 		var day = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 		int attempts = await db.CategoryAssistanceDailyUsage.AsNoTracking()
 			.Where(x => x.UtcDay == day).Select(x => x.DispatchAttempts).SingleOrDefaultAsync(ct);
