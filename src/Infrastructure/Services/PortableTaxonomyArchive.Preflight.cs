@@ -1,3 +1,5 @@
+using Application.Taxonomy;
+using Infrastructure.Entities.Taxonomy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -39,7 +41,14 @@ internal static partial class PortableTaxonomyArchive
 
 	private static void ValidateDestination(State existing, State incoming, bool candidate)
 	{
-		if (candidate) { ValidateCandidate(existing); ValidateCandidate(incoming); }
+		if (candidate)
+		{
+			ValidateCandidate(existing); ValidateCandidate(incoming);
+			Require(existing.HistoricalOperations.Concat(incoming.HistoricalOperations)
+				.Where(h => h.Kind == HistoricalOperationKind.ApprovedMappingV1)
+				.All(h => h.State is HistoricalOperationState.Completed or HistoricalOperationState.Undone),
+				"Pending or in-progress automatic historical operations cannot be restored.");
+		}
 		else { Validate(existing); Validate(incoming); }
 		ValidateMappingDestination(existing, incoming);
 		if (candidate) { ValidateHistoricalCandidateDestination(existing, incoming); }

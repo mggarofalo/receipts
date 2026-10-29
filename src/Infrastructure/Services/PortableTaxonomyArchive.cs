@@ -36,7 +36,7 @@ internal static partial class PortableTaxonomyArchive
 		internal List<CategoryMappingHeadEntity> MappingHeads { get; init; } = [];
 	}
 
-	internal static async Task ExportAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken ct)
+	internal static async Task ExportAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken ct, bool candidate = false)
 	{
 		await using (var schema = sqlite.CreateCommand())
 		{
@@ -63,7 +63,7 @@ internal static partial class PortableTaxonomyArchive
 			{ await Write("taxonomy_archive", kind, JsonSerializer.Serialize(key(row), JsonOptions), row); }
 		}
 		await ExportMappingsAsync(source, sqlite, ct);
-		await ExportHistoricalAsync(source, sqlite, ct);
+		if (!candidate) { await ExportHistoricalAsync(source, sqlite, ct); }
 		await ExportSourceRevisionsAsync(source, sqlite, ct);
 		await Rows("identity", source.TaxonomyIdentities, r => r.Id);
 		await Rows("head", source.TaxonomyHeads, r => r.Id);
@@ -95,6 +95,17 @@ internal static partial class PortableTaxonomyArchive
 		await Deletions("adjustments", source.Adjustments, r => r.Id);
 		await Deletions("ynab_sync_records", source.YnabSyncRecords, r => r.Id);
 		await Deletions("accepted_duplicate_pairs", source.AcceptedDuplicatePairs, r => r.Id);
+		if (candidate)
+		{
+			var state = await ReadAsync(sqlite, ct);
+			state = state with
+			{
+				HistoricalOperations = await source.HistoricalOperations.AsNoTracking().ToListAsync(ct),
+				HistoricalItems = await source.HistoricalOperationItems.AsNoTracking().ToListAsync(ct)
+			};
+			ValidateCandidate(state);
+			await WriteHistoricalCandidateAsync(sqlite, state, ct);
+		}
 	}
 
 	internal static async Task<State> ReadAsync(SqliteConnection sqlite, CancellationToken ct, int version = PortableBackupFormat.CurrentVersion)

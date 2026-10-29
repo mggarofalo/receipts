@@ -1,3 +1,4 @@
+using Application.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
@@ -10,6 +11,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 	public void CandidateDestination_LegacyOmissionRetainsMappingEvidenceForAutomaticHistory()
 	{
 		var (basis, header, item) = AutomaticState();
+		CompleteWithoutEffect(header, item);
 		var existing = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
 		// v10 has neither mapping nor historical tables; restoration retains both.
 		var legacy = basis with { IncludesMappings = false, MappingRevisions = [], MappingHeads = [], IncludesHistorical = false };
@@ -135,6 +137,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 	public void CandidateDestination_ValidatesWholeArchiveAndRejectsDivergence()
 	{
 		var (basis, header, item) = AutomaticState();
+		CompleteWithoutEffect(header, item);
 		var incoming = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
 		var existing = basis with { IncludesHistorical = true, HistoricalOperations = [], HistoricalItems = [] };
 		PortableTaxonomyArchive.ValidateCandidate(incoming);
@@ -152,6 +155,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 	public void CandidateDestination_RejectsSharedHistoricalProgressChanges()
 	{
 		var (basis, header, item) = AutomaticState();
+		CompleteWithoutEffect(header, item);
 		var incoming = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
 		var different = new Infrastructure.Entities.Taxonomy.HistoricalOperationEntity
 		{
@@ -163,12 +167,32 @@ public sealed partial class PortableTaxonomyArchiveTests
 			SelectionJson = header.SelectionJson,
 			TaxonomyRevisionId = header.TaxonomyRevisionId,
 			CapturedAt = header.CapturedAt,
-			Reason = header.Reason,
-			State = Application.Taxonomy.HistoricalOperationState.Cancelled
+			Reason = "Different intent",
+			State = HistoricalOperationState.Completed
 		};
 		var existing = basis with { IncludesHistorical = true, HistoricalOperations = [different], HistoricalItems = [item] };
 		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(existing, incoming))
 				.Should().Throw<InvalidDataException>().WithMessage("*destination progress or intent*");
+	}
+
+	[Fact]
+	public void CandidateDestination_RejectsPendingAutomaticWork()
+	{
+		var (basis, header, item) = AutomaticState();
+		var pending = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
+		var empty = basis with { IncludesHistorical = true, HistoricalOperations = [], HistoricalItems = [] };
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(empty, pending))
+				.Should().Throw<InvalidDataException>().WithMessage("*Pending or in-progress*");
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(pending, empty))
+				.Should().Throw<InvalidDataException>().WithMessage("*Pending or in-progress*");
+	}
+
+	private static void CompleteWithoutEffect(Infrastructure.Entities.Taxonomy.HistoricalOperationEntity header,
+			Infrastructure.Entities.Taxonomy.HistoricalOperationItemEntity item)
+	{
+		header.State = HistoricalOperationState.Completed;
+		item.State = HistoricalItemState.Skipped;
+		item.Reason = "No change";
 	}
 	[Fact]
 	public async Task HistoricalCandidate_RoundTripsMixedWireAndPublicReaderRejectsIt()

@@ -1,0 +1,221 @@
+using System.Data.Common;
+using Application.Taxonomy;
+using FluentAssertions;
+using Infrastructure.Entities.Taxonomy;
+using Infrastructure.IntegrationTests.Fixtures;
+using Infrastructure.Services;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Infrastructure.IntegrationTests.Services;
+
+public sealed partial class ClassificationTests
+{
+	[Fact]
+	public async Task CandidateRestore_RoundTripsUndoneAutomaticHistoryWhilePublicImportRejectsV14()
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		await using var destination = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(source).CandidateRestoreUndoneCore(destination);
+	}
+
+	private async Task CandidateRestoreUndoneCore(PostgresFixture destination)
+	{
+		var captured = await CaptureExecutableAsync();
+		var executor = ApprovedExecutor();
+		await executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Restore prior choice");
+		(await executor.UndoChunkAsync(Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
+
+		var sourceHistory = await Service().HistoryAsync(captured.Item, null, 10);
+		var exporter = new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance);
+		string path = await exporter.ExportCandidateToSqliteAsync();
+		try
+		{
+			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
+			await using (var publicInput = File.OpenRead(path))
+			{
+				Func<Task> publicImport = () => importer.ImportFromSqliteAsync(publicInput, default);
+				await publicImport.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unsupported backup export_version '14'*");
+			}
+			var failingImporter = new BackupImportService(new FailCandidateRestoreFactory(destination), NullLogger<BackupImportService>.Instance);
+			await using (var failingInput = File.OpenRead(path))
+			{
+				Func<Task> fail = () => failingImporter.ImportCandidateFromSqliteAsync(failingInput, default);
+				await fail.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected late restore failure");
+			}
+			await using (var afterFailure = destination.CreateDbContext())
+			{
+				(await afterFailure.ReceiptItems.AnyAsync(x => x.Id == captured.Item)).Should().BeFalse();
+				(await afterFailure.HistoricalOperations.AnyAsync(x => x.Id == captured.Request.OperationId)).Should().BeFalse();
+				(await afterFailure.Classifications.AnyAsync(x => x.ReceiptItemId == captured.Item)).Should().BeFalse();
+			}
+			await using (var input = File.OpenRead(path))
+			{
+				await importer.ImportCandidateFromSqliteAsync(input, default);
+			}
+			var restored = new ClassificationTests(destination);
+			var history = await restored.Service().HistoryAsync(captured.Item, null, 10);
+			history.Items.Select(x => x.Id).Should().Equal(sourceHistory.Items.Select(x => x.Id));
+			history.Items.First().Source.Should().Be("manual");
+			history.Items.First().CategoryId.Should().BeNull();
+			await using var db = destination.CreateDbContext();
+			var item = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == captured.Request.OperationId);
+			item.UndoState.Should().Be(HistoricalItemState.Applied);
+			item.UndoAssignmentId.Should().Be(history.Items.First().Id);
+			(await restored.ApprovedExecutor().UndoChunkAsync(Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
+			var later = await restored.Service().AssignAsync(Actor, captured.Item,
+					new ClassificationCommand(captured.Category, captured.Request.TaxonomyRevisionId, history.Items.First().Id, Guid.NewGuid(), "Later choice"));
+			await using (var staleInput = File.OpenRead(path))
+			{
+				Func<Task> stale = () => importer.ImportCandidateFromSqliteAsync(staleInput, default);
+				await stale.Should().ThrowAsync<InvalidOperationException>();
+			}
+			(await restored.Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Id.Should().Be(later.Id);
+		}
+		finally { File.Delete(path); }
+	}
+
+	[Fact]
+	public async Task CandidateRestore_RejectsPendingAutomaticWorkBeforeMutation()
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		await using var destination = await fixture.CreateIsolatedAsync();
+		var subject = new ClassificationTests(source);
+		var captured = await subject.CaptureExecutableAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		try
+		{
+			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
+			await using var input = File.OpenRead(path);
+			Func<Task> import = () => importer.ImportCandidateFromSqliteAsync(input, default);
+			await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Pending or in-progress*");
+			await using var db = destination.CreateDbContext();
+			(await db.ReceiptItems.AnyAsync(x => x.Id == captured.Item)).Should().BeFalse();
+			(await db.HistoricalOperations.AnyAsync(x => x.Id == captured.Request.OperationId)).Should().BeFalse();
+		}
+		finally { File.Delete(path); }
+	}
+
+	[Fact]
+	public async Task CandidateRestore_AppliedOperationCanBeUndoneAndCannotImmediatelyReapply()
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		await using var destination = await fixture.CreateIsolatedAsync();
+		var original = new ClassificationTests(source);
+		var captured = await original.CaptureExecutableAsync();
+		(await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		try
+		{
+			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
+			await using (var input = File.OpenRead(path)) { await importer.ImportCandidateFromSqliteAsync(input, default); }
+			var restored = new ClassificationTests(destination);
+			var applied = (await restored.Service().HistoryAsync(captured.Item, null, 1)).Items.Single();
+			applied.Source.Should().Be("approved_mapping");
+			var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Restore prior choice");
+			(await restored.ApprovedExecutor().UndoChunkAsync(Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
+			var latest = (await restored.Service().HistoryAsync(captured.Item, null, 1)).Items.Single();
+			latest.Source.Should().Be("manual");
+			latest.CategoryId.Should().BeNull();
+			latest.PreviousAssignmentId.Should().Be(applied.Id);
+			var retry = captured.Request with { OperationId = Guid.NewGuid() };
+			(await new HistoricalApprovedMappingCapture(new Factory(destination), TimeProvider.System).CaptureAsync(retry)).Should().Be(0);
+		}
+		finally { File.Delete(path); }
+	}
+
+	[Fact]
+	public async Task CandidateRestore_RejectsPendingDestinationWorkBeforeMutation()
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		await using var destination = await fixture.CreateIsolatedAsync();
+		var original = new ClassificationTests(source);
+		var completed = await original.CaptureExecutableAsync();
+		await original.ApprovedExecutor().ApplyChunkAsync(Actor, completed.Request.OperationId, 1);
+		var pending = await new ClassificationTests(destination).CaptureExecutableAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		try
+		{
+			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
+			await using var input = File.OpenRead(path);
+			Func<Task> import = () => importer.ImportCandidateFromSqliteAsync(input, default);
+			await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Pending or in-progress*");
+			await using var db = destination.CreateDbContext();
+			(await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == pending.Request.OperationId)).State.Should().Be(HistoricalOperationState.Preview);
+			(await db.HistoricalOperations.AnyAsync(x => x.Id == completed.Request.OperationId)).Should().BeFalse();
+			(await db.ReceiptItems.AnyAsync(x => x.Id == completed.Item)).Should().BeFalse();
+		}
+		finally { File.Delete(path); }
+	}
+
+	[Fact]
+	public async Task CandidateExport_UsesOneSnapshotWhenAutomaticHistoryChangesDuringCapture()
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		var original = new ClassificationTests(source);
+		var captured = await original.CaptureExecutableAsync();
+		var gate = new CandidateSnapshotGate();
+		var exporter = new BackupService(new CandidateSnapshotFactory(source, gate), NullLogger<BackupService>.Instance);
+		Task<string> exporting = exporter.ExportCandidateToSqliteAsync();
+		string? path = null;
+		try
+		{
+			await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(20));
+			(await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
+			gate.Release.TrySetResult();
+			path = await exporting;
+			await using var sqlite = new SqliteConnection($"Data Source={path};Mode=ReadOnly;Pooling=False");
+			await sqlite.OpenAsync();
+			var archive = await PortableTaxonomyArchive.ReadCandidateAsync(sqlite, default);
+			archive.HistoricalOperations.Single(x => x.Id == captured.Request.OperationId).State.Should().Be(HistoricalOperationState.Preview);
+			archive.HistoricalItems.Single(x => x.OperationId == captured.Request.OperationId).State.Should().Be(HistoricalItemState.Pending);
+			archive.Assignments.Should().NotContain(x => x.Source == "approved_mapping" && x.ReceiptItemId == captured.Item);
+		}
+		finally
+		{
+			gate.Release.TrySetResult();
+			if (path == null) { path = await exporting; }
+			File.Delete(path);
+		}
+	}
+
+	private sealed class CandidateSnapshotGate : DbCommandInterceptor
+	{
+		public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+				CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+		{
+			if (command.CommandText.Contains("\"HistoricalOperations\"", StringComparison.Ordinal))
+			{
+				Entered.TrySetResult();
+				await Release.Task.WaitAsync(cancellationToken);
+			}
+			return result;
+		}
+	}
+
+	private sealed class CandidateSnapshotFactory(PostgresFixture fixture, CandidateSnapshotGate gate) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(gate).Options);
+	}
+
+	private sealed class FailCandidateRestoreDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	{
+		public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+		{
+			if (ChangeTracker.Entries<HistoricalOperationItemEntity>().Any(x => x.State == EntityState.Added))
+			{ throw new InvalidOperationException("Injected late restore failure"); }
+			return base.SaveChangesAsync(cancellationToken);
+		}
+	}
+
+	private sealed class FailCandidateRestoreFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new FailCandidateRestoreDb(fixture.CreateOptions());
+	}
+}
