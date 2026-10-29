@@ -37,12 +37,22 @@ export function AutomaticClassificationActivity() {
   });
   const paths = categoryPaths(taxonomy.data?.nodes ?? []);
   async function undo(id: string, savedRevision?: string | null) {
-    const revision = savedRevision ?? intents.current[id] ?? taxonomy.data?.id;
-    if (!revision) return;
-    intents.current[id] = revision;
     setBusy(id);
     setError(undefined);
+    let checkingCategories = false;
     try {
+      let revision = savedRevision ?? intents.current[id];
+      if (!revision) {
+        checkingCategories = true;
+        const { data, error } = await client.GET("/api/taxonomy", {
+          ...localErrorPolicy.request,
+        });
+        if (error || !data)
+          throw error ?? new Error("Current categories unavailable");
+        revision = data.id;
+        checkingCategories = false;
+      }
+      intents.current[id] = revision;
       // A click completes ordinary batches. A larger batch remains resumable.
       for (let chunk = 0; chunk < 100; chunk++) {
         const { data, error } = await client.POST(
@@ -65,7 +75,11 @@ export function AutomaticClassificationActivity() {
       });
       await queryClient.invalidateQueries({ queryKey: ["historical-groups"] });
     } catch (cause) {
-      setError(extractErrorMessage(cause) || "Could not undo. Try again.");
+      setError(
+        checkingCategories
+          ? "Could not check current categories. Try Undo again."
+          : extractErrorMessage(cause) || "Could not undo. Try again.",
+      );
       void activity.refetch();
     } finally {
       setBusy(undefined);
@@ -96,6 +110,14 @@ export function AutomaticClassificationActivity() {
             </p>
           )}
           {error && <p role="alert">{error}</p>}
+          {taxonomy.isError && (
+            <p className="text-sm">
+              Category names are unavailable. Undo can still be retried.{" "}
+              <Button variant="ghost" onClick={() => void taxonomy.refetch()}>
+                Retry categories
+              </Button>
+            </p>
+          )}
           {activity.data?.items.length === 0 && (
             <p className="text-sm">No automatic classifications yet.</p>
           )}
@@ -143,9 +165,8 @@ export function AutomaticClassificationActivity() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={
-                        !!busy || !taxonomy.data || progress.pending > 0
-                      }
+                      disabled={!!busy || progress.pending > 0}
+                      aria-label={`${entry.state === "undoing" ? "Continue undo" : "Undo"} for ${entry.groups.map((choice) => `${choice.group.rawDescription} at ${choice.group.store}`).join(", ")} from ${new Date(entry.capturedAt).toLocaleString()}`}
                       onClick={() =>
                         void undo(
                           entry.operationId,
