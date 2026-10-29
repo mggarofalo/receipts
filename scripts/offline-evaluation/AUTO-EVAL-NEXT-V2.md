@@ -1,5 +1,11 @@
 # RECEIPTS-1076: next independent validation preparation
 
+> **Superseded (2026-10-29).** This packet's private files, labels and hashes
+> were lost with the Windows workstation, and no calls were ever made with it.
+> `offline-plan-next` was folded into the policy-driven `offline-plan`. The
+> two-signal rule below is tested by [round 3](AUTO-EVAL-NEXT-V3.md) instead.
+> The text is kept as the historical record of what was preregistered.
+
 Prepared 2026-10-29 from evaluator `c085fa8`. The consumed 24-case
 [AUTO-EVAL-NEXT](AUTO-EVAL-NEXT.md) experiment remains frozen and unchanged.
 Private packet: `C:/Users/mggar/Source/receipts-017-artifacts/real-eval/auto-eval-next-v2`.

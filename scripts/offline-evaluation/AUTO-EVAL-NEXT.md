@@ -164,8 +164,9 @@ and rate calculations. It accepts the production `OfflineReplay` artifact,
 original private cases, adjudicated labels, private scoring freeze, exact recorded
 exchanges, and an explicitly supplied built production parity DLL. The CLI
 verifies case/label byte hashes, then regenerates the entire replay from those
-exact frozen cases and exchanges using the socket-free production `offline-replay`
-command. The submitted replay must equal the regenerated artifact in full before
+exact frozen packet policy, cases and exchanges using the socket-free production
+`offline-replay <policy.private.json> <cases.json> <exchanges.json> <output.json>`
+command. The policy file's SHA256 must match the scoring freeze before replay. The submitted replay must equal the regenerated artifact in full before
 labels are loaded for joining. Every exchange fingerprint must match its regenerated
 request, including conditional selected-path requests; no trailing exchanges may
 be ignored. Verify the DLL's source/build identity against the pinned production
@@ -178,13 +179,14 @@ prints descriptions, taxonomy, identifiers, labels, predictions, or parse excerp
 Use explicit private paths outside the repository for every input and output:
 
 ```powershell
-python scripts/offline-evaluation/aggregate_scoring.py --cases <private-cases.json> --labels <private-adjudicated-labels.json> --replay <private-replay.json> --freeze <private-scoring-freeze.json> --exchanges <private-exchanges.json> --runner <built-production-parity.dll> --output <new-private-aggregate.json>
+python scripts/offline-evaluation/aggregate_scoring.py --cases <private-cases.json> --labels <private-adjudicated-labels.json> --policy <private-policy.private.json> --replay <private-replay.json> --freeze <private-scoring-freeze.json> --exchanges <private-exchanges.json> --runner <built-production-parity.dll> --output <new-private-aggregate.json>
 python -m unittest discover -s scripts/offline-evaluation -p test_aggregate_scoring.py
 ```
 
 Exchanges use the existing `ReplayExchange[]` shape (`body`, `statusCode`,
 `requestSha256`). Extract the live controller journal's paired intent/response
-records offline, binding every reservation and fingerprint to the submitted replay:
+records offline, binding every reservation and fingerprint to the submitted replay
+(1 to 96 attempts, the campaign ledger's per-journal maximum):
 
 ```powershell
 python scripts/offline-evaluation/journal_exchanges.py --journal <private-live.journal.jsonl> --replay <private-replay.json> --output <new-private-exchanges.json>
@@ -246,3 +248,50 @@ bound of about 11.7%; with only 12 assignments it is about 22.1%. Correlated
 families and challenge sampling further limit inference. Additional untouched
 evidence and explicit product acceptance are needed before automatic writes.
 Once inspected, this cohort is consumed for future tuning or threshold selection.
+
+## Generalized scoring (owner-label packets)
+
+The scorer no longer hard-codes this pilot's 24 cases, 48 attempts or USD 4.75
+carry; every cohort-specific value comes from the scoring freeze. Packets from
+`backup_cohort.py` use owner-derived labels (each item's current assignment,
+provenance `owner-current-assignment`) and a labels file shaped
+`{"oracle": "<description>", "labels": [...]}`. The nonempty `oracle` string is
+copied into the report instead of a hard-coded oracle description.
+
+The private scoring freeze has exactly this shape and is validated strictly:
+
+```json
+{"beforeCurrentPredictions": true, "cohortSize": 12, "maximumAttempts": 24,
+ "priorCarryNanodollars": 4873863040,
+ "candidateGates": {"globalFit": 0.9, "selectedPathSupport": 0.8},
+ "acceptance": {"minimumUsefulFraction": 0.5, "maximumUsefulSuppressionFraction": 0.1},
+ "sha256": {"membership": "<cases sha256>", "adjudicatedLabels": "<labels sha256>",
+            "policy": "<policy.private.json sha256>"}}
+```
+
+`cohortSize` is 1-48 and `maximumAttempts` must equal twice it. Candidate gates
+are finite and within [0.7, 1]. The per-attempt reservation stays USD 0.002752512.
+The replay's prior carry must equal the freeze's carry.
+
+Three arms are reported: `baseline`, `treatment` (production selected-path
+check at 0.7), and `candidate`, the preregistered two-signal auto-write rule.
+For a completed case, the candidate writes the treatment's category and path only
+when the treatment has a category, the **baseline** `fitProbability` is at least
+`globalFit`, and the treatment `selectedPathSupport` is at least
+`selectedPathSupport`. A missing or non-finite signal does not meet its gate.
+Otherwise the candidate abstains. Failed, unknown and unattempted cases mirror
+the treatment. Paired transitions are reported for baseline -> treatment and
+baseline -> candidate, with error and useful-answer suppression for both.
+
+`gates.candidate` and `gates.treatment` evaluate the preregistered acceptance
+counts above with frozen fractions. Each gate is `pass`, `fail` or `untested`:
+`complete`, `minimum_useful` (at least `ceil(minimumUsefulFraction * N)`),
+`zero_incorrect_writes`, `retention` (at most
+`floor(maximumUsefulSuppressionFraction * baselineUseful)` suppressed),
+`no_answer_safety` and `broad_only_safety` (unsupported descendants only;
+`writes_on_broad_only` still counts correct writes and is reported separately).
+`overall` is `pass` only with no failed or untested gate, `fail` if any gate fails,
+otherwise `incomplete`. Owner-derived labels are always labelable with one
+specific path, so they have no no-answer or broad-only strata. Those two gates
+are `untested` and `overall` cannot pass. This is intended: the separate
+synthetic-safety set must cover those safety strata. `untestedReason` says so.

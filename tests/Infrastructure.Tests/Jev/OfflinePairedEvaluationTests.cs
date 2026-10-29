@@ -31,7 +31,7 @@ public class OfflinePairedEvaluationTests
 	private static async Task<ReplayExchange[]> Paired(double support, string child = "fruit")
 	{
 		ReplayExchange baseline = new(Baseline(child: child));
-		OfflineReplay missing = await OfflinePairedEvaluation.ReplayAsync([Case()], [baseline]);
+		OfflineReplay missing = await OfflinePairedEvaluation.ReplayAsync([Case()], [baseline], Policies.Pilot);
 		OfflineAttempt attempt = missing.Attempts[1];
 		string key = JsonNode.Parse(attempt.RequestJson)!["questions"]!.AsObject().Single().Key;
 		string body = JsonSerializer.Serialize(new
@@ -49,7 +49,7 @@ public class OfflinePairedEvaluationTests
 	[InlineData(0.95, "fruit")]
 	public async Task ExactProductionSelectedGateRetainsSameFullPath(double support, string? expected)
 	{
-		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], await Paired(support));
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], await Paired(support), Policies.Pilot);
 		OfflineOutcome outcome = Assert.Single(result.Outcomes);
 		Assert.Equal("completed", outcome.Status);
 		Assert.Equal("fruit", outcome.Baseline!.Suggestion!.CategoryId);
@@ -58,13 +58,13 @@ public class OfflinePairedEvaluationTests
 		Assert.Equal(support, outcome.Treatment.Suggestion.SelectedPathSupport);
 		Assert.Equal(150, outcome.Treatment.Suggestion.Provenance.InputTokens);
 		Assert.Equal(2, result.Attempts.Count);
-		Assert.Equal(2 * OfflinePairedEvaluation.PerAttemptNanodollars, result.ReservationNanodollars);
+		Assert.Equal(2 * EvaluationPolicy.PerAttemptNanodollars, result.ReservationNanodollars);
 	}
 
 	[Fact]
 	public async Task SupportedParentStopIsPreserved()
 	{
-		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], await Paired(0.8, "food"));
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], await Paired(0.8, "food"), Policies.Pilot);
 		Assert.Equal("food", result.Outcomes[0].Treatment!.Suggestion!.CategoryId);
 		Assert.Equal(["food"], result.Outcomes[0].Treatment!.Suggestion!.Path);
 	}
@@ -74,7 +74,7 @@ public class OfflinePairedEvaluationTests
 	[InlineData(0.699999, "uncertain-fit")]
 	public async Task ValidGlobalAbstentionSkipsSelectedCall(double fit, string reason)
 	{
-		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], [new(Baseline(fit))]);
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], [new(Baseline(fit))], Policies.Pilot);
 		Assert.False(result.Stopped);
 		Assert.Single(result.Attempts);
 		Assert.Equal(reason, result.Outcomes[0].Treatment!.Suggestion!.AbstentionReason);
@@ -87,7 +87,7 @@ public class OfflinePairedEvaluationTests
 	[InlineData("", 429)]
 	public async Task InvalidAndTransportFailuresStopWithoutReplacingSuffix(string body, int status)
 	{
-		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case(), Case("synthetic-2")], [new(body, status)]);
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case(), Case("synthetic-2")], [new(body, status)], Policies.Pilot);
 		Assert.True(result.Stopped);
 		Assert.Equal("failed", result.Outcomes[0].Status);
 		Assert.Equal("unattempted", result.Outcomes[1].Status);
@@ -100,10 +100,10 @@ public class OfflinePairedEvaluationTests
 	[Fact]
 	public async Task MissingBoundResponseIsUnknownAndReservationSurvives()
 	{
-		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], []);
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], [], Policies.Pilot);
 		Assert.Equal("unknown", result.Outcomes[0].Status);
-		Assert.Equal(OfflinePairedEvaluation.PerAttemptNanodollars, result.ReservationNanodollars);
-		Assert.Equal(OfflinePairedEvaluation.PriorCarryNanodollars + result.ReservationNanodollars, result.CombinedReservationNanodollars);
+		Assert.Equal(EvaluationPolicy.PerAttemptNanodollars, result.ReservationNanodollars);
+		Assert.Equal(Policies.Pilot.PriorCarryNanodollars + result.ReservationNanodollars, result.CombinedReservationNanodollars);
 	}
 
 	[Fact]
@@ -115,7 +115,7 @@ public class OfflinePairedEvaluationTests
 		JsonNode value = answers.Single().Value!.DeepClone();
 		answers.Clear(); answers["unbound_selected_path_support"] = value;
 		exchanges[1] = exchanges[1] with { Body = body.ToJsonString() };
-		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], exchanges);
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync([Case()], exchanges, Policies.Pilot);
 		Assert.Equal("failed", result.Outcomes[0].Status);
 		Assert.Equal(SuggestionFailure.InvalidResponse, result.Outcomes[0].Treatment!.Failure);
 	}
@@ -125,11 +125,26 @@ public class OfflinePairedEvaluationTests
 	{
 		OfflineCase[] cases = Enumerable.Range(0, 24).Select(i => Case($"synthetic-{i}")).ToArray();
 		ReplayExchange[] pair = await Paired(0.7);
-		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync(cases, Enumerable.Range(0, 24).SelectMany(_ => pair).ToArray());
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync(cases, Enumerable.Range(0, 24).SelectMany(_ => pair).ToArray(), Policies.Pilot);
 		Assert.Equal(24, result.CompletedCases);
 		Assert.Equal(48, result.Attempts.Count);
 		Assert.Equal(132_120_576, result.ReservationNanodollars);
 		Assert.Equal(4_882_120_576, result.CombinedReservationNanodollars);
-		Assert.Throws<ArgumentException>(() => OfflinePairedEvaluation.ValidateCases([.. cases, Case("extra")]));
+		Assert.Throws<ArgumentException>(() => OfflinePairedEvaluation.ValidateCases([.. cases, Case("extra")], Policies.Pilot));
+	}
+
+	[Fact]
+	public async Task FourCasePolicyCapsReplayAtEightAttempts()
+	{
+		OfflineCase[] cases = Enumerable.Range(0, 4).Select(i => Case($"synthetic-{i}")).ToArray();
+		ReplayExchange[] pair = await Paired(0.9);
+		ReplayExchange[] exchanges = Enumerable.Range(0, 4).SelectMany(_ => pair).ToArray();
+		OfflineReplay result = await OfflinePairedEvaluation.ReplayAsync(cases, exchanges, Policies.Four);
+		Assert.Equal(4, result.CompletedCases);
+		Assert.Equal(8, result.Attempts.Count);
+		Assert.Equal(0, result.PriorCarryNanodollars);
+		Assert.Equal(8 * EvaluationPolicy.PerAttemptNanodollars, result.CombinedReservationNanodollars);
+		await Assert.ThrowsAsync<ArgumentException>(() => OfflinePairedEvaluation.ReplayAsync(cases, [.. exchanges, pair[0]], Policies.Four));
+		await Assert.ThrowsAsync<ArgumentException>(() => OfflinePairedEvaluation.ReplayAsync([.. cases, Case("extra")], exchanges, Policies.Four));
 	}
 }

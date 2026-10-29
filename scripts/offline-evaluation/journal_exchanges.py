@@ -4,15 +4,18 @@ import argparse
 import json
 from pathlib import Path
 
-from aggregate_scoring import _require
+from aggregate_scoring import PER_ATTEMPT_NANODOLLARS, _require
 from evaluation import _load
+
+# Campaign ledger per-journal maximum (campaign_ledger.Policy.max_calls).
+MAXIMUM_JOURNAL_ATTEMPTS = 96
 
 
 def extract(rows, replay):
     _require(isinstance(rows, list) and bool(rows) and rows[0].get("kind") == "header"
              and isinstance(rows[0].get("identity"), str) and bool(rows[0]["identity"]))
     attempts = replay["attempts"]
-    _require(isinstance(attempts, list) and 1 <= len(attempts) <= 48)
+    _require(isinstance(attempts, list) and 1 <= len(attempts) <= MAXIMUM_JOURNAL_ATTEMPTS)
     exchanges = []
     cursor = 1
     for index, attempt in enumerate(attempts):
@@ -23,7 +26,7 @@ def extract(rows, replay):
                  and all(c in "0123456789abcdef" for c in digest)
                  and intent.get("kind") == "intent" and type(intent.get("index")) is int
                  and intent["index"] == index and intent.get("requestSha256") == digest
-                 and intent.get("reservationNanodollars") == 2_752_512)
+                 and intent.get("reservationNanodollars") == PER_ATTEMPT_NANODOLLARS)
         cursor += 1
         if cursor == len(rows):
             _require(index == len(attempts) - 1 and attempt.get("status") == "unknown")

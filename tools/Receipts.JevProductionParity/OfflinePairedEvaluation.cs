@@ -20,17 +20,13 @@ public sealed record OfflineReplay(IReadOnlyList<OfflineOutcome> Outcomes, IRead
 /// <summary>Socket-free replay through the production assistance binding and parsers.</summary>
 public static class OfflinePairedEvaluation
 {
-	public const int MaximumCases = 24;
-	public const int MaximumAttempts = 48;
-	public const long PerAttemptNanodollars = 2_752_512;
-	public const long PriorCarryNanodollars = 4_750_000_000;
-	public const long CeilingNanodollars = 5_000_000_000;
 	private static readonly Guid Generation = new("11111111-1111-1111-1111-111111111111");
 
-	public static void ValidateCases(IReadOnlyList<OfflineCase> cases, bool requireFullPacket = false)
+	public static void ValidateCases(IReadOnlyList<OfflineCase> cases, EvaluationPolicy policy, bool requireFullPacket = false)
 	{
 		ArgumentNullException.ThrowIfNull(cases);
-		if (cases.Count is < 1 or > MaximumCases || requireFullPacket && cases.Count != MaximumCases ||
+		ArgumentNullException.ThrowIfNull(policy);
+		if (cases.Count < 1 || cases.Count > policy.Cases || (requireFullPacket && cases.Count != policy.Cases) ||
 			cases.Any(c => c is null || string.IsNullOrWhiteSpace(c.Id) || !CategorySuggestionPolicy.IsValid(c.Request)) ||
 			cases.Select(c => c.Id).Distinct(StringComparer.Ordinal).Count() != cases.Count)
 		{
@@ -46,16 +42,16 @@ public static class OfflinePairedEvaluation
 	}
 
 	public static async Task<OfflineReplay> ReplayAsync(IReadOnlyList<OfflineCase> cases,
-		IReadOnlyList<ReplayExchange> exchanges, CancellationToken ct = default)
+		IReadOnlyList<ReplayExchange> exchanges, EvaluationPolicy policy, CancellationToken ct = default)
 	{
-		ValidateCases(cases);
+		ValidateCases(cases, policy);
 		ArgumentNullException.ThrowIfNull(exchanges);
-		if (exchanges.Count > MaximumAttempts)
+		if (exchanges.Count > policy.MaximumAttempts)
 		{
 			throw new ArgumentException("Too many replay exchanges.");
 		}
 
-		using ReplayHandler handler = new(exchanges);
+		using ReplayHandler handler = new(exchanges, policy);
 		using HttpClient client = new(handler);
 		using JevSuggestionConcurrency concurrency = new();
 		OfflineOptions options = new();
@@ -85,15 +81,15 @@ public static class OfflinePairedEvaluation
 			outcomes.Add(new(item.Id, status, baseline, treatment));
 			stopped = status != "completed";
 		}
-		long reservation = checked(handler.Attempts.Count * PerAttemptNanodollars);
+		long reservation = checked(handler.Attempts.Count * EvaluationPolicy.PerAttemptNanodollars);
 		return new(outcomes, handler.Attempts, cases.Count, outcomes.Count(o => o.Status == "completed"),
-			outcomes.Count(o => o.Status == "unattempted"), stopped, reservation, PriorCarryNanodollars,
-			checked(PriorCarryNanodollars + reservation));
+			outcomes.Count(o => o.Status == "unattempted"), stopped, reservation, policy.PriorCarryNanodollars,
+			checked(policy.PriorCarryNanodollars + reservation));
 	}
 
 	public static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
 
-	private sealed class ReplayHandler(IReadOnlyList<ReplayExchange> exchanges) : HttpMessageHandler
+	private sealed class ReplayHandler(IReadOnlyList<ReplayExchange> exchanges, EvaluationPolicy policy) : HttpMessageHandler
 	{
 		public List<OfflineAttempt> Attempts { get; } = [];
 		public string CaseId { get; set; } = "";
@@ -101,7 +97,8 @@ public static class OfflinePairedEvaluation
 		public bool Unknown { get; private set; }
 		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
 		{
-			if (Attempts.Count >= MaximumAttempts || PriorCarryNanodollars + (Attempts.Count + 1) * PerAttemptNanodollars > CeilingNanodollars)
+			if (Attempts.Count >= policy.MaximumAttempts ||
+				policy.PriorCarryNanodollars + ((Attempts.Count + 1) * EvaluationPolicy.PerAttemptNanodollars) > policy.CeilingNanodollars)
 			{
 				throw new InvalidOperationException("Offline attempt ceiling reached.");
 			}

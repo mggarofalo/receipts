@@ -2,7 +2,6 @@
 
 from copy import deepcopy
 import json
-import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -52,28 +51,46 @@ class JournalExchangeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 extract(rows, replay)
 
+    def test_attempt_cap_is_ledger_per_journal_maximum(self):
+        for count, valid in ((49, True), (96, True), (97, False)):
+            rows, replay = [{"kind": "header", "identity": "synthetic"}], {"attempts": []}
+            for index in range(count):
+                digest = format(index, "064x")
+                rows.extend([{"kind": "intent", "index": index, "requestSha256": digest,
+                              "reservationNanodollars": 2_752_512},
+                             {"kind": "response", "index": index, "requestSha256": digest,
+                              "body": "synthetic", "statusCode": 200}])
+                replay["attempts"].append({"requestSha256": digest, "status": "replayed"})
+            if valid:
+                self.assertEqual(len(extract(rows, replay)), count)
+            else:
+                with self.assertRaises(ValueError):
+                    extract(rows, replay)
+
     def test_full_conditional_journal_and_unknown_tail_feed_bound_scorer(self):
-        from test_aggregate_scoring import fixture
-        runner = Path(__file__).resolve().parents[2] / "tools/Receipts.JevProductionParity/bin/Debug/net10.0/Receipts.JevProductionParity.dll"
+        from test_aggregate_scoring import RUNNER as runner, fixture, policy_for, write_freeze
         if not runner.is_file():
             self.skipTest("build production parity tool for socket-free integration")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            cases, labels, _ = fixture()
+            cases, labels, _, freeze = fixture()
             for case in cases:
                 case["request"]["categories"] = [{"id": "food", "parentId": None,
                     "name": "Food", "definition": "Synthetic edible goods"}]
             for label in labels["labels"]:
                 label.update(maximallySpecificAcceptablePaths=[{"categoryId": "food", "pathIds": ["food"]}],
                              validBroadAncestorIds=[])
-            paths = {k: root / (k + ".json") for k in ("cases", "labels", "replay", "exchanges", "freeze", "output")}
+            paths = {k: root / (k + ".json") for k in
+                     ("cases", "labels", "policy", "replay", "exchanges", "freeze", "output")}
+            paths["policy"].write_text(json.dumps(policy_for(freeze)), encoding="utf-8")
             paths["cases"].write_text(json.dumps(cases), encoding="utf-8")
             paths["labels"].write_text(json.dumps(labels), encoding="utf-8")
             exchanges, rows = [], [{"kind": "header", "identity": "synthetic"}]
             while True:
                 paths["exchanges"].write_text(json.dumps(exchanges), encoding="utf-8")
                 paths["replay"].unlink(missing_ok=True)
-                result = subprocess.run(["dotnet", str(runner), "offline-replay", str(paths["cases"]),
+                result = subprocess.run(["dotnet", str(runner), "offline-replay", str(paths["policy"]),
+                                         str(paths["cases"]),
                                          str(paths["exchanges"]), str(paths["replay"])], capture_output=True)
                 self.assertEqual(result.returncode, 0)
                 replay = json.loads(paths["replay"].read_text())
@@ -103,10 +120,7 @@ class JournalExchangeTests(unittest.TestCase):
             result = subprocess.run(command, capture_output=True)
             self.assertEqual(result.returncode, 0)
             self.assertEqual(result.stdout, b"")
-            freeze = {"beforeCurrentPredictions": True, "cohortSize": 24, "sha256": {
-                binding: hashlib.sha256(paths[key].read_bytes()).hexdigest() for key, binding in
-                (("cases", "membership"), ("labels", "adjudicatedLabels"))}}
-            paths["freeze"].write_text(json.dumps(freeze), encoding="utf-8")
+            write_freeze(freeze, paths)
             scorer = [sys.executable, str(Path(__file__).with_name("aggregate_scoring.py"))]
             for key, path in paths.items():
                 scorer.extend(["--" + key, str(path)])
@@ -118,7 +132,7 @@ class JournalExchangeTests(unittest.TestCase):
             self.assertEqual(subprocess.run(command, capture_output=True).returncode, 2)
             paths["exchanges"].write_text(json.dumps(exchanges[:-1]), encoding="utf-8")
             paths["replay"].unlink()
-            subprocess.run(["dotnet", str(runner), "offline-replay", str(paths["cases"]),
+            subprocess.run(["dotnet", str(runner), "offline-replay", str(paths["policy"]), str(paths["cases"]),
                             str(paths["exchanges"]), str(paths["replay"])], check=True, capture_output=True)
             journal.write_text("".join(json.dumps(row) + "\n" for row in rows[:-1]), encoding="utf-8")
             paths["exchanges"].unlink()

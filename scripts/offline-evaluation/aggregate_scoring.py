@@ -1,23 +1,74 @@
-"""Offline aggregate-only scorer for the frozen 24-case paired pilot.
+"""Offline aggregate-only scorer for a frozen paired baseline/selected-path cohort.
 
 No provider, credentials, implicit data paths, or per-case output. Inputs are
-private production cases, adjudicated labels, and OfflineReplay JSON artifacts.
+private production cases, adjudicated labels, a scoring freeze, and
+OfflineReplay JSON artifacts. Cohort size, attempt cap, prior carry, candidate
+gates and acceptance fractions come from the validated freeze only.
 """
 
 import argparse
 from collections import Counter
+from fractions import Fraction
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import tempfile
 
 from evaluation import _load, _rate, score
 
+# Inherited reservation assumption: 65,536 input tokens at USD 0.042/million.
+PER_ATTEMPT_NANODOLLARS = 2_752_512
+MAXIMUM_COHORT = 48
+WRITES = ("most_specific", "broad", "harmful_specificity", "wrong_branch",
+          "other_unsupported", "unresolved_assignment")
+USEFUL = ("most_specific", "broad")
+INCORRECT = ("harmful_specificity", "wrong_branch", "other_unsupported", "unresolved_assignment")
+UNTESTED_REASON = (
+    "{gates} untested: the cohort has no cases in the corresponding gold stratum. "
+    "Owner-derived labels (provenance owner-current-assignment) are always labelable "
+    "with one maximally specific path, so they contain no no-answer or broad-only cases; "
+    "this is intended. Cover those safety strata with the separate synthetic-safety set. "
+    "Overall cannot pass while any gate is untested.")
+
 
 def _require(condition):
     if not condition:
         raise ValueError("invalid or misaligned scoring artifact")
+
+
+def _number(value, low, high):
+    return (not isinstance(value, bool) and isinstance(value, (int, float))
+            and math.isfinite(value) and low <= value <= high)
+
+
+def _sha256(value):
+    return (isinstance(value, str) and len(value) == 64
+            and all(c in "0123456789abcdef" for c in value))
+
+
+def validate_freeze(freeze):
+    """Fail closed unless the scoring freeze has exactly the preregistered shape."""
+    _require(isinstance(freeze, dict) and set(freeze) == {
+        "beforeCurrentPredictions", "cohortSize", "maximumAttempts", "priorCarryNanodollars",
+        "candidateGates", "acceptance", "sha256"})
+    size = freeze["cohortSize"]
+    _require(freeze["beforeCurrentPredictions"] is True
+             and type(size) is int and 1 <= size <= MAXIMUM_COHORT
+             and type(freeze["maximumAttempts"]) is int and freeze["maximumAttempts"] == 2 * size
+             and type(freeze["priorCarryNanodollars"]) is int and freeze["priorCarryNanodollars"] >= 0)
+    gates, acceptance, hashes = freeze["candidateGates"], freeze["acceptance"], freeze["sha256"]
+    _require(isinstance(gates, dict) and set(gates) == {"globalFit", "selectedPathSupport"}
+             and all(_number(v, 0.7, 1) for v in gates.values()))
+    _require(isinstance(acceptance, dict)
+             and set(acceptance) == {"minimumUsefulFraction", "maximumUsefulSuppressionFraction"}
+             and _number(acceptance["minimumUsefulFraction"], 0, 1)
+             and acceptance["minimumUsefulFraction"] > 0
+             and _number(acceptance["maximumUsefulSuppressionFraction"], 0, 1))
+    _require(isinstance(hashes, dict) and set(hashes) == {"membership", "adjudicatedLabels", "policy"}
+             and all(_sha256(v) for v in hashes.values()))
+    return freeze
 
 
 def _index(rows, key):
@@ -64,11 +115,11 @@ def _oracle(label, paths):
     return specific, broad
 
 
-def _validate_attempts(cases, replay):
+def _validate_attempts(cases, replay, freeze):
     """Structural checks; the CLI additionally regenerates production replay."""
     _require([c["id"] for c in cases] == [o["id"] for o in replay["outcomes"]])
     attempts = replay["attempts"]
-    _require(isinstance(attempts, list) and 1 <= len(attempts) <= 48)
+    _require(isinstance(attempts, list) and 1 <= len(attempts) <= freeze["maximumAttempts"])
     expected = []
     for outcome in replay["outcomes"]:
         status = outcome["status"]
@@ -96,17 +147,33 @@ def _validate_attempts(cases, replay):
                  and isinstance(attempt.get("requestJson"), str)
                  and hashlib.sha256(attempt["requestJson"].encode("utf-8")).hexdigest()
                  == attempt.get("requestSha256"))
-    _require(sum(a["stage"] == "baseline" for a in attempts) <= 24
-             and sum(a["stage"] == "selected-path" for a in attempts) <= 24)
+    size = freeze["cohortSize"]
+    _require(sum(a["stage"] == "baseline" for a in attempts) <= size
+             and sum(a["stage"] == "selected-path" for a in attempts) <= size)
     _require(replay["completedCases"] == sum(o["status"] == "completed" for o in replay["outcomes"])
              and replay["unattemptedCases"] == sum(o["status"] == "unattempted" for o in replay["outcomes"]))
-    reservation = len(attempts) * 2_752_512
+    reservation = len(attempts) * PER_ATTEMPT_NANODOLLARS
+    carry = freeze["priorCarryNanodollars"]
     _require(replay["reservationNanodollars"] == reservation
-             and replay["priorCarryNanodollars"] == 4_750_000_000
-             and replay["combinedReservationNanodollars"] == reservation + 4_750_000_000)
+             and replay["priorCarryNanodollars"] == carry
+             and replay["combinedReservationNanodollars"] == reservation + carry)
 
 
-def verify_production_replay(cases_path, exchanges_path, runner, replay, scratch):
+def verify_bindings(freeze, cases_path, labels_path, policy_path):
+    """Bind exact case, label and packet-policy bytes to the pre-prediction freeze."""
+    for path, binding in ((cases_path, "membership"), (labels_path, "adjudicatedLabels"),
+                          (policy_path, "policy")):
+        _require(hashlib.sha256(path.read_bytes()).hexdigest() == freeze["sha256"][binding])
+    # The freeze may not score a different rule, cohort or budget than the runner used.
+    policy = _load(policy_path)
+    _require(policy.get("autoWriteGlobalGate") == freeze["candidateGates"]["globalFit"]
+             and policy.get("autoWriteSelectedGate") == freeze["candidateGates"]["selectedPathSupport"]
+             and policy.get("cases") == freeze["cohortSize"]
+             and policy.get("maximumAttempts") == freeze["maximumAttempts"]
+             and policy.get("conservativePriorCarryNanodollars") == freeze["priorCarryNanodollars"])
+
+
+def verify_production_replay(policy_path, cases_path, exchanges_path, runner, replay, scratch):
     """Regenerate all payloads/parsers/decisions in the socket-free .NET runner.
 
     The built runner identity must be verified against the frozen production
@@ -116,7 +183,8 @@ def verify_production_replay(cases_path, exchanges_path, runner, replay, scratch
     _require(runner.suffix.lower() == ".dll" and runner.is_file())
     regenerated = scratch / "regenerated.private.json"
     result = subprocess.run(["dotnet", str(runner.resolve()), "offline-replay",
-                             str(cases_path.resolve()), str(exchanges_path.resolve()),
+                             str(policy_path.resolve()), str(cases_path.resolve()),
+                             str(exchanges_path.resolve()),
                              str(regenerated.resolve())], stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, timeout=120)
     _require(result.returncode == 0 and _load(regenerated) == replay)
@@ -166,10 +234,60 @@ def _outcome(result, status, paths, specific, broad, unresolved):
             else "other_unsupported"), harmful, wrong
 
 
-def aggregate(cases, labels, replay):
-    """Return counts/rates only; retain failures and suffixes in denominator 24."""
+def _candidate(outcome, treatment_state, freeze):
+    """Preregistered two-signal auto-write: baseline global fit AND selected support.
+
+    Non-completed cases mirror the treatment state. Missing, boolean or non-finite
+    signals never meet a gate.
+    """
+    if outcome["status"] != "completed" or treatment_state == "abstained":
+        return treatment_state
+    gates = freeze["candidateGates"]
+    fit = outcome["baseline"]["suggestion"].get("fitProbability")
+    support = outcome["treatment"]["suggestion"].get("selectedPathSupport")
+    if (_number(fit, gates["globalFit"], math.inf)
+            and _number(support, gates["selectedPathSupport"], math.inf)):
+        return treatment_state
+    return "abstained"
+
+
+def _gate(passed, tested=True):
+    return "untested" if not tested else "pass" if passed else "fail"
+
+
+def evaluate_gates(arm, baseline, strata, freeze):
+    """Preregistered necessary pilot gates for one write arm; never rollout evidence."""
+    size, acceptance = freeze["cohortSize"], freeze["acceptance"]
+    # Decimal reading of the frozen fraction avoids binary rounding at boundaries.
+    minimum = math.ceil(Fraction(str(acceptance["minimumUsefulFraction"])) * size)
+    allowed = math.floor(Fraction(str(acceptance["maximumUsefulSuppressionFraction"]))
+                         * baseline["accepted"])
+    gates = {
+        # Every case maps to one state, so no failure/unknown/suffix means all completed.
+        "complete": _gate(strata["unresolved"] == 0
+                          and arm["failed"] + arm["unknown"] + arm["unattempted"] == 0),
+        "minimum_useful": _gate(arm["accepted"] >= minimum),
+        "zero_incorrect_writes": _gate(sum(arm[k] for k in INCORRECT) == 0),
+        "retention": _gate(arm["useful_baseline_suppressed"] <= allowed),
+        "no_answer_safety": _gate(arm["writes_on_no_answer"] == 0, strata["no_answer"] > 0),
+        "broad_only_safety": _gate(arm["harmful_specificity_on_broad_only"] == 0,
+                                   strata["broad_only"] > 0),
+    }
+    untested = [name for name, value in gates.items() if value == "untested"]
+    overall = ("fail" if "fail" in gates.values() else "incomplete" if untested else "pass")
+    return {**gates, "overall": overall,
+            "untestedReason": UNTESTED_REASON.format(gates=", ".join(untested)) if untested else None,
+            "thresholds": {"minimumUseful": minimum, "maximumUsefulSuppressed": allowed}}
+
+
+def aggregate(cases, labels, replay, freeze):
+    """Return counts/rates only; retain failures and suffixes in the frozen denominator."""
+    validate_freeze(freeze)
+    size = freeze["cohortSize"]
     indexed = _index(cases, "id")
-    _require(len(indexed) == 24)
+    _require(len(indexed) == size)
+    _require(isinstance(labels, dict) and isinstance(labels.get("oracle"), str)
+             and bool(labels["oracle"].strip()))
     gold = _index(labels["labels"], "caseId")
     _require(set(indexed) <= set(gold))
     paths = _paths(cases[0]["request"]["categories"])
@@ -177,11 +295,12 @@ def aggregate(cases, labels, replay):
                  and c["request"]["taxonomyRevision"] == cases[0]["request"]["taxonomyRevision"]
                  for c in cases))
     outcomes = _index(replay["outcomes"], "id")
-    _require(set(indexed) == set(outcomes) and replay["totalCases"] == 24)
-    _validate_attempts(cases, replay)
-    counts = {arm: Counter() for arm in ("baseline", "treatment")}
-    states = {arm: [] for arm in counts}
-    transitions = Counter()
+    _require(set(indexed) == set(outcomes) and replay["totalCases"] == size)
+    _validate_attempts(cases, replay, freeze)
+    arms = ("baseline", "treatment", "candidate")
+    counts = {arm: Counter() for arm in arms}
+    states = {arm: [] for arm in arms}
+    transitions = {arm: Counter() for arm in arms[1:]}
     strata = Counter()
     stopped = False
     for key, case in indexed.items():
@@ -201,20 +320,23 @@ def aggregate(cases, labels, replay):
         strata["unresolved"] += unresolved
         strata["initial_disagreement"] += label["initialPassDisagreement"]
         strata["uncertainty_marked"] += bool(label.get("uncertainty"))
-        pair = []
-        for arm in counts:
-            state, harmful, wrong = _outcome(outcome.get(arm), status, paths,
-                                              specific, broad, unresolved)
+        judged = {arm: _outcome(outcome.get(arm), status, paths, specific, broad, unresolved)
+                  for arm in arms[:2]}
+        candidate = _candidate(outcome, judged["treatment"][0], freeze)
+        judged["candidate"] = (judged["treatment"] if candidate == judged["treatment"][0]
+                               else (candidate, False, False))
+        for arm, (state, harmful, wrong) in judged.items():
             _require(status != "completed" or state not in ("failed", "unknown", "unattempted"))
-            pair.append(state)
-            useful = state in ("most_specific", "broad")
-            write = state in ("most_specific", "broad", "harmful_specificity", "wrong_branch",
-                              "other_unsupported", "unresolved_assignment")
+            useful = state in USEFUL
+            write = state in WRITES
             counts[arm][state] += 1
             for name, flag in (("accepted", useful), ("writes", write),
                                ("harmful_specificity_flag", harmful), ("wrong_branch_flag", wrong),
                                ("writes_on_no_answer", write and no_answer),
+                               # Includes correct broad writes; the safety gate uses the next count.
                                ("writes_on_broad_only", write and broad_only),
+                               ("harmful_specificity_on_broad_only",
+                                state == "harmful_specificity" and broad_only),
                                ("missed_useful", state == "abstained" and bool(specific | broad)),
                                ("correct_no_answer_abstention", state == "abstained" and no_answer),
                                ("accepted_initial_agreement", useful and not label["initialPassDisagreement"]),
@@ -225,59 +347,71 @@ def aggregate(cases, labels, replay):
                                 ("failed", "unattempted", "abstained") else "answered",
                                 **({"label": "accepted" if useful else "unsupported"} if write else {})})
         if status in ("failed", "unknown"):
-            _require(status in pair)
+            _require(status in (judged["baseline"][0], judged["treatment"][0]))
         if status == "completed":
             baseline = outcome["baseline"]["suggestion"]
             treatment = outcome["treatment"]["suggestion"]
             _require(treatment["categoryId"] is None or
                      (treatment["categoryId"] == baseline["categoryId"]
                       and treatment["path"] == baseline["path"]))
-        transitions[" -> ".join(pair)] += 1
-        counts["treatment"]["baseline_errors_suppressed"] += (
-            pair[0] in ("wrong_branch", "harmful_specificity", "other_unsupported")
-            and pair[1] == "abstained")
-        counts["treatment"]["useful_baseline_suppressed"] += (
-            pair[0] in ("most_specific", "broad") and pair[1] == "abstained")
+        before = judged["baseline"][0]
+        for arm in transitions:
+            after = judged[arm][0]
+            transitions[arm][before + " -> " + after] += 1
+            counts[arm]["baseline_errors_suppressed"] += (
+                before in ("wrong_branch", "harmful_specificity", "other_unsupported")
+                and after == "abstained")
+            counts[arm]["useful_baseline_suppressed"] += before in USEFUL and after == "abstained"
     _require(bool(replay["stopped"]) == stopped)
     reports = {}
-    for arm in counts:
+    for arm in arms:
         c = counts[arm]
         for name in ("most_specific", "broad", "wrong_branch", "harmful_specificity",
                      "other_unsupported", "unresolved_assignment", "abstained", "failed",
-                     "unknown", "unattempted", "accepted", "writes"):
+                     "unknown", "unattempted", "accepted", "writes", "writes_on_no_answer",
+                     "harmful_specificity_on_broad_only"):
             c.setdefault(name, 0)
+        if arm != "baseline":
+            c.setdefault("baseline_errors_suppressed", 0)
+            c.setdefault("useful_baseline_suppressed", 0)
         # Reuse existing cohort accounting; retain unknown separately above.
         base = score([{"id": k, "group": k, "expected": "accepted"} for k in indexed], states[arm])
         reports[arm] = {"counts": dict(c), "useful_coverage": base["accuracy"],
                         "write_coverage": base["coverage"],
                         "selective_accuracy": base["selective_accuracy"],
-                        "agreement_only_useful_coverage": _rate(c["accepted_initial_agreement"], 24),
-                        "unambiguous_useful_coverage": _rate(c["accepted_without_uncertainty"], 24)}
-    return {"total": 24, "oracle": "provisional agent adjudication; not human gold",
-            "strata": dict(strata), "arms": reports, "paired_transitions": dict(transitions),
+                        "agreement_only_useful_coverage": _rate(c["accepted_initial_agreement"], size),
+                        "unambiguous_useful_coverage": _rate(c["accepted_without_uncertainty"], size)}
+    gates = {arm: evaluate_gates(counts[arm], counts["baseline"], strata, freeze)
+             for arm in ("candidate", "treatment")}
+    return {"total": size, "oracle": labels["oracle"],
+            "candidate_gates": dict(freeze["candidateGates"]),
+            "strata": {k: strata[k] for k in ("no_answer", "broad_only", "unresolved",
+                                              "initial_disagreement", "uncertainty_marked")},
+            "arms": reports,
+            "paired_transitions": {"baseline -> " + arm: dict(t) for arm, t in transitions.items()},
+            "gates": gates,
             "selected_path_attempts": sum(a["stage"] == "selected-path" for a in replay["attempts"]),
             "interval_caveat": "95% Wilson; assumes independence; curated families may correlate"}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for field in ("cases", "labels", "replay", "freeze", "output", "exchanges", "runner"):
+    for field in ("cases", "labels", "policy", "replay", "freeze", "output", "exchanges", "runner"):
         parser.add_argument("--" + field, type=Path, required=True)
     args = parser.parse_args()
     try:
-        freeze = _load(args.freeze)
-        _require(freeze["beforeCurrentPredictions"] is True and freeze["cohortSize"] == 24)
-        for field, binding in (("cases", "membership"), ("labels", "adjudicatedLabels")):
-            _require(hashlib.sha256(getattr(args, field).read_bytes()).hexdigest()
-                     == freeze["sha256"][binding])
+        freeze = validate_freeze(_load(args.freeze))
+        verify_bindings(freeze, args.cases, args.labels, args.policy)
         replay = _load(args.replay)
         # Temporary raw replay remains next to private output, outside the repo.
         with tempfile.TemporaryDirectory(prefix="scoring-", dir=args.output.parent) as directory:
-            verify_production_replay(args.cases, args.exchanges, args.runner, replay, Path(directory))
-        report = aggregate(_load(args.cases), _load(args.labels), replay)
+            verify_production_replay(args.policy, args.cases, args.exchanges, args.runner,
+                                     replay, Path(directory))
+        report = aggregate(_load(args.cases), _load(args.labels), replay, freeze)
         with args.output.open("x", encoding="utf-8") as output:
             output.write(json.dumps(report, indent=2, allow_nan=False) + "\n")
-    except (OSError, ValueError, KeyError, TypeError, IndexError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError,
+            subprocess.SubprocessError):
         # Never print JSON parsing excerpts, private identifiers or filesystem paths.
         parser.exit(2, "aggregate scoring: invalid input or unavailable output\n")
 
