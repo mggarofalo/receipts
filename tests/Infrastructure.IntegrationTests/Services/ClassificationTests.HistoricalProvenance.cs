@@ -44,7 +44,7 @@ public sealed partial class ClassificationTests
 		Guid[] ids = [request.OperationId, Guid.NewGuid(), Guid.NewGuid()];
 		await using var db = fixture.CreateDbContext();
 		string[] migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+		await db.GetService<IMigrator>().MigrateAsync("20261028232650_AddHistoricalApprovedMappingProvenance");
 		for (int i = 0; i < ids.Length; i++)
 		{
 			string state = new[] { "Preview", "Completed", "Undone" }[i];
@@ -80,7 +80,7 @@ public sealed partial class ClassificationTests
 		await Historical().SavePreviewAsync(request);
 		await using var db = fixture.CreateDbContext();
 		string[] migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+		await db.GetService<IMigrator>().MigrateAsync("20261028105726_AddOrganizationDiscovery");
 		await db.GetService<IMigrator>().MigrateAsync(migrations[^1]);
 		var header = await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == request.OperationId);
 		var item = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == request.OperationId);
@@ -124,7 +124,13 @@ public sealed partial class ClassificationTests
 		item.ApprovedMappingRevisionId = mapping.Id;
 		db.HistoricalOperationItems.Add(item);
 		await db.SaveChangesAsync();
-		await RejectHistoricalSql(db, "UPDATE taxonomy.\"HistoricalOperationItems\" SET \"ApprovedMappingRevisionId\" = NULL WHERE \"OperationId\" = {0}", manual.Id, "provenance is immutable");
+		Func<Task> tamper = () => db.Database.ExecuteSqlRawAsync(
+			"UPDATE taxonomy.\"HistoricalOperationItems\" SET \"ApprovedMappingRevisionId\" = NULL WHERE \"OperationId\" = {0}", manual.Id);
+		var rejection = (await tamper.Should().ThrowAsync<PostgresException>()).Which;
+		rejection.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+		rejection.MessageText.Should().Be("Historical item mapping differs from capture");
+		(await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == manual.Id))
+			.ApprovedMappingRevisionId.Should().Be(mapping.Id);
 		var error = await Assert.ThrowsAsync<TaxonomyException>(() => Historical().ApplyChunkAsync(Actor, manual.Id, 1));
 		error.Status.Should().Be(409);
 		await Assert.ThrowsAsync<InvalidDataException>(() => AcceptanceExport());
@@ -197,8 +203,7 @@ public sealed partial class ClassificationTests
 		await using var migrator = fixture.CreateDbContext();
 		await migrator.Database.OpenConnectionAsync();
 		int pid = ((NpgsqlConnection)migrator.Database.GetDbConnection()).ProcessID;
-		string[] applied = (await migrator.Database.GetAppliedMigrationsAsync()).ToArray();
-		Task downgrade = migrator.GetService<IMigrator>().MigrateAsync(applied[^2]);
+		Task downgrade = migrator.GetService<IMigrator>().MigrateAsync("20261028232650_AddHistoricalApprovedMappingProvenance");
 		try
 		{
 			await using var observer = new NpgsqlConnection(fixture.ConnectionString);
@@ -217,7 +222,7 @@ public sealed partial class ClassificationTests
 		var exception = await Assert.ThrowsAsync<PostgresException>(() => downgrade);
 		exception.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
 		exception.MessageText.Should().Contain("Historical capture mapping evidence is retained");
-		(await migrator.Database.GetAppliedMigrationsAsync()).Should().Contain(applied[^1]);
+		(await migrator.Database.GetAppliedMigrationsAsync()).Should().Contain("20261029002117_AddHistoricalCaptureMappingIdentity");
 	}
 
 }
