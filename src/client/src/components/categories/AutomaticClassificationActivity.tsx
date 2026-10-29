@@ -75,6 +75,16 @@ export function AutomaticClassificationActivity() {
       });
       await queryClient.invalidateQueries({ queryKey: ["historical-groups"] });
     } catch (cause) {
+      // This server preflight code guarantees that no undo intent or effects
+      // were committed. Other failures must retain the revision for safe replay.
+      if (
+        typeof cause === "object" &&
+        cause !== null &&
+        "code" in cause &&
+        cause.code === "stale-undo-taxonomy"
+      ) {
+        delete intents.current[id];
+      }
       setError(
         checkingCategories
           ? "Could not check current categories. Try Undo again."

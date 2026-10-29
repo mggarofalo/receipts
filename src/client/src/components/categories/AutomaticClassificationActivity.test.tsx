@@ -269,3 +269,48 @@ it("distinguishes undo buttons by their purchase descriptions", async () => {
     screen.getByRole("button", { name: /^Undo for Bread at Bakery from/ }),
   ).toBeEnabled();
 });
+
+it.each([
+  ["stale-undo-taxonomy", 3, "revision-3"],
+  ["other-conflict", 2, "revision-2"],
+])(
+  "retries %s with the appropriate revision without weakening ambiguous replay safety",
+  async (code, expectedReads, expectedRevision) => {
+    let taxonomyReads = 0;
+    mockClient.GET.mockImplementation(async (path: string) =>
+      ok(
+        path === "/api/taxonomy"
+          ? { id: `revision-${++taxonomyReads}`, nodes: [] }
+          : { items: [entry], nextOffset: null },
+      ),
+    );
+    mockClient.POST.mockResolvedValueOnce({
+      error: { status: 409, code, detail: "Please retry" },
+      data: undefined,
+      response: { status: 409 },
+    }).mockResolvedValueOnce(ok({ state: "undone" }));
+    renderWithQueryClient(<AutomaticClassificationActivity />);
+    await userEvent.click(
+      screen.getByText("Automatic classification activity"),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: /^Undo for Whole Milk at Market from/,
+      }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Please retry");
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: /^Undo for Whole Milk at Market from/,
+      }),
+    );
+    await waitFor(() => expect(mockClient.POST).toHaveBeenCalledTimes(2));
+    expect(mockClient.POST).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: expect.objectContaining({ taxonomyRevisionId: expectedRevision }),
+      }),
+    );
+    expect(taxonomyReads).toBe(expectedReads);
+  },
+);
