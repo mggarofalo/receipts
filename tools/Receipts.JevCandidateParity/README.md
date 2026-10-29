@@ -224,3 +224,19 @@ wire/reducer plumbing evidence only: it establishes no model accuracy, real
 shortlist recall, provider provenance, transport behavior or activation readiness.
 A live evaluation harness, separately authorized data/budget and an independent
 holdout assessment remain required before any activation decision.
+
+## Selected full-path fit experiment
+
+`PurchaseEvidenceExperiment.PrepareSelectedPath` prepares one independent Noul for
+an already selected category, including each ancestor's name and definition and
+purchase evidence. The question asks whether the evidence supports that precise
+path, not whether any root fits. Its raw typed answer uses the existing strict,
+plan-bound parser. The offline result retains global fit and selected-path support
+as separate probabilities; either a low or uncertain global fit, or low or
+uncertain selected-path support, abstains. There is no parent fallback, production
+registration, transport, or assignment writer. The 0.3/0.7 bands are exploratory
+starting points, not calibrated thresholds. Synthetic responses verify plumbing and
+fail-closed behavior only; they do not establish model accuracy or prevent a
+model from making an unsupported inference. Independent evaluation is required.
+The global fit input is intentionally excluded from the question so it cannot
+influence the independent judgment; it is supplied separately to the offline gate.
