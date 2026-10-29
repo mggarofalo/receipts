@@ -38,7 +38,7 @@ public sealed partial class ClassificationTests
 		var source = new NormalizationSourceKey(group.Store, group.RawDescription, group.ItemCode);
 		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
 			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
-		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, []);
+		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, [], CurrentRestoreGeneration());
 		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
 		{ request.Actor, request.TaxonomyRevisionId, request.MappingRevisionId, request.Group, ExcludedItemIds = Array.Empty<Guid>() })));
 		Guid[] ids = [request.OperationId, Guid.NewGuid(), Guid.NewGuid()];

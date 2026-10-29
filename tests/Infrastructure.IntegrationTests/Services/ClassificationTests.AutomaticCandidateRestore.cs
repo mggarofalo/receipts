@@ -26,7 +26,7 @@ public sealed partial class ClassificationTests
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
-		await executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		await executor.ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Restore prior choice");
 		(await executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
 
@@ -86,7 +86,7 @@ public sealed partial class ClassificationTests
 		await using var destination = await fixture.CreateIsolatedAsync();
 		var original = new ClassificationTests(source);
 		var captured = await original.CaptureExecutableAsync(extraItems: 1);
-		var progress = await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		var progress = await original.ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		progress.State.Should().Be(HistoricalOperationState.Applying);
 		progress.Applied.Should().Be(1); progress.Pending.Should().Be(1);
 		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
@@ -99,7 +99,7 @@ public sealed partial class ClassificationTests
 				await importer.ImportCandidateFromSqliteAsync(input, default);
 			}
 			var restored = new ClassificationTests(destination);
-			var stopped = await restored.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+			var stopped = await restored.ApprovedExecutor().ApplyChunkAsync(restored.CurrentRestoreGeneration(), Actor, captured.Request.OperationId, 1);
 			stopped.State.Should().Be(HistoricalOperationState.Cancelled);
 			stopped.Applied.Should().Be(1); stopped.Pending.Should().Be(1);
 			await using var db = destination.CreateDbContext();
@@ -133,7 +133,7 @@ public sealed partial class ClassificationTests
 			}
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
 			await using (var input = File.OpenRead(path)) { await importer.ImportCandidateFromSqliteAsync(input, default); }
-			var stopped = await subject.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+			var stopped = await subject.ApprovedExecutor().ApplyChunkAsync(subject.CurrentRestoreGeneration(), Actor, captured.Request.OperationId, 1);
 			stopped.State.Should().Be(HistoricalOperationState.Cancelled);
 			stopped.Applied.Should().Be(0); stopped.Pending.Should().Be(1);
 		}
@@ -166,7 +166,7 @@ public sealed partial class ClassificationTests
 		var original = new ClassificationTests(source);
 		var restored = new ClassificationTests(destination);
 		var captured = await original.CaptureExecutableAsync(extraItems: 2);
-		await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 3);
+		await original.ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 3);
 		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Restore prior choice");
 		var progress = await original.ApprovedExecutor().UndoChunkAsync(original.CurrentRestoreGeneration(), Actor, captured.Request.OperationId, undo, 1);
 		progress.State.Should().Be(HistoricalOperationState.Undoing);
@@ -219,7 +219,7 @@ public sealed partial class ClassificationTests
 		await using var isolated = await fixture.CreateIsolatedAsync();
 		var subject = new ClassificationTests(isolated);
 		var captured = await subject.CaptureExecutableAsync(extraItems: 1);
-		await subject.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 2);
+		await subject.ApprovedExecutor().ApplyChunkAsync(subject.CurrentRestoreGeneration(), Actor, captured.Request.OperationId, 2);
 		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Frozen restore intent");
 		Guid generation = subject.CurrentRestoreGeneration();
 		(await subject.ApprovedExecutor().UndoChunkAsync(generation, Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
@@ -264,7 +264,7 @@ public sealed partial class ClassificationTests
 		var original = new ClassificationTests(source);
 		var restored = new ClassificationTests(destination);
 		var captured = await original.CaptureExecutableAsync(extraItems: 1);
-		await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 2);
+		await original.ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 2);
 		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Frozen restore intent");
 		Guid generation = original.CurrentRestoreGeneration();
 		(await original.ApprovedExecutor().UndoChunkAsync(generation, Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
@@ -303,7 +303,7 @@ public sealed partial class ClassificationTests
 		await using var destination = await fixture.CreateIsolatedAsync();
 		var original = new ClassificationTests(source);
 		var captured = await original.CaptureExecutableAsync();
-		(await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
+		(await original.ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
 		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
 		try
 		{
@@ -318,7 +318,7 @@ public sealed partial class ClassificationTests
 			latest.Source.Should().Be("manual");
 			latest.CategoryId.Should().BeNull();
 			latest.PreviousAssignmentId.Should().Be(applied.Id);
-			var retry = captured.Request with { OperationId = Guid.NewGuid() };
+			var retry = captured.Request with { OperationId = Guid.NewGuid(), ExpectedRestoreGeneration = restored.CurrentRestoreGeneration() };
 			(await new HistoricalApprovedMappingCapture(new Factory(destination), TimeProvider.System).CaptureAsync(retry)).Should().Be(0);
 		}
 		finally { File.Delete(path); }
@@ -331,7 +331,7 @@ public sealed partial class ClassificationTests
 		await using var destination = await fixture.CreateIsolatedAsync();
 		var original = new ClassificationTests(source);
 		var completed = await original.CaptureExecutableAsync();
-		await original.ApprovedExecutor().ApplyChunkAsync(Actor, completed.Request.OperationId, 1);
+		await original.ApprovedExecutor().ApplyChunkAsync(completed.Request.ExpectedRestoreGeneration, Actor, completed.Request.OperationId, 1);
 		var pending = await new ClassificationTests(destination).CaptureExecutableAsync();
 		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
 		try
@@ -361,7 +361,7 @@ public sealed partial class ClassificationTests
 		try
 		{
 			await gate.Entered.Task.WaitAsync(TimeSpan.FromSeconds(20));
-			(await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
+			(await original.ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
 			gate.Release.TrySetResult();
 			path = await exporting;
 			await using var sqlite = new SqliteConnection($"Data Source={path};Mode=ReadOnly;Pooling=False");

@@ -21,13 +21,14 @@ internal sealed class HistoricalApprovedMappingExecutor(
 	internal Task<HistoricalProgress> UndoChunkAsync(Guid expectedRestoreGeneration, string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
 			new HistoricalReclassificationService(factory, clock, options).UndoApprovedMappingChunkAsync(actor, id, command, limit, expectedRestoreGeneration, ct);
 
-	internal async Task<HistoricalProgress> ApplyChunkAsync(string actor, Guid id, int limit, CancellationToken ct = default)
+	internal async Task<HistoricalProgress> ApplyChunkAsync(Guid expectedRestoreGeneration, string actor, Guid id, int limit, CancellationToken ct = default)
 	{
 		if (limit is < 1 or > HistoricalReclassificationPolicy.MaximumChunkSize)
 		{ throw new ArgumentOutOfRangeException(nameof(limit)); }
 		await using var db = await factory.CreateDbContextAsync(ct);
 		await using var tx = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
+		await HistoricalRestoreGeneration.RequireCurrentAsync(db, expectedRestoreGeneration, ct);
 		var operation = await db.HistoricalOperations.FromSqlInterpolated(
 			$"SELECT * FROM taxonomy.\"HistoricalOperations\" WHERE \"Id\" = {id} FOR UPDATE")
 			.SingleOrDefaultAsync(x => x.Actor == actor, ct)

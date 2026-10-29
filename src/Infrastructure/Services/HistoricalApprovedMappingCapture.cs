@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Infrastructure.Services;
 
 internal sealed record ApprovedMappingCaptureRequest(Guid OperationId, string Actor, Guid TaxonomyRevisionId,
-	Guid MappingRevisionId, HistoricalGroupKey Group, IReadOnlyList<Guid> ExcludedItemIds);
+	Guid MappingRevisionId, HistoricalGroupKey Group, IReadOnlyList<Guid> ExcludedItemIds, Guid ExpectedRestoreGeneration);
 
 // Capture only. No worker or public entry point invokes this service.
 internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock)
@@ -33,6 +33,7 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
 		await using var db = await factory.CreateDbContextAsync(ct);
 		await using var tx = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
+		await HistoricalRestoreGeneration.RequireCurrentAsync(db, request.ExpectedRestoreGeneration, ct);
 		var existing = await db.HistoricalOperations.SingleOrDefaultAsync(x => x.Id == request.OperationId, ct);
 		if (existing != null)
 		{

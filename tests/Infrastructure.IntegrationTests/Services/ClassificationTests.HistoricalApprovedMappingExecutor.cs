@@ -40,7 +40,7 @@ public sealed partial class ClassificationTests
 		var source = new NormalizationSourceKey(group.Store, group.RawDescription, group.ItemCode);
 		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
 			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
-		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, []);
+		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, [], CurrentRestoreGeneration());
 		(await new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System).CaptureAsync(request)).Should().Be(1 + extraItems);
 		return (request, item.Id, assignment, seed.Root);
 	}
@@ -55,8 +55,8 @@ public sealed partial class ClassificationTests
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
-		var results = await Task.WhenAll(executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1),
-			executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1));
+		var results = await Task.WhenAll(executor.ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1),
+			executor.ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1));
 		results.Should().OnlyContain(x => x.Applied == 1 && x.Pending == 0 && x.State == HistoricalOperationState.Completed);
 		var history = await Service().HistoryAsync(captured.Item, null, 10);
 		history.Items.Should().HaveCount(2);
@@ -78,7 +78,7 @@ public sealed partial class ClassificationTests
 		var first = await CaptureExecutableAsync();
 		var correction = await Service().AssignAsync(Actor, first.Item,
 			new(null, first.Request.TaxonomyRevisionId, first.Assignment, Guid.NewGuid(), "Explicit clear"));
-		var skipped = await ApprovedExecutor().ApplyChunkAsync(Actor, first.Request.OperationId, 10);
+		var skipped = await ApprovedExecutor().ApplyChunkAsync(first.Request.ExpectedRestoreGeneration, Actor, first.Request.OperationId, 10);
 		skipped.Skipped.Should().Be(1);
 		(await Service().HistoryAsync(first.Item, null, 1)).Items.Single().Id.Should().Be(correction.Id);
 		var second = await CaptureExecutableAsync();
@@ -86,7 +86,7 @@ public sealed partial class ClassificationTests
 		await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
 			new(source, NormalizationCatalogPolicy.Hash(source), second.Request.MappingRevisionId,
 				second.Request.TaxonomyRevisionId, null, Guid.NewGuid(), "Revoke"));
-		(await ApprovedExecutor().ApplyChunkAsync(Actor, second.Request.OperationId, 10)).Skipped.Should().Be(1);
+		(await ApprovedExecutor().ApplyChunkAsync(second.Request.ExpectedRestoreGeneration, Actor, second.Request.OperationId, 10)).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(second.Item, null, 10)).Items.Should().ContainSingle();
 	}
 
@@ -104,7 +104,7 @@ public sealed partial class ClassificationTests
 		await using var tx = await db.Database.BeginTransactionAsync();
 		var hash = HistoricalReclassificationService.DispositionSourceHash(group);
 		await HistoricalReclassificationService.LockDispositionSourceAsync(db, Actor, hash, default);
-		var pending = ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		var pending = ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		int waiters = 0;
 		for (int i = 0; i < 100 && waiters == 0 && !pending.IsCompleted; i++)
 		{
@@ -163,12 +163,12 @@ public sealed partial class ClassificationTests
 			});
 			await db.SaveChangesAsync();
 		}
-		(await ApprovedExecutor().ApplyChunkAsync(Actor, first.Request.OperationId, 1)).Skipped.Should().Be(1);
+		(await ApprovedExecutor().ApplyChunkAsync(first.Request.ExpectedRestoreGeneration, Actor, first.Request.OperationId, 1)).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(first.Item, null, 10)).Items.Should().ContainSingle();
 		var second = await CaptureExecutableAsync();
 		var disabled = new HistoricalApprovedMappingExecutor(new Factory(fixture), TimeProvider.System,
 			Options.Create(new ClassificationOptions { WritesEnabled = false }));
-		await Assert.ThrowsAsync<TaxonomyException>(() => disabled.ApplyChunkAsync(Actor, second.Request.OperationId, 1));
+		await Assert.ThrowsAsync<TaxonomyException>(() => disabled.ApplyChunkAsync(second.Request.ExpectedRestoreGeneration, Actor, second.Request.OperationId, 1));
 		await using var verify = fixture.CreateDbContext();
 		(await verify.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == second.Request.OperationId)).State.Should().Be(HistoricalOperationState.Preview);
 		var row = await verify.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == second.Request.OperationId);
@@ -189,7 +189,7 @@ public sealed partial class ClassificationTests
 		await using var db = fixture.CreateDbContext();
 		await using var tx = await db.Database.BeginTransactionAsync();
 		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(db, default);
-		var pending = ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		var pending = ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		int waiters = 0;
 		for (int i = 0; i < 100 && waiters == 0 && !pending.IsCompleted; i++)
 		{
@@ -245,12 +245,12 @@ public sealed partial class ClassificationTests
 			});
 			await db.SaveChangesAsync();
 		}
-		(await ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1)).Skipped.Should().Be(1);
+		(await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 	}
 
 	[Fact]
-	public async Task ApprovedExecutorRejectsItemsOutsideFrozenCaptureScope()
+	public async Task ApprovedCaptureRejectsItemsWithDifferentMapping()
 	{
 		await using var isolated = await fixture.CreateIsolatedAsync();
 		await new ClassificationTests(isolated).ApprovedExecutorScopeCore();
@@ -269,16 +269,20 @@ public sealed partial class ClassificationTests
 		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
 			new(source, NormalizationCatalogPolicy.Hash(source), null, captured.Request.TaxonomyRevisionId,
 				captured.Category, Guid.NewGuid(), "Approve other"));
-		var otherRequest = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, captured.Request.TaxonomyRevisionId, mapping.Id, otherGroup, []);
+		var otherRequest = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, captured.Request.TaxonomyRevisionId, mapping.Id, otherGroup, [], CurrentRestoreGeneration());
 		(await new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System).CaptureAsync(otherRequest)).Should().Be(1);
 		var injected = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == otherRequest.OperationId);
 		injected.OperationId = captured.Request.OperationId; injected.ApplyOperationId = Guid.NewGuid(); injected.UndoOperationId = Guid.NewGuid();
-		db.HistoricalOperationItems.Add(injected); await db.SaveChangesAsync();
-		var progress = await ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 10);
-		progress.Applied.Should().Be(1); progress.Skipped.Should().Be(1);
+		db.HistoricalOperationItems.Add(injected);
+		var rejected = await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+		var databaseError = rejected.InnerException.Should().BeOfType<Npgsql.PostgresException>().Subject;
+		databaseError.SqlState.Should().Be("23514");
+		databaseError.MessageText.Should().Be("Historical item mapping differs from capture");
+		db.Entry(injected).State = EntityState.Detached;
+		(await db.HistoricalOperationItems.AsNoTracking().AnyAsync(x => x.OperationId == captured.Request.OperationId && x.ItemId == other.Id)).Should().BeFalse();
+		var progress = await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 10);
+		progress.Applied.Should().Be(1); progress.Skipped.Should().Be(0);
 		(await Service().HistoryAsync(other.Id, null, 10)).Items.Should().ContainSingle();
-		(await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == captured.Request.OperationId && x.ItemId == other.Id))
-			.Reason.Should().Be("invalid-capture-evidence");
 	}
 
 	[Fact]
@@ -301,7 +305,7 @@ public sealed partial class ClassificationTests
 		try
 		{
 			await winner.Acquired.Task.WaitAsync(TimeSpan.FromSeconds(10));
-			pending = executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+			pending = executor.ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 			await AssertHistoricalDatabaseWait(winner, loser);
 		}
 		finally { winner.Release.TrySetResult(); }
@@ -329,12 +333,12 @@ public sealed partial class ClassificationTests
 		(await new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System).CaptureAsync(request)).Should().Be(2);
 		var failing = new HistoricalApprovedMappingExecutor(new FailHistoricalFactory(fixture), TimeProvider.System,
 			Options.Create(new ClassificationOptions { WritesEnabled = true }));
-		await Assert.ThrowsAsync<InvalidOperationException>(() => failing.ApplyChunkAsync(Actor, request.OperationId, 2));
+		await Assert.ThrowsAsync<InvalidOperationException>(() => failing.ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, request.OperationId, 2));
 		(await db.HistoricalOperationItems.AsNoTracking().Where(x => x.OperationId == request.OperationId).ToListAsync())
 			.Should().OnlyContain(x => x.State == HistoricalItemState.Pending && x.AppliedAssignmentId == null);
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 		(await Service().HistoryAsync(sibling.Id, null, 10)).Items.Should().ContainSingle();
-		(await ApprovedExecutor().ApplyChunkAsync(Actor, request.OperationId, 2)).Applied.Should().Be(2);
+		(await ApprovedExecutor().ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, request.OperationId, 2)).Applied.Should().Be(2);
 	}
 
 	[Fact]
@@ -357,10 +361,57 @@ public sealed partial class ClassificationTests
 		var injected = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == captured.Request.OperationId);
 		injected.OperationId = request.OperationId; injected.ApplyOperationId = Guid.NewGuid(); injected.UndoOperationId = Guid.NewGuid();
 		db.HistoricalOperationItems.Add(injected); await db.SaveChangesAsync();
-		var progress = await ApprovedExecutor().ApplyChunkAsync(Actor, request.OperationId, 10);
+		var progress = await ApprovedExecutor().ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, request.OperationId, 10);
 		progress.Applied.Should().Be(1); progress.Skipped.Should().Be(1);
+		var excluded = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == request.OperationId && x.ItemId == captured.Item);
+		excluded.State.Should().Be(HistoricalItemState.Skipped);
+		excluded.Reason.Should().Be("invalid-capture-evidence");
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 		(await Service().HistoryAsync(sibling.Id, null, 10)).Items.Should().HaveCount(2);
+	}
+
+	[Fact]
+	public async Task ApprovedMappingRestoreFenceStopsQueuedCaptureAndApply()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		var subject = new ClassificationTests(isolated);
+		var captured = await subject.CaptureExecutableAsync();
+		var request = captured.Request with { OperationId = Guid.NewGuid() };
+		var capture = new HistoricalApprovedMappingCapture(new Factory(isolated), TimeProvider.System);
+		var executor = subject.ApprovedExecutor();
+		await using var db = isolated.CreateDbContext();
+		await using var tx = await db.Database.BeginTransactionAsync();
+		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(db, default);
+		await CategoryAssistanceRestoreFence.FenceAsync(db, default);
+		Task<int> queuedCapture = capture.CaptureAsync(request);
+		Task<HistoricalProgress> queuedApply = executor.ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
+		try
+		{
+			int waiters = 0;
+			for (int attempt = 0; attempt < 100 && waiters < 2 && !queuedCapture.IsCompleted && !queuedApply.IsCompleted; attempt++)
+			{
+				waiters = await db.Database.SqlQueryRaw<int>(
+						"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted").SingleAsync();
+				if (waiters < 2) { await Task.Delay(50); }
+			}
+			waiters.Should().BeGreaterThanOrEqualTo(2);
+			queuedCapture.IsCompleted.Should().BeFalse();
+			queuedApply.IsCompleted.Should().BeFalse();
+		}
+		finally { await tx.CommitAsync(); }
+		(await Assert.ThrowsAsync<TaxonomyException>(async () => await queuedCapture)).Status.Should().Be(409);
+		(await Assert.ThrowsAsync<TaxonomyException>(async () => await queuedApply)).Status.Should().Be(409);
+		(await Assert.ThrowsAsync<TaxonomyException>(() => capture.CaptureAsync(captured.Request))).Status.Should().Be(409);
+		(await db.HistoricalOperations.AsNoTracking().AnyAsync(x => x.Id == request.OperationId)).Should().BeFalse();
+		(await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == captured.Request.OperationId)).State
+				.Should().Be(HistoricalItemState.Pending);
+		(await subject.Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
+		Guid fresh = subject.CurrentRestoreGeneration();
+		(await capture.CaptureAsync(captured.Request with { ExpectedRestoreGeneration = fresh })).Should().Be(1);
+		(await executor.ApplyChunkAsync(fresh, Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
+		(await executor.ApplyChunkAsync(fresh, Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
+		(await Assert.ThrowsAsync<TaxonomyException>(() => executor.ApplyChunkAsync(
+				captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1))).Status.Should().Be(409);
 	}
 
 }

@@ -38,7 +38,7 @@ public sealed partial class ClassificationTests
 		var mapping = await mappings.ChangeAsync(Actor, new(source, NormalizationCatalogPolicy.Hash(source), null,
 			seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
 		var capture = new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System);
-		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, [items[1].Id]);
+		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, [items[1].Id], CurrentRestoreGeneration());
 		(await capture.CaptureAsync(request)).Should().Be(1);
 		var emptyRequest = request with { OperationId = Guid.NewGuid(), ExcludedItemIds = [items[0].Id, items[1].Id] };
 		(await capture.CaptureAsync(emptyRequest)).Should().Be(0);
@@ -92,7 +92,7 @@ public sealed partial class ClassificationTests
 		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
 			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
 		var capture = new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System);
-		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, []);
+		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, [], CurrentRestoreGeneration());
 		var later = await Historical().SetDispositionAsync(Actor, new(group, HistoricalGroupDisposition.Later, 0, Guid.NewGuid()));
 		(await Assert.ThrowsAsync<TaxonomyException>(() => capture.CaptureAsync(request))).Status.Should().Be(409);
 		// Another actor's review state is not global suppression.

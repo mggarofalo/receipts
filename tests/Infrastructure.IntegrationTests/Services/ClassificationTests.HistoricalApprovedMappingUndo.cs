@@ -36,11 +36,11 @@ public sealed partial class ClassificationTests
 			pending.State.Should().Be(HistoricalItemState.Pending);
 			pending.AppliedAssignmentId.Should().BeNull();
 		}
-		await executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		await executor.ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		var result = await executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, captured.Request.OperationId, undo, 1);
 		result.Undone.Should().Be(1);
 		(await executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, captured.Request.OperationId, undo, 1)).Should().Be(result);
-		(await executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1)).Should().Be(result);
+		(await executor.ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Should().Be(result);
 		var history = await Service().HistoryAsync(captured.Item, null, 10);
 		history.Items.Should().HaveCount(3);
 		history.Items.First().CategoryId.Should().BeNull();
@@ -68,7 +68,7 @@ public sealed partial class ClassificationTests
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
-		await executor.ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		await executor.ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		var applied = (await Service().HistoryAsync(captured.Item, null, 1)).Items.Single();
 		var later = await Service().AssignAsync(Actor, captured.Item,
 				new(sameCategory ? captured.Category : null, captured.Request.TaxonomyRevisionId, applied.Id, Guid.NewGuid(), "Later manual choice"));
@@ -97,11 +97,11 @@ public sealed partial class ClassificationTests
 		var request = captured.Request with { OperationId = Guid.NewGuid() };
 		(await new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System).CaptureAsync(request)).Should().Be(2);
 		var executor = ApprovedExecutor();
-		(await executor.ApplyChunkAsync(Actor, request.OperationId, 2)).Applied.Should().Be(2);
+		(await executor.ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, request.OperationId, 2)).Applied.Should().Be(2);
 		var partial = await executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, request.OperationId, new(request.TaxonomyRevisionId, "Restore"), 1);
 		partial.State.Should().Be(HistoricalOperationState.Undoing);
 		partial.Undone.Should().Be(1);
-		(await executor.ApplyChunkAsync(Actor, request.OperationId, 2)).Should().Be(partial);
+		(await executor.ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, request.OperationId, 2)).Should().Be(partial);
 		var results = await Task.WhenAll(executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, request.OperationId, new(request.TaxonomyRevisionId, "Restore"), 1),
 				executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, request.OperationId, new(request.TaxonomyRevisionId, "Restore"), 1));
 		results.Should().OnlyContain(x => x.State == HistoricalOperationState.Undone && x.Undone == 2);
@@ -119,7 +119,7 @@ public sealed partial class ClassificationTests
 	private async Task ApprovedUndoRaceCore(bool manualFirst)
 	{
 		var captured = await CaptureExecutableAsync();
-		await ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		var applied = (await Service().HistoryAsync(captured.Item, null, 1)).Items.Single();
 		var winner = new HistoricalRaceGate(true);
 		var loser = new HistoricalRaceGate(false);
@@ -178,7 +178,7 @@ public sealed partial class ClassificationTests
 	private async Task ApprovedUndoRollbackCore()
 	{
 		var captured = await CaptureExecutableAsync();
-		await ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Restore prior choice");
 		var failing = new HistoricalApprovedMappingExecutor(new FailApprovedUndoFactory(fixture), TimeProvider.System,
 				Options.Create(new ClassificationOptions { WritesEnabled = true }));
