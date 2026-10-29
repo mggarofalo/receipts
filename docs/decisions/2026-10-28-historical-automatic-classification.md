@@ -1,12 +1,12 @@
 # Historical automatic classification and portable trust
 
-Date: 2026-10-28. Status: design decision; implementation and enablement remain future work. Tracking: RECEIPTS-1078.
+Date: 2026-10-28. Status: approved deterministic mappings enabled in the API background host; automatic Jev actions remain future work. Tracking: RECEIPTS-1078.
 
 ## Context and decision
 
 Historical automatic classification needs bounded, recoverable changes that respect later human decisions. The owner selects a backup for restore as trusted business data. Its contents must still pass strict structural, referential and semantic consistency validation before any destination mutation. They are not authenticated by an independent external authority: a malicious, internally consistent archive cannot be detected as such by these checks. Hashes and internal chains detect inconsistency; they do not prove origin or intent.
 
-This decision supersedes the proposed attestation architecture for automatic historical effects, including a requirement for an independently trusted checkpoint. No automatic historical effect writer or candidate effect archive path exists. Public import accepts validated v14 automatic historical manifests through the candidate restore path; public export now captures v14 through the same validated codec. Unsupported effect records still reject during archive validation before destination mutation. Existing archive validation remains in force; any future effect implementation must establish its own safety and restore validation before activation.
+This decision supersedes the proposed attestation architecture for automatic historical effects, including a requirement for an independently trusted checkpoint. The API background host applies approved exact mappings in bounded historical operations independently of Jev configuration and suggestion consent. The classification workspace exposes owned automatic activity and ordinary undo. Public import accepts validated v14 automatic historical manifests through the candidate restore path; public export captures v14 through the same validated codec. Unsupported effect records still reject during archive validation before destination mutation. Existing archive validation remains in force; any future effect implementation must establish its own safety and restore validation before activation.
 
 ## Execution and correction
 

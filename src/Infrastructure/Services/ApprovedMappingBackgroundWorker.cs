@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
-// Register as a singleton hosted service only with the activity/undo surface.
+// The API host registers this alongside the public activity/undo surface.
 // Each pass captures/applies at most 100 purchases. No provider or consent dependency.
 public sealed class ApprovedMappingBackgroundWorker(
 	IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock,

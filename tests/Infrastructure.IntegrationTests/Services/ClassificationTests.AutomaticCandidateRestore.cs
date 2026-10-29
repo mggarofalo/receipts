@@ -57,6 +57,9 @@ public sealed partial class ClassificationTests
 			history.Items.Select(x => x.Id).Should().Equal(sourceHistory.Items.Select(x => x.Id));
 			history.Items.First().Source.Should().Be("manual");
 			history.Items.First().CategoryId.Should().BeNull();
+			using (var restarted = restored.MappingWorker()) { await restarted.RunOnceAsync(); }
+			(await restored.Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Id
+				.Should().Be(history.Items.First().Id, "restored undo must survive a fresh background worker");
 			await using var db = destination.CreateDbContext();
 			var item = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == captured.Request.OperationId);
 			item.UndoState.Should().Be(HistoricalItemState.Applied);
