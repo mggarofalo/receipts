@@ -11,6 +11,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 	: ICategoryAssistanceDispatchStore
 {
 	private static readonly TimeSpan DispatchLease = TimeSpan.FromMinutes(2);
+	private const string StagedPrefix = "selected-baseline-v1:";
 
 	public async Task<CategoryAssistanceQueuedWork?> ClaimQueuedAsync(CancellationToken ct)
 	{
@@ -127,7 +128,15 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version
 			&& (x.NextEligibleAt == null || x.NextEligibleAt <= now)
 			&& (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now))
-			.OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(ct);
+						.OrderByDescending(x => x.ResultJson != null && x.ResultJson.StartsWith(StagedPrefix))
+						.ThenBy(x => x.CreatedAt).FirstOrDefaultAsync(ct);
+		CategorySuggestion? baseline = null;
+		if (queued != null && (IsStaged(queued) ? !TryReadStagedBaseline(queued, out baseline) : HasPriorDispatch(queued)))
+		{
+			FailInvalidStage(queued, now);
+			await db.SaveChangesAsync(ct);
+			queued = null;
+		}
 		if (queued != null)
 		{
 			queued.ClaimToken = Guid.NewGuid();
@@ -135,7 +144,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			await db.SaveChangesAsync(ct);
 		}
 		await tx.CommitAsync(ct);
-		return queued == null ? null : ToWork(queued);
+		return queued == null ? null : ToWork(queued, baseline);
 	}
 
 	public async Task DeferQueuedAsync(CategoryAssistanceQueuedWork work, CategoryAssistanceQueuedDeferral reason,
@@ -149,11 +158,12 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			&& x.State == "queued" && x.ClaimToken == work.QueueClaimToken, ct);
 		if (row != null)
 		{
-			row.Deferrals++;
+			bool staged = IsStaged(row);
+			if (!staged) { row.Deferrals++; }
 			bool current = await CurrentAsync(db, row, head.RevisionId, settings, ct);
 			if (!current || row.Deferrals >= CategoryAssistanceQueuePolicy.MaximumDeferrals)
 			{ row.State = "stale"; row.CompletedAt = now; row.NextEligibleAt = null; }
-			else { row.NextEligibleAt = now + CategoryAssistanceQueuePolicy.Backoff(row.Deferrals); }
+			else { row.NextEligibleAt = now + CategoryAssistanceQueuePolicy.Backoff(Math.Max(1, row.Deferrals)); }
 			row.ClaimToken = null; row.LeaseExpiresAt = null;
 			await db.SaveChangesAsync(ct);
 		}
@@ -174,6 +184,17 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			|| !await CurrentAsync(db, row, head.RevisionId, settings, ct)
 			|| await PendingCountAsync(db, ct) > settings.PendingLimit)
 		{ await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return null; }
+		bool staged = IsStaged(row);
+		CategorySuggestion? baseline = null;
+		if (staged ? !TryReadStagedBaseline(row, out baseline) : HasPriorDispatch(row))
+		{
+			FailInvalidStage(row, now);
+			await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return null;
+		}
+		if (!staged && await db.CategoryAssistanceAttempts.AnyAsync(x => x.State == "queued"
+				&& x.ResultJson != null && x.ResultJson.StartsWith(StagedPrefix)
+				&& (x.NextEligibleAt == null || x.NextEligibleAt <= now), ct))
+		{ await tx.CommitAsync(ct); return null; }
 		DateOnly day = DateOnly.FromDateTime(now.UtcDateTime);
 		var usage = await db.CategoryAssistanceDailyUsage.SingleOrDefaultAsync(x => x.UtcDay == day, ct);
 		if (usage == null) { usage = new() { UtcDay = day }; db.CategoryAssistanceDailyUsage.Add(usage); }
@@ -181,14 +202,29 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		{ await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return null; }
 		usage.DispatchAttempts++;
 		row.State = "dispatching"; row.ClaimToken = Guid.NewGuid(); row.DispatchToken = row.ClaimToken;
-		row.LeaseExpiresAt = now + DispatchLease; row.DebitUtcDay = day;
+		row.LeaseExpiresAt = now + DispatchLease;
+		if (staged)
+		{
+			row.SecondStageDecidedAt = now; row.SecondSendStartedAt = now; row.SecondDebitUtcDay = day;
+		}
+		else { row.DebitUtcDay = day; }
 		await db.SaveChangesAsync(ct);
 		await tx.CommitAsync(ct);
-		return new(ToWork(row), row.ClaimToken.Value);
+		return new(ToWork(row, baseline), row.ClaimToken.Value);
 	}
 
 	public async Task<bool> TryStartSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
 		CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens, CancellationToken ct)
+				=> await DecideSecondAsync(claim, capability, firstInputTokens, firstOutputTokens, null, ct);
+
+	public async Task<bool> TryStartOrStageSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+			CategoryAssistanceCapability capability, CategorySuggestion baseline, CancellationToken ct)
+			=> await DecideSecondAsync(claim, capability, baseline.Provenance.InputTokens,
+					baseline.Provenance.OutputTokens, baseline, ct);
+
+	private async Task<bool> DecideSecondAsync(CategoryAssistanceDispatchClaim claim,
+			CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens,
+			CategorySuggestion? baseline, CancellationToken ct)
 	{
 		if (firstInputTokens is < 0 or > 9007199254740991 || firstOutputTokens is < 0 or > 9007199254740991)
 		{
@@ -219,6 +255,13 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			if ((usage?.DispatchAttempts ?? 0) >= settings.DailyLimit)
 			{
 				allowed = false;
+				if (baseline != null)
+				{
+					row.ResultJson = StagedPrefix + JsonSerializer.Serialize(baseline);
+					row.State = "queued"; row.ClaimToken = null; row.LeaseExpiresAt = null;
+					row.NextEligibleAt = new DateTimeOffset(now.UtcDateTime.Date.AddDays(1), TimeSpan.Zero);
+					row.SecondStageDecidedAt = null;
+				}
 			}
 			else
 			{
@@ -289,10 +332,10 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		var queued = await db.CategoryAssistanceAttempts.Where(x => x.State == "queued" && x.LeaseExpiresAt <= now).ToListAsync(ct);
 		foreach (var row in queued)
 		{
-			row.Deferrals++;
+			if (!IsStaged(row)) { row.Deferrals++; }
 			if (row.Deferrals >= CategoryAssistanceQueuePolicy.MaximumDeferrals)
 			{ row.State = "stale"; row.CompletedAt = now; }
-			else { row.NextEligibleAt = now + CategoryAssistanceQueuePolicy.Backoff(row.Deferrals); }
+			else { row.NextEligibleAt = now + CategoryAssistanceQueuePolicy.Backoff(Math.Max(1, row.Deferrals)); }
 			row.ClaimToken = null; row.LeaseExpiresAt = null;
 		}
 		await db.SaveChangesAsync(ct);
@@ -393,7 +436,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 						x.CategoryId.ToString("D"), x.Name, string.IsNullOrWhiteSpace(x.Definition) ? x.Name : x.Definition, x.ParentId?.ToString("D"))).ToArray());
 	}
 
-	private static CategoryAssistanceQueuedWork ToWork(CategoryAssistanceAttemptEntity row)
+	private static CategoryAssistanceQueuedWork ToWork(CategoryAssistanceAttemptEntity row, CategorySuggestion? baseline = null)
 	{
 		var key = new NormalizationSourceKey(row.Location, row.Description, row.ItemCodeKey == "" ? null : row.ItemCodeKey);
 		var source = new CategoryAssistanceSource(key, row.SourceHash, row.SourceRevision);
@@ -401,6 +444,40 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			row.RestoreGeneration, row.SourceHash, row.SourceRevision, row.TaxonomyRevision, row.AssignmentId);
 		return new(row.Id, row.ClaimToken ?? Guid.Empty, row.RequestId, row.ReceiptId, row.ReceiptRevision,
 			row.ItemId, row.ItemRevision, source, fence, row.Provider, row.Model, row.QuestionPolicyVersion,
-			JsonSerializer.Deserialize<CategorySuggestionRequest>(row.RequestJson)!);
+						JsonSerializer.Deserialize<CategorySuggestionRequest>(row.RequestJson)!, baseline);
+	}
+
+	private static bool IsStaged(CategoryAssistanceAttemptEntity row) =>
+			row.ResultJson?.StartsWith(StagedPrefix, StringComparison.Ordinal) == true;
+
+	// A normal queued attempt has never crossed a dispatch authorization point.
+	// If its stage tag is missing, evidence of any prior send forbids a baseline retry.
+	private static bool HasPriorDispatch(CategoryAssistanceAttemptEntity row) =>
+			row.DispatchToken != null || row.DebitUtcDay != null || row.FirstStageInputTokens != null
+			|| row.FirstStageOutputTokens != null || row.SecondStageDecidedAt != null
+			|| row.SecondSendStartedAt != null || row.SecondDebitUtcDay != null;
+
+	private static bool TryReadStagedBaseline(CategoryAssistanceAttemptEntity row, out CategorySuggestion? baseline)
+	{
+		baseline = null;
+		try
+		{
+			baseline = JsonSerializer.Deserialize<CategorySuggestion>(row.ResultJson![StagedPrefix.Length..]);
+			return baseline?.Provenance != null && row.DebitUtcDay != null
+					&& row.FirstStageInputTokens == baseline.Provenance.InputTokens
+					&& row.FirstStageOutputTokens == baseline.Provenance.OutputTokens
+					&& row.SecondStageDecidedAt == null && row.SecondSendStartedAt == null && row.SecondDebitUtcDay == null
+					&& CategoryAssistanceDispatcher.IsValidStagedBaseline(ToWork(row), baseline);
+		}
+		catch (Exception exception) when (exception is JsonException or NotSupportedException or ArgumentException)
+		{ return false; }
+	}
+
+	private static void FailInvalidStage(CategoryAssistanceAttemptEntity row, DateTimeOffset now)
+	{
+		row.State = "failed";
+		row.ResultJson = JsonSerializer.Serialize(new CategoryAssistanceCompletion(
+				CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse));
+		row.CompletedAt = now; row.ClaimToken = null; row.LeaseExpiresAt = null; row.NextEligibleAt = null;
 	}
 }

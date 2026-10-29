@@ -9,7 +9,7 @@ public sealed record CategoryAssistanceSource(NormalizationSourceKey Key, string
 public sealed record CategoryAssistanceQueuedWork(Guid AttemptId, Guid QueueClaimToken, Guid RequestId,
 	Guid ReceiptId, Guid ReceiptRevision, Guid ItemId, Guid ItemRevision,
 	CategoryAssistanceSource Source, CategoryAssistanceFence Fence, string Provider, string Model,
-	string QuestionPolicyVersion, CategorySuggestionRequest Request);
+		string QuestionPolicyVersion, CategorySuggestionRequest Request, CategorySuggestion? StagedBaseline = null);
 
 /// <summary>A dispatch-start commit has consumed one global UTC-day debit and owns this token.</summary>
 public sealed record CategoryAssistanceDispatchClaim(CategoryAssistanceQueuedWork Work, Guid ClaimToken);
@@ -66,6 +66,10 @@ public interface ICategoryAssistanceDispatchStore
 	/// fences and debits the current UTC day in the same transaction.</summary>
 	Task<bool> TryStartSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
 		CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens, CancellationToken ct);
+
+	/// <summary>As above, but retain an already validated baseline for next-day retry when only the daily cap prevents the selected send.</summary>
+	Task<bool> TryStartOrStageSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+			CategoryAssistanceCapability capability, CategorySuggestion baseline, CancellationToken ct);
 
 	/// <summary>
 	/// In one transaction with classification/source writers: match attempt, token and every fence;
@@ -227,8 +231,20 @@ public sealed class CategoryAssistanceDispatcher(
 		&& work.Request.TaxonomyRevision == work.Fence.TaxonomyRevision.ToString("D")
 		&& CategorySuggestionPolicy.IsValid(work.Request);
 
+	/// <summary>Checks that a saved first-stage result still matches the durable request and provenance.</summary>
+	public static bool IsValidStagedBaseline(CategoryAssistanceQueuedWork work, CategorySuggestion? baseline)
+	{
+		try
+		{
+			return baseline != null && ValidateResult(work, new(baseline, null), false).Outcome
+					== CategoryAssistanceAttemptOutcome.Suggested;
+		}
+		catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or NullReferenceException)
+		{ return false; }
+	}
+
 	private static CategoryAssistanceCompletion ValidateResult(CategoryAssistanceQueuedWork work,
-		CategorySuggestionResult result, bool requireSelectedSupport)
+	CategorySuggestionResult result, bool requireSelectedSupport)
 	{
 		if (result is null || (result.Suggestion is null) == (result.Failure is null))
 		{
