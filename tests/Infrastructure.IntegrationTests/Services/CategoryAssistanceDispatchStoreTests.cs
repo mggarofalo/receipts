@@ -39,6 +39,180 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 
 	public async Task DisposeAsync() => await fixture.DisposeAsync();
 
+	private sealed class MutableClock(DateTimeOffset now) : TimeProvider
+	{
+		public DateTimeOffset Now { get; set; } = now;
+		public override DateTimeOffset GetUtcNow() => Now;
+	}
+
+	[Fact]
+	public async Task ConcurrentSecondAuthorizationsDebitOnceAndRetainFirstUsageAfterFailure()
+	{
+		await SeedAsync("second concurrent " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		var decisions = await Task.WhenAll(store.TryStartSecondDispatchAsync(claim, Ready, 12, 4, default),
+			store.TryStartSecondDispatchAsync(claim, Ready, 12, 4, default));
+		decisions.Count(x => x).Should().Be(1);
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 99, 99, default)).Should().BeFalse();
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable), Ready, default);
+		await using var db = fixture.CreateDbContext();
+		var row = await db.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == work.AttemptId);
+		row.FirstStageInputTokens.Should().Be(12); row.FirstStageOutputTokens.Should().Be(4);
+		row.SecondSendStartedAt.Should().NotBeNull(); row.SecondDebitUtcDay.Should().Be(row.DebitUtcDay);
+		row.State.Should().Be("failed");
+		(await db.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(2);
+	}
+
+	[Fact]
+	public async Task SecondAuthorizationAtDailyCapIsPermanentlyDeniedWithUsageRecorded()
+	{
+		await SeedAsync("second cap " + Guid.NewGuid(), 1);
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 8, 2, default)).Should().BeFalse();
+		await using (var db = fixture.CreateDbContext())
+		{ (await db.CategoryAssistanceSettings.SingleAsync()).DailyLimit = 5; await db.SaveChangesAsync(); }
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 8, 2, default)).Should().BeFalse();
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.FirstStageInputTokens.Should().Be(8); row.FirstStageOutputTokens.Should().Be(2);
+		row.SecondStageDecidedAt.Should().NotBeNull(); row.SecondSendStartedAt.Should().BeNull();
+		(await verify.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task SecondAuthorizationRechecksConnection()
+	{
+		await SeedAsync("second revoke " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		await Connection().InvalidateAsync();
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 7, 3, default)).Should().BeFalse();
+		await using var db = fixture.CreateDbContext();
+		var row = await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.SecondSendStartedAt.Should().BeNull();
+		(await db.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task ExpiredDispatchCannotAuthorizeSecondSend()
+	{
+		await SeedAsync("expired second " + Guid.NewGuid());
+		var clock = new MutableClock(DateTimeOffset.UtcNow);
+		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, clock.Now, default))!;
+		clock.Now = clock.Now.AddMinutes(3);
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 6, 2, default)).Should().BeFalse();
+		await using var db = fixture.CreateDbContext();
+		var row = await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.FirstStageInputTokens.Should().Be(6); row.SecondSendStartedAt.Should().BeNull();
+		(await db.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task FirstUsageSurvivesLeaseCleanupWithoutAuthorizingSecondSend()
+	{
+		await SeedAsync("late first usage " + Guid.NewGuid());
+		var clock = new MutableClock(DateTimeOffset.UtcNow);
+		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, clock.Now, default))!;
+		clock.Now = clock.Now.AddMinutes(3);
+		(await store.ClaimQueuedAsync(default)).Should().BeNull(); // Expiry cleanup clears the live claim.
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 13, 5, default)).Should().BeFalse();
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 99, 99, default)).Should().BeFalse();
+		await using var db = fixture.CreateDbContext();
+		var row = await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("indeterminate"); row.ClaimToken.Should().BeNull();
+		row.DispatchToken.Should().Be(claim.ClaimToken);
+		row.FirstStageInputTokens.Should().Be(13); row.FirstStageOutputTokens.Should().Be(5);
+		row.SecondSendStartedAt.Should().BeNull();
+		(await db.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task SeparateAttemptsCompeteForLastDailyDebit()
+	{
+		var seed = await SeedAsync("first concurrent cap " + Guid.NewGuid(), 3);
+		Guid secondItem = Guid.NewGuid();
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.CategoryAssistanceSettings.SingleAsync()).PendingLimit = 2;
+			db.ReceiptItems.Add(new ReceiptItemEntity
+			{
+				Id = secondItem,
+				ReceiptId = seed.ReceiptId,
+				Description = "second concurrent cap " + Guid.NewGuid(),
+				Category = "",
+				UnitPriceCurrency = Currency.USD,
+				TotalAmountCurrency = Currency.USD
+			});
+			await db.SaveChangesAsync();
+		}
+		await using (var db = fixture.CreateDbContext())
+		await using (var tx = await db.Database.BeginTransactionAsync())
+		{
+			(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, seed.Actor, Guid.NewGuid(), secondItem, false, false)).Should().BeTrue();
+			await tx.CommitAsync();
+		}
+		var store = Dispatch();
+		var firstWork = (await store.ClaimQueuedAsync(default))!;
+		var secondWork = (await store.ClaimQueuedAsync(default))!;
+		var first = (await store.TryStartDispatchAsync(firstWork, Ready, DateTimeOffset.UtcNow, default))!;
+		var second = (await store.TryStartDispatchAsync(secondWork, Ready, DateTimeOffset.UtcNow, default))!;
+		first.Should().NotBeNull(); second.Should().NotBeNull();
+		var decisions = await Task.WhenAll(store.TryStartSecondDispatchAsync(first, Ready, 3, 1, default),
+			store.TryStartSecondDispatchAsync(second, Ready, 4, 2, default));
+		decisions.Count(x => x).Should().Be(1);
+		await using var verify = fixture.CreateDbContext();
+		(await verify.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(3);
+		var rows = await verify.CategoryAssistanceAttempts.ToListAsync();
+		rows.Count(x => x.SecondSendStartedAt != null).Should().Be(1);
+		rows.Count(x => x.SecondStageDecidedAt != null && x.FirstStageInputTokens != null).Should().Be(2);
+	}
+
+	[Fact]
+	public async Task SecondAuthorizationDebitsTheNewUtcDay()
+	{
+		await SeedAsync("second rollover " + Guid.NewGuid(), 1);
+		DateTimeOffset first = new(2026, 10, 28, 23, 59, 30, TimeSpan.Zero);
+		var clock = new MutableClock(first);
+		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, first, default))!;
+		clock.Now = first.AddSeconds(40);
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 1, 1, default)).Should().BeTrue();
+		await using var db = fixture.CreateDbContext();
+		var row = await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.DebitUtcDay.Should().Be(DateOnly.FromDateTime(first.UtcDateTime));
+		row.SecondDebitUtcDay.Should().Be(DateOnly.FromDateTime(clock.Now.UtcDateTime));
+		(await db.CategoryAssistanceDailyUsage.OrderBy(x => x.UtcDay).Select(x => x.DispatchAttempts).ToArrayAsync()).Should().Equal(1, 1);
+	}
+
+	[Fact]
+	public async Task SecondAuthorizationFailureRollsBackDecisionUsageAndDebit()
+	{
+		await SeedAsync("second rollback " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		var failing = new CategoryAssistanceDispatchStore(new FaultFactory(fixture), TimeProvider.System);
+		Func<Task> start = () => failing.TryStartSecondDispatchAsync(claim, Ready, 5, 2, default);
+		await start.Should().ThrowAsync<InvalidOperationException>();
+		await using (var db = fixture.CreateDbContext())
+		{
+			var row = await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+			row.FirstStageInputTokens.Should().BeNull(); row.SecondStageDecidedAt.Should().BeNull();
+			(await db.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(1);
+		}
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 5, 2, default)).Should().BeTrue();
+	}
+
 	[Fact]
 	public async Task WorkerSendsOneBoundedRequestFromDurableConsentAndPersistsSuggestion()
 	{

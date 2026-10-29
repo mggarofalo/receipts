@@ -169,11 +169,57 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		if (usage.DispatchAttempts >= settings.DailyLimit)
 		{ await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return null; }
 		usage.DispatchAttempts++;
-		row.State = "dispatching"; row.ClaimToken = Guid.NewGuid();
+		row.State = "dispatching"; row.ClaimToken = Guid.NewGuid(); row.DispatchToken = row.ClaimToken;
 		row.LeaseExpiresAt = now + DispatchLease; row.DebitUtcDay = day;
 		await db.SaveChangesAsync(ct);
 		await tx.CommitAsync(ct);
 		return new(ToWork(row), row.ClaimToken.Value);
+	}
+
+	public async Task<bool> TryStartSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+		CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens, CancellationToken ct)
+	{
+		if (firstInputTokens is < 0 or > 9007199254740991 || firstOutputTokens is < 0 or > 9007199254740991)
+		{
+			throw new ArgumentOutOfRangeException(nameof(firstInputTokens), "Invalid first-stage usage");
+		}
+
+		await using var db = await factory.CreateDbContextAsync(ct);
+		await using var tx = await db.Database.BeginTransactionAsync(ct);
+		var head = await LockHeadAsync(db, ct);
+		var settings = await LockSettingsAsync(db, ct);
+		DateTimeOffset now = clock.GetUtcNow();
+		var row = await db.CategoryAssistanceAttempts.SingleOrDefaultAsync(x => x.Id == claim.Work.AttemptId
+			&& (x.State == "dispatching" || x.State == "indeterminate") && x.DispatchToken == claim.ClaimToken
+			&& x.SecondStageDecidedAt == null, ct);
+		if (row == null) { await tx.CommitAsync(ct); return false; }
+
+		// Record usage even on denial; a repeated call must not change the decision.
+		row.FirstStageInputTokens = firstInputTokens;
+		row.FirstStageOutputTokens = firstOutputTokens;
+		row.SecondStageDecidedAt = now;
+		bool allowed = row.State == "dispatching" && row.ClaimToken == claim.ClaimToken && row.LeaseExpiresAt > now
+			&& CategoryAssistancePolicy.CanSuggest(CategoryAssistanceSettingsStore.Read(settings), capability)
+			&& await CurrentAsync(db, row, head.RevisionId, settings, ct);
+		if (allowed)
+		{
+			DateOnly day = DateOnly.FromDateTime(now.UtcDateTime);
+			var usage = await db.CategoryAssistanceDailyUsage.SingleOrDefaultAsync(x => x.UtcDay == day, ct);
+			if ((usage?.DispatchAttempts ?? 0) >= settings.DailyLimit)
+			{
+				allowed = false;
+			}
+			else
+			{
+				if (usage == null) { usage = new() { UtcDay = day }; db.CategoryAssistanceDailyUsage.Add(usage); }
+				usage.DispatchAttempts++;
+				row.SecondDebitUtcDay = day;
+				row.SecondSendStartedAt = now;
+			}
+		}
+		await db.SaveChangesAsync(ct);
+		await tx.CommitAsync(ct);
+		return allowed;
 	}
 
 	public async Task CompleteAsync(CategoryAssistanceDispatchClaim claim, CategoryAssistanceCompletion completion,

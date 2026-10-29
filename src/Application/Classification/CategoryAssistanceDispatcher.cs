@@ -61,6 +61,12 @@ public interface ICategoryAssistanceDispatchStore
 	Task<CategoryAssistanceDispatchClaim?> TryStartDispatchAsync(CategoryAssistanceQueuedWork work,
 		CategoryAssistanceCapability capability, DateTimeOffset now, CancellationToken ct);
 
+	/// <summary>Record first-stage usage and decide once whether this claim may start a second request.
+	/// True authorizes one send only; repeated calls return false. The store rechecks the current
+	/// fences and debits the current UTC day in the same transaction.</summary>
+	Task<bool> TryStartSecondDispatchAsync(CategoryAssistanceDispatchClaim claim,
+		CategoryAssistanceCapability capability, long firstInputTokens, long firstOutputTokens, CancellationToken ct);
+
 	/// <summary>
 	/// In one transaction with classification/source writers: match attempt, token and every fence;
 	/// recheck current consent, capability, source and taxonomy, then insert a valid result or terminal
