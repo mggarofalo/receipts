@@ -117,13 +117,12 @@ internal sealed class HistoricalApprovedMappingExecutor(
 		try
 		{
 			var scopes = JsonSerializer.Deserialize<CaptureScope[]>(json);
-			if (scopes is not { Length: 1 } || scopes[0] is not { Group: not null, TargetCategoryId: not null, ExcludedItemIds: not null })
+			if (scopes is not { Length: 1 } || scopes[0] is not { Group: not null, TargetCategoryId: not null, ExcludedItemIds: { } excludedItemIds } scope)
 			{ return null; }
-			var scope = scopes[0];
-			if (scope.TargetCategoryId == Guid.Empty || scope.ExcludedItemIds.Length > 1000 ||
-				scope.ExcludedItemIds.Any(x => x == Guid.Empty) ||
-				scope.ExcludedItemIds.Distinct().Count() != scope.ExcludedItemIds.Length ||
-				!scope.ExcludedItemIds.SequenceEqual(scope.ExcludedItemIds.Order()))
+			if (scope.TargetCategoryId == Guid.Empty || excludedItemIds.Length > 1000 ||
+				excludedItemIds.Any(x => x == Guid.Empty) ||
+				excludedItemIds.Distinct().Count() != excludedItemIds.Length ||
+				!excludedItemIds.SequenceEqual(excludedItemIds.Order()))
 			{ return null; }
 			return scope;
 		}
