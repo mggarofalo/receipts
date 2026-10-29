@@ -7430,7 +7430,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Conflict */
+            /** @description Initial automatic undo rejects a stale taxonomy revision before saving intent or row outcomes, with problem extension code stale-undo-taxonomy. Refresh taxonomy and retry only this preflight conflict. Resumptions retain their frozen revision; other conflicts do not carry this code. */
             409: {
                 headers: {
                     [name: string]: unknown;

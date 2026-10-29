@@ -280,9 +280,17 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		if ((!reverting && operation.State is HistoricalOperationState.Completed or HistoricalOperationState.Cancelled or HistoricalOperationState.Undoing or HistoricalOperationState.Undone) ||
 			(reverting && operation.State == HistoricalOperationState.Undone))
 		{ return await ProgressAsync(db, operation, ct); }
+		TaxonomyHeadEntity head = await HeadAsync(db, ct);
+		// Only an initial automatic undo can refresh its taxonomy intent. A resumed
+		// undo keeps its saved revision so subsequent taxonomy changes still conflict.
+		if (reverting && kind == HistoricalOperationKind.ApprovedMappingV1 &&
+				operation.UndoTaxonomyRevisionId == null && head.RevisionId != undo!.TaxonomyRevisionId)
+		{
+			throw new TaxonomyException(409, "Taxonomy changed before automatic undo started. Refresh and retry.",
+					new Dictionary<string, object?> { ["code"] = "stale-undo-taxonomy" });
+		}
 		operation.State = reverting ? HistoricalReclassificationPolicy.BeginUndo(operation.State) : HistoricalReclassificationPolicy.BeginApply(operation.State);
 		if (reverting) { operation.UndoTaxonomyRevisionId = undo!.TaxonomyRevisionId; operation.UndoReason = undo.Reason; }
-		TaxonomyHeadEntity head = await HeadAsync(db, ct);
 		List<HistoricalOperationItemEntity> rows = await Pending(db, id, reverting).OrderBy(x => x.ItemId).Take(limit).ToListAsync(ct);
 		await ReceiptFactLock.AcquireAsync(db, rows.Select(x => x.ReceiptId), ct);
 		await NormalizationWriteGuard.LockItemsAsync(db, rows.Select(x => x.ItemId).ToArray(), ct);

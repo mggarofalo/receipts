@@ -78,14 +78,16 @@ public sealed partial class ClassificationTests
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().HaveCount(3).And.Subject.First().Id.Should().Be(later.Id);
 	}
 
-	[Fact]
-	public async Task ApprovedApplyRetryDuringUndoReportsStoredProgress()
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task ApprovedApplyRetryDuringUndoReportsStoredProgress(bool taxonomyChanges)
 	{
 		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedApplyRetryDuringUndoCore();
+		await new ClassificationTests(isolated).ApprovedApplyRetryDuringUndoCore(taxonomyChanges);
 	}
 
-	private async Task ApprovedApplyRetryDuringUndoCore()
+	private async Task ApprovedApplyRetryDuringUndoCore(bool taxonomyChanges)
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -102,9 +104,18 @@ public sealed partial class ClassificationTests
 		partial.State.Should().Be(HistoricalOperationState.Undoing);
 		partial.Undone.Should().Be(1);
 		(await executor.ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, request.OperationId, 2)).Should().Be(partial);
+		if (taxonomyChanges)
+		{
+			await Tree().ChangeAsync(Actor, new(request.TaxonomyRevisionId, Guid.NewGuid(), "Rename during undo",
+					[new Domain.Taxonomy.TaxonomyEdit("rename", captured.Category, Name: Guid.NewGuid().ToString())]));
+		}
 		var results = await Task.WhenAll(executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, request.OperationId, new(request.TaxonomyRevisionId, "Restore"), 1),
 				executor.UndoChunkAsync(CurrentRestoreGeneration(), Actor, request.OperationId, new(request.TaxonomyRevisionId, "Restore"), 1));
-		results.Should().OnlyContain(x => x.State == HistoricalOperationState.Undone && x.Undone == 2);
+		results.Should().OnlyContain(x => x.State == HistoricalOperationState.Undone &&
+				x.Undone == (taxonomyChanges ? 1 : 2) && x.UndoConflicted == (taxonomyChanges ? 1 : 0));
+		await using var saved = fixture.CreateDbContext();
+		(await saved.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == request.OperationId))
+				.UndoTaxonomyRevisionId.Should().Be(request.TaxonomyRevisionId);
 	}
 
 	[Theory]
