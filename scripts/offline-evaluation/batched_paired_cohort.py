@@ -5,12 +5,14 @@ import os
 import shutil
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 
 from campaign_ledger import LedgerError, RESERVATION_NANODOLLARS, _canonical, _unique, _valid_stage_id, require_plain_absolute_path
 from guarded_exchange import RecordedTransport, validate_envelope
 from offline_coordinator import OfflineCoordinator
+from cohort_live_transport import CohortLiveTransport
 
 
 _COHORT_OWNER = threading.Lock()
@@ -25,14 +27,17 @@ class BatchedPairedCohort:
 
     Inputs are bound by an exclusively created manifest before any reservation.
     Callers must preserve the private directory and ledger together. This is a
-    recorded-only scheduler; it does not authorize live transport.
+    recorded scheduler with an explicit opt-in live transport.
     """
-    def __init__(self, coordinator, host, dll, cases, *, aggregate_call_limit, prior_calls):
+    def __init__(self, coordinator, host, dll, cases, *, aggregate_call_limit, prior_calls, live_transport=None):
         if type(coordinator) is not OfflineCoordinator or not isinstance(cases, list) or not cases:
             raise LedgerError('coordinator and nonempty ordered cohort required')
         if (type(aggregate_call_limit) is not int or not 1 <= aggregate_call_limit <= 96
                 or type(prior_calls) is not int or not 0 <= prior_calls < aggregate_call_limit):
             raise LedgerError('explicit aggregate limit and prior call count required')
+        if live_transport is not None and type(live_transport) is not CohortLiveTransport:
+            raise LedgerError('invalid live transport')
+        self.live_transport = live_transport
         self._call_allowance = {'aggregate_call_limit': aggregate_call_limit, 'prior_calls': prior_calls}
         snapshot = coordinator.ledger.snapshot()
         self._policy = snapshot['policy']
@@ -96,7 +101,7 @@ class BatchedPairedCohort:
                 os.fsync(stream.fileno())
 
     def _transport_identity(self):
-        return {'mode': 'recorded'}
+        return self.live_transport.identity if self.live_transport else {'mode': 'recorded'}
 
     def _build_identity(self):
         # Bind the host, the runner output's managed files and the Python
@@ -110,6 +115,10 @@ class BatchedPairedCohort:
                       ('batched_paired_cohort.py', 'offline_coordinator.py', 'campaign_ledger.py',
                        'guarded_exchange.py', 'stage_campaign.py', 'cohort_live_transport.py',
                        'live_https_worker.py')]
+            if self.live_transport is not None:
+                files += [Path(sys.executable).resolve(), Path(__file__).resolve().parent / 'live_stage_campaign.py',
+                          Path(__file__).resolve().parent / 'safe_os_diagnostics.py',
+                          Path(__file__).resolve().parent / 'batched_cohort_operator.py']
             if Path(self.dll) not in files:
                 raise CohortIdentityError('runner DLL missing')
             return {str(require_plain_absolute_path(path)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -237,12 +246,14 @@ class BatchedPairedCohort:
         def exchange(arm, phase, index, payload):
             stage = [case, arm, phase, index]
             recorded = responses.get((arm, phase, index))
-            if recorded is None:
+            if self.live_transport is not None and recorded is not None:
+                raise LedgerError('recorded responses forbidden in live mode')
+            if recorded is None and self.live_transport is None:
                 if not any(r['kind'] == 'attempt' and r.get('stage_id') == stage
                            for r in self.coordinator.ledger.stage_history()):
                     raise LedgerError('missing recorded response')
                 recorded = b''
-            if type(recorded) is not bytes:
+            if self.live_transport is None and type(recorded) is not bytes:
                 raise LedgerError('recorded response bytes required')
             payload = payload.encode('utf-8')
             def parse(raw):
@@ -266,7 +277,7 @@ class BatchedPairedCohort:
                     if result['verificationSha256'] != verification_hash or result['candidate']['failure'] is not None:
                         raise LedgerError('actual complete batched aggregation failed')
                 return raw.decode('utf-8')
-            return self.coordinator.execute(stage, payload, RecordedTransport(recorded), parse)
+            return self.coordinator.execute(stage, payload, self.live_transport or RecordedTransport(recorded), parse)
 
         replies['production'] = exchange('baseline', 'production', 0, initial['productionPayload'])
         for index, payload in enumerate(initial['shortlistPayloads']):

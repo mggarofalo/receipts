@@ -71,8 +71,7 @@ runner from the local package cache and uses invented inputs and answers.
 
 ## Recorded batched paired cohorts
 
-`BatchedPairedCohort` in `batched_paired_cohort.py` is a separate recorded-only
-scheduler. It uses the actual C# `prepare-batched`, `validate-batched`, and
+`BatchedPairedCohort` in `batched_paired_cohort.py` is a separate scheduler with recorded and explicit live modes. It uses the actual C# `prepare-batched`, `validate-batched`, and
 `replay-batched` commands. Construct it with an `OfflineCoordinator`, dotnet
 host, locally built paired runner DLL, ordered explicit `{'id', 'input'}`
 cases, and explicit `aggregate_call_limit` and `prior_calls` integers. The
@@ -99,6 +98,13 @@ ledger. Every existing attempt remains charged.
 
 The C# planner retains its 30-request and 128-path bounds and may abstain or
 reject a vector that does not fit; no alternatives are dropped. Byte limits do
-not establish token fit. This scheduler has no live transport or CLI and does
-not establish live readiness. Focused tests use invented 309-category inputs
+not establish token fit. Synthetic tests do not establish live readiness. Focused tests use invented 309-category inputs
 and recorded synthetic replies only.
+
+## Explicit live batched operator
+
+`batched_cohort_operator.py` accepts a JSON array containing exactly one `{"id": ..., "input": ...}` case from an absolute private path outside a checkout. Use an existing private local directory, absolute paths to the dotnet host and locally built runner DLL, and the name of the credential environment variable. The operator accesses that credential only after the ledger reserves a stage. Supply every limit explicitly: `--aggregate-call-limit`, `--prior-calls`, `--max-calls`, `--budget-nanodollars`, and `--prior-spend-nanodollars`. The aggregate call limit must be at most 30. The budget is the total including prior spend, not the remaining budget. Prior calls count earlier calls against this specific pilot allowance from other ledgers only; prior spend covers relevant historical ledgers, including unknown reservations. Prior calls require at least one full fixed reservation each. The current ledger retains and charges its own attempts across resumes: do not add them again to the prior carry or reset the ledger. These carry values are not inferred from other campaigns. The 162 historical calls belong to independent earlier campaigns, so this pilot starts with `--prior-calls 0`. Its proposed `--prior-spend-nanodollars 565527228` is a deliberately conservative historical carry; it may double count and is not a guaranteed bill.
+
+Add `--create` only for a new ledger; omit it when resuming with exactly the same inputs, policy, limits, executable and credential variable name. Preserve the entire private directory and its ledger. Progress contains aggregate counts only. Once every case completes, `predictions.json` holds private per-case predictions; unresolved cases leave no prediction file and return a nonzero exit code. An attempted stage without complete evidence remains charged and is never sent again. The process continues independent cases after an unresolved case but stops on identity changes. A changed output file stops the run. This mechanism does not guard against directory rollback or external concurrent modification. The caller must prevent other code from using the ledger concurrently and must protect the private directory and input with suitable filesystem permissions.
+
+The operator uses the fixed live HTTPS transport when invoked. Tests patch its exchange method with synthetic responses; tests do not read credentials or make network requests. No live readiness or model-quality claim follows from those tests.

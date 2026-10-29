@@ -1,6 +1,10 @@
 """Invented 309-category, multi-batch checks against the actual C# runner."""
 import json
-from unittest.mock import patch
+import io
+import os
+import subprocess
+from contextlib import redirect_stdout, redirect_stderr
+from unittest.mock import Mock, patch
 from campaign_ledger import CampaignLedger, LedgerError, Policy, RESERVATION_NANODOLLARS
 from offline_coordinator import OfflineCoordinator, UnresolvedStage
 from batched_paired_cohort import BatchedPairedCohort, CohortIdentityError, _COHORT_OWNER
@@ -57,6 +61,134 @@ class BatchedCohortTests(ActualArmsTests):
             phase = 'coverage' if batch['isGlobalCoverage'] else 'verification'
             records[('candidate', phase, batch['index'])] = reply(batch['payload'], phase)
         return case, initial, batches, records
+
+    def test_operator_private_restart_and_unknown(self):
+        from batched_cohort_operator import main
+        from cohort_live_transport import CohortLiveTransport
+        case, initial, batches, records = self.fixtures_and_records()
+        source = self.work / 'cohort.json'
+        source.write_text(json.dumps([case]), encoding='utf-8')
+        payloads = {initial['productionPayload']: records[('baseline', 'production', 0)]}
+        for i, payload in enumerate(initial['shortlistPayloads']):
+            payloads[payload] = records[('candidate', 'shortlist', i)]
+        for batch in batches:
+            phase = 'coverage' if batch['isGlobalCoverage'] else 'verification'
+            payloads[batch['payload']] = records[('candidate', phase, batch['index'])]
+        args = ['--private-root', str(self.work), '--input', str(source), '--host', str(self.host),
+                '--dll', str(self.dll), '--key-environment', 'TEST_KEY', '--aggregate-call-limit', '30',
+                '--prior-calls', '2', '--max-calls', '28', '--budget-nanodollars', str(565527228 + 28 * RESERVATION_NANODOLLARS),
+                '--prior-spend-nanodollars', '565527228']
+        import live_https_worker as worker
+        out, err = io.StringIO(), io.StringIO()
+        original_run = subprocess.run
+        original_get = os.environ.get
+        original_reserve = CampaignLedger.reserve_attempt
+        reservations, reads, posts = [], [], []
+        def reserve(ledger, *args, **kwargs):
+            result = original_reserve(ledger, *args, **kwargs)
+            reservations.append(result)
+            return result
+        def get_env(key, default=None):
+            if key == 'TEST_KEY':
+                self.assertEqual(len(reservations), len(reads) + 1)
+                reads.append(key)
+                return 'synthetic-secret'
+            return original_get(key, default)
+        def fake_run(args, **kwargs):
+            if '-I' not in args:
+                return original_run(args, **kwargs)
+            self.assertEqual(kwargs['env']['COHORT_WORKER_KEY'], 'synthetic-secret')
+            self.assertEqual(len(reservations), len(posts) + 1)
+            response = Mock(status=200)
+            response.getheaders.return_value = [('Content-Type', 'application/json')]
+            response.read.return_value = payloads[kwargs['input'].decode()]
+            connection = Mock()
+            connection.getresponse.return_value = response
+            connection.request.side_effect = lambda *a, **kw: posts.append(a)
+            with patch.object(worker.http.client, 'HTTPSConnection', return_value=connection):
+                raw = worker.exchange(kwargs['input'], kwargs['env']['COHORT_WORKER_KEY'])
+            return subprocess.CompletedProcess(args, 0, raw)
+        with patch.object(CampaignLedger, 'reserve_attempt', autospec=True, side_effect=reserve), \
+             patch.object(os.environ, 'get', side_effect=get_env), \
+             patch('cohort_live_transport.subprocess.run', side_effect=fake_run), \
+             redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(main(args + ['--create']), 0)
+            self.assertGreater(len(posts), 0)
+            self.assertEqual(len(posts), len(reads))
+        with CampaignLedger(self.work / 'ledger.jsonl') as ledger:
+            before = ledger.snapshot()
+            self.assertEqual(before['reserved_nanodollars'], 565527228 + len(posts) * RESERVATION_NANODOLLARS)
+        self.assertNotIn('Invented', out.getvalue() + err.getvalue())
+        self.assertNotIn('case-a', out.getvalue() + err.getvalue())
+        self.assertTrue((self.work / 'predictions.json').exists())
+        with patch.object(CohortLiveTransport, 'exchange', autospec=True, side_effect=AssertionError('resend')) as send, redirect_stdout(io.StringIO()):
+            self.assertEqual(main(args), 0)
+            send.assert_not_called()
+        with CampaignLedger(self.work / 'ledger.jsonl') as ledger:
+            self.assertEqual(ledger.snapshot(), before)
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(main(args[:-2]), 1)
+            altered = args.copy()
+            altered[altered.index('--prior-calls') + 1] = '1'
+            self.assertEqual(main(altered), 1)
+
+    def test_operator_rejects_over_limit_and_multiple_cases_before_ledger_creation(self):
+        from batched_cohort_operator import main
+        case, _, _, _ = self.fixtures_and_records()
+        source = self.work / 'cohort.json'
+        source.write_text(json.dumps([case]), encoding='utf-8')
+        args = ['--private-root', str(self.work), '--input', str(source), '--host', str(self.host),
+                '--dll', str(self.dll), '--key-environment', 'TEST_KEY', '--aggregate-call-limit', '31',
+                '--prior-calls', '0', '--max-calls', '30', '--budget-nanodollars', str(30 * RESERVATION_NANODOLLARS),
+                '--prior-spend-nanodollars', '0', '--create']
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(main(args), 1)
+            args[args.index('--aggregate-call-limit') + 1] = '30'
+            source.write_text(json.dumps([case, case]), encoding='utf-8')
+            self.assertEqual(main(args), 1)
+        self.assertFalse((self.work / 'ledger.jsonl').exists())
+
+    def test_operator_zero_prior_pilot_calls_with_historical_spend(self):
+        from batched_cohort_operator import main
+        from cohort_live_transport import CohortLiveTransport
+        case, _, _, _ = self.fixtures_and_records()
+        source = self.work / 'cohort.json'
+        source.write_text(json.dumps([case]), encoding='utf-8')
+        carry = 565527228
+        args = ['--private-root', str(self.work), '--input', str(source), '--host', str(self.host),
+                '--dll', str(self.dll), '--key-environment', 'TEST_KEY', '--aggregate-call-limit', '30',
+                '--prior-calls', '0', '--max-calls', '30', '--budget-nanodollars', str(carry + 30 * RESERVATION_NANODOLLARS),
+                '--prior-spend-nanodollars', str(carry)]
+        with patch.object(CohortLiveTransport, 'exchange', autospec=True, side_effect=LedgerError('unknown')) as send, redirect_stdout(io.StringIO()):
+            self.assertEqual(main(args + ['--create']), 1)
+            self.assertEqual(send.call_count, 1)
+        with CampaignLedger(self.work / 'ledger.jsonl') as ledger:
+            snapshot = ledger.snapshot()
+            self.assertEqual(snapshot['attempts'], 1)
+            self.assertEqual(snapshot['reserved_nanodollars'], carry + RESERVATION_NANODOLLARS)
+        with patch.object(CohortLiveTransport, 'exchange', autospec=True, side_effect=AssertionError('resend')) as send, redirect_stdout(io.StringIO()):
+            self.assertEqual(main(args), 1)
+            send.assert_not_called()
+        with CampaignLedger(self.work / 'ledger.jsonl') as ledger:
+            self.assertEqual(ledger.snapshot(), snapshot)
+
+    def test_operator_unknown_attempt_is_not_retried(self):
+        from batched_cohort_operator import main
+        from cohort_live_transport import CohortLiveTransport
+        case, _, _, _ = self.fixtures_and_records()
+        source = self.work / 'cohort.json'
+        source.write_text(json.dumps([case]), encoding='utf-8')
+        args = ['--private-root', str(self.work), '--input', str(source), '--host', str(self.host),
+                '--dll', str(self.dll), '--key-environment', 'TEST_KEY', '--aggregate-call-limit', '30',
+                '--prior-calls', '0', '--max-calls', '30', '--budget-nanodollars', str(30 * RESERVATION_NANODOLLARS),
+                '--prior-spend-nanodollars', '0']
+        with patch.object(CohortLiveTransport, 'exchange', autospec=True, side_effect=LedgerError('unknown')) as send, redirect_stdout(io.StringIO()):
+            self.assertEqual(main(args + ['--create']), 1)
+            self.assertEqual(send.call_count, 1)
+        with patch.object(CohortLiveTransport, 'exchange', autospec=True, side_effect=AssertionError('resend')) as send, redirect_stdout(io.StringIO()):
+            self.assertEqual(main(args), 1)
+            send.assert_not_called()
+        self.assertFalse((self.work / 'predictions.json').exists())
 
     def test_actual_multibatch_restart_and_changed_vector(self):
         case, initial, batches, records = self.fixtures_and_records()
