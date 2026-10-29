@@ -143,6 +143,7 @@ internal static partial class PortableTaxonomyArchive
 			state = await ReadSourceRevisionsAsync(sqlite, state, ct);
 		}
 		Validate(state, candidate);
+		if (candidate) { await ValidateCandidateBusinessReferencesAsync(sqlite, state, ct); }
 		return state;
 	}
 

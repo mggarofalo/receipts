@@ -36,7 +36,7 @@ public sealed partial class PortableTaxonomyArchiveTests
                         CREATE TABLE category_mapping_archive(kind TEXT,id TEXT,payload TEXT);
                         CREATE TABLE historical_operation_archive(kind TEXT,id TEXT,payload TEXT);
                         CREATE TABLE source_revision_archive(kind TEXT,id TEXT,revision TEXT);
-                        CREATE TABLE receipts(id TEXT); CREATE TABLE receipt_items(id TEXT);
+                        CREATE TABLE receipts(id TEXT, location TEXT); CREATE TABLE receipt_items(id TEXT, receipt_id TEXT, description TEXT, receipt_item_code TEXT);
                         """;
 		await command.ExecuteNonQueryAsync();
 		async Task Write<T>(string table, string kind, T row, object key)
@@ -56,10 +56,71 @@ public sealed partial class PortableTaxonomyArchiveTests
 		foreach (var row in state.MappingRevisions) { await Write("category_mapping_archive", "revision", row, row.Id); }
 		foreach (var row in state.MappingHeads) { await Write("category_mapping_archive", "head", row, row.SourceFingerprint); }
 		await PortableTaxonomyArchive.WriteHistoricalCandidateAsync(sqlite, state, CancellationToken.None);
+		command.Parameters.Clear();
+		command.CommandText = """
+			INSERT INTO receipts VALUES($receipt,$store);
+			INSERT INTO receipt_items VALUES($item,$receipt,$description,$code);
+			INSERT INTO source_revision_archive VALUES('Receipts',$receipt,$receiptRevision);
+			INSERT INTO source_revision_archive VALUES('ReceiptItems',$item,$itemRevision);
+			""";
+		command.Parameters.AddWithValue("$receipt", item.ReceiptId.ToString());
+		command.Parameters.AddWithValue("$item", item.ItemId.ToString());
+		command.Parameters.AddWithValue("$store", item.Store);
+		command.Parameters.AddWithValue("$description", item.RawDescription);
+		command.Parameters.AddWithValue("$code", (object?)item.ItemCode ?? DBNull.Value);
+		command.Parameters.AddWithValue("$receiptRevision", item.ReceiptRevision.ToString());
+		command.Parameters.AddWithValue("$itemRevision", item.ItemRevision.ToString());
+		await command.ExecuteNonQueryAsync();
 
 		var read = await PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
 		read.HistoricalItems.Should().BeEquivalentTo(state.HistoricalItems);
 		read.MappingRevisions.Should().BeEquivalentTo(state.MappingRevisions);
+		command.Parameters.Clear();
+		command.CommandText = "UPDATE receipt_items SET description='different'";
+		await command.ExecuteNonQueryAsync();
+		Func<Task> badSource = () => PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
+		await badSource.Should().ThrowAsync<InvalidDataException>().WithMessage("*source differs*");
+		// A later source edit with a changed revision is valid historical evidence.
+		command.CommandText = "UPDATE source_revision_archive SET revision=$revision WHERE kind='ReceiptItems'";
+		command.Parameters.AddWithValue("$revision", Guid.NewGuid().ToString());
+		await command.ExecuteNonQueryAsync();
+		await PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
+		// Each source component is independently bound to its own revision.
+		command.Parameters.Clear();
+		command.CommandText = "UPDATE receipts SET location='different'";
+		await command.ExecuteNonQueryAsync();
+		await badSource.Should().ThrowAsync<InvalidDataException>().WithMessage("*source differs*");
+		command.CommandText = "UPDATE receipts SET location=$store; UPDATE source_revision_archive SET revision=$originalItem WHERE kind='ReceiptItems'; UPDATE source_revision_archive SET revision=$newReceipt WHERE kind='Receipts'";
+		command.Parameters.AddWithValue("$store", item.Store);
+		command.Parameters.AddWithValue("$originalItem", item.ItemRevision.ToString());
+		command.Parameters.AddWithValue("$newReceipt", Guid.NewGuid().ToString());
+		await command.ExecuteNonQueryAsync();
+		await badSource.Should().ThrowAsync<InvalidDataException>().WithMessage("*source differs*");
+		command.Parameters.Clear();
+		command.CommandText = "UPDATE source_revision_archive SET revision=$newItem WHERE kind='ReceiptItems'; UPDATE source_revision_archive SET revision=$originalReceipt WHERE kind='Receipts'";
+		command.Parameters.AddWithValue("$newItem", Guid.NewGuid().ToString());
+		command.Parameters.AddWithValue("$originalReceipt", item.ReceiptRevision.ToString());
+		await command.ExecuteNonQueryAsync();
+		command.Parameters.Clear();
+		command.CommandText = "UPDATE receipt_items SET receipt_id=$other";
+		command.Parameters.AddWithValue("$other", Guid.NewGuid().ToString());
+		await command.ExecuteNonQueryAsync();
+		Func<Task> badReceipt = () => PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
+		await badReceipt.Should().ThrowAsync<InvalidDataException>().WithMessage("*missing receipt*");
+		command.CommandText = "INSERT INTO receipts VALUES($other,'other'); INSERT INTO source_revision_archive VALUES('Receipts',$other,$otherRevision)";
+		command.Parameters.AddWithValue("$otherRevision", Guid.NewGuid().ToString());
+		await command.ExecuteNonQueryAsync();
+		// A move after capture is legitimate once the item revision changes.
+		await PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
+		command.CommandText = "UPDATE source_revision_archive SET revision=$original WHERE kind='ReceiptItems'";
+		command.Parameters.AddWithValue("$original", item.ItemRevision.ToString());
+		await command.ExecuteNonQueryAsync();
+		await badReceipt.Should().ThrowAsync<InvalidDataException>().WithMessage("*different business receipt*unchanged item revision*");
+		command.Parameters.Clear();
+		command.CommandText = "UPDATE receipt_items SET receipt_id=$receipt, description=$description";
+		command.Parameters.AddWithValue("$description", item.RawDescription);
+		command.Parameters.AddWithValue("$receipt", item.ReceiptId.ToString());
+		await command.ExecuteNonQueryAsync();
 		Func<Task> legacy = () => PortableTaxonomyArchive.ReadAsync(sqlite, CancellationToken.None, 13);
 		await legacy.Should().ThrowAsync<InvalidDataException>();
 		command.Parameters.Clear();

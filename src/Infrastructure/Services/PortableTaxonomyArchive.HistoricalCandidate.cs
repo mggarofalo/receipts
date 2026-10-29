@@ -42,6 +42,50 @@ internal static partial class PortableTaxonomyArchive
 		}
 	}
 
+	// Validate the captured business snapshot before any destination writes.
+	// Completed operations may precede later source edits; compare receipt and
+	// item evidence independently when the corresponding revision still matches.
+	private static async Task ValidateCandidateBusinessReferencesAsync(SqliteConnection sqlite, State state, CancellationToken ct)
+	{
+		var receipts = new Dictionary<Guid, string>();
+		await using (var command = sqlite.CreateCommand())
+		{
+			command.CommandText = "SELECT id, location FROM receipts";
+			await using var reader = await command.ExecuteReaderAsync(ct);
+			while (await reader.ReadAsync(ct)) { receipts.Add(Guid.Parse(reader.GetString(0)), reader.GetString(1)); }
+		}
+		var items = new Dictionary<Guid, (Guid ReceiptId, string Description, string? Code)>();
+		await using (var command = sqlite.CreateCommand())
+		{
+			command.CommandText = "SELECT id, receipt_id, description, receipt_item_code FROM receipt_items";
+			await using var reader = await command.ExecuteReaderAsync(ct);
+			while (await reader.ReadAsync(ct))
+			{
+				var receiptId = Guid.Parse(reader.GetString(1));
+				Require(receipts.ContainsKey(receiptId), "Business item references a missing receipt.");
+				items.Add(Guid.Parse(reader.GetString(0)), (receiptId, reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3)));
+			}
+		}
+		Require(state.Assignments.All(a => items.ContainsKey(a.ReceiptItemId)), "Classification references a missing business item.");
+		var revisions = state.SourceRevisions.ToDictionary(r => (r.Table, r.Id), r => r.Revision);
+		foreach (var row in state.HistoricalItems)
+		{
+			Require(receipts.ContainsKey(row.ReceiptId) && items.TryGetValue(row.ItemId, out _),
+				"Historical item references a missing business receipt/item.");
+			var item = items[row.ItemId];
+			if (revisions[("ReceiptItems", row.ItemId)] == row.ItemRevision)
+			{
+				Require(item.ReceiptId == row.ReceiptId, "Historical item references a different business receipt with an unchanged item revision.");
+				Require(item.Description == row.RawDescription && item.Code == row.ItemCode,
+					"Historical source differs from unchanged business revisions.");
+			}
+			if (revisions[("Receipts", row.ReceiptId)] == row.ReceiptRevision)
+			{
+				Require(receipts[row.ReceiptId] == row.Store, "Historical source differs from unchanged business revisions.");
+			}
+		}
+	}
+
 	internal static async Task<State> ReadHistoricalCandidateAsync(SqliteConnection sqlite, State state, CancellationToken ct)
 	{
 		List<HistoricalOperationEntity> headers = [];
