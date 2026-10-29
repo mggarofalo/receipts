@@ -152,7 +152,8 @@ public sealed class CategoryAssistanceHistoricalRequestStore(
 			stored.Add(new StoredGroup(key, ids.ToArray()));
 		}
 		int unreviewed = await db.CategoryAssistanceAttempts.CountAsync(x =>
-			x.State == "queued" || x.State == "dispatching" || x.State == "suggested" || x.State == "abstained", ct);
+			x.QuestionPolicyVersion == CategorySuggestionPolicy.Version &&
+			(x.State == "queued" || x.State == "dispatching" || x.State == "suggested" || x.State == "abstained"), ct);
 		// Each operation reserves its own normalized sources until its attempts exist.
 		// Distinct raw groups within one operation may share a reservation.
 		var reservations = new HashSet<string>(sources.Select(source =>
@@ -183,11 +184,11 @@ public sealed class CategoryAssistanceHistoricalRequestStore(
 
 		var scopes = reservations.Select(x => Guid.Parse(x[..x.IndexOf('\0')])).Distinct().ToArray();
 		var hashes = reservations.Select(x => x[(x.IndexOf('\0') + 1)..].Split('\0')[0]).Distinct().ToArray();
+		// Dispatch attaches matching markers to an existing attempt, including an obsolete one.
 		var existing = await db.CategoryAssistanceAttempts.AsNoTracking().Where(x =>
 			scopes.Contains(x.RequestScope) && x.RestoreGeneration == settings.RestoreGeneration &&
 			x.TaxonomyRevision == head.RevisionId && x.Provider == settings.Provider &&
 			x.Model == settings.Model && x.ConnectionGeneration == connection.Generation &&
-			x.QuestionPolicyVersion == CategorySuggestionPolicy.Version &&
 			hashes.Contains(x.SourceHash)).ToListAsync(ct);
 		foreach (var attempt in existing)
 		{
@@ -242,7 +243,8 @@ public sealed class CategoryAssistanceHistoricalRequestStore(
 		{
 			var groupMarkers = g.ItemIds.Select(id => byId[id]).ToArray();
 			var states = groupMarkers.Select(m => m.AttemptId is Guid id && attempts.TryGetValue(id, out var a)
-				? a.State : m.DispatchSkipped || !current ? "stale" : "waiting").ToArray();
+				? a.QuestionPolicyVersion == CategorySuggestionPolicy.Version ? a.State : "stale"
+				: m.DispatchSkipped || !current ? "stale" : "waiting").ToArray();
 			return new CategoryAssistanceHistoricalGroupProgress(g.key, g.ItemIds.Length,
 								groupMarkers.Where(x => x.AttemptId != null).Select(x => x.AttemptId!.Value).Distinct().ToArray(), states)
 			{

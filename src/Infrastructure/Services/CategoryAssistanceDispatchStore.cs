@@ -26,7 +26,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		await ExpireAsync(db, now, ct);
 		var staleQueued = await db.CategoryAssistanceAttempts.Where(x => x.State == "queued"
 			&& (x.RestoreGeneration != settings.RestoreGeneration || x.SettingsRevision != settings.Revision
-				|| x.TaxonomyRevision != head.RevisionId || !bound
+				|| x.TaxonomyRevision != head.RevisionId || x.QuestionPolicyVersion != CategorySuggestionPolicy.Version || !bound
 				|| x.ConnectionGeneration != connection!.Generation)).ToListAsync(ct);
 		foreach (var stale in staleQueued)
 		{ stale.State = "stale"; stale.CompletedAt = now; stale.ClaimToken = null; stale.LeaseExpiresAt = null; }
@@ -57,6 +57,16 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 				&& x.Provider == settings.Provider && x.Model == settings.Model
 				&& x.ConnectionGeneration == connection!.Generation
 				&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version, ct);
+			// A marker sharing an already attempted identity must not resend solely
+			// because the policy changed. Explicit history requests have their own scope.
+			existing ??= await db.CategoryAssistanceAttempts.Where(x =>
+				x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration && x.SourceHash == marker.SourceHash
+				&& x.Location == marker.Location && x.Description == marker.Description
+				&& x.ItemCodeKey == (marker.ItemCode ?? "") && x.TaxonomyRevision == marker.TaxonomyRevision
+				&& x.Provider == settings.Provider && x.Model == settings.Model
+				&& x.ConnectionGeneration == connection!.Generation
+				&& x.QuestionPolicyVersion != CategorySuggestionPolicy.Version)
+				.OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(ct);
 			if (existing != null) { marker.AttemptId = existing.Id; continue; }
 			bool collision = db.CategoryAssistanceAttempts.Local.Any(x => x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration
 	&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
@@ -114,6 +124,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		var queued = await db.CategoryAssistanceAttempts.Where(x => x.State == "queued"
 			&& x.RestoreGeneration == settings.RestoreGeneration && x.SettingsRevision == settings.Revision
 			&& x.ConnectionGeneration == connection!.Generation
+			&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version
 			&& (x.NextEligibleAt == null || x.NextEligibleAt <= now)
 			&& (x.LeaseExpiresAt == null || x.LeaseExpiresAt <= now))
 			.OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(ct);
@@ -266,8 +277,9 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 	private static async Task<CategoryAssistanceSettingsEntity> LockSettingsAsync(ApplicationDbContext db, CancellationToken ct)
 		=> await db.CategoryAssistanceSettings.FromSqlRaw("SELECT * FROM category_assistance.\"Settings\" WHERE \"Id\"=1 FOR UPDATE").SingleAsync(ct);
 	private static Task<int> PendingCountAsync(ApplicationDbContext db, CancellationToken ct)
-				=> db.CategoryAssistanceAttempts.CountAsync(x => x.State == "queued" || x.State == "dispatching"
-						|| x.State == "suggested" || x.State == "abstained", ct);
+				=> db.CategoryAssistanceAttempts.CountAsync(x => x.QuestionPolicyVersion == CategorySuggestionPolicy.Version
+						&& (x.State == "queued" || x.State == "dispatching"
+						|| x.State == "suggested" || x.State == "abstained"), ct);
 	private static async Task ExpireAsync(ApplicationDbContext db, DateTimeOffset now, CancellationToken ct)
 	{
 		var expired = await db.CategoryAssistanceAttempts.Where(x => x.State == "dispatching" && x.LeaseExpiresAt <= now).ToListAsync(ct);
@@ -329,7 +341,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 	private static async Task<bool> CurrentAsync(ApplicationDbContext db, CategoryAssistanceAttemptEntity row,
 		Guid taxonomyRevision, CategoryAssistanceSettingsEntity settings, CancellationToken ct)
 	{
-		if (!settings.Enabled || settings.Revision != row.SettingsRevision || settings.RestoreGeneration != row.RestoreGeneration
+		if (row.QuestionPolicyVersion != CategorySuggestionPolicy.Version || !settings.Enabled || settings.Revision != row.SettingsRevision || settings.RestoreGeneration != row.RestoreGeneration
 			|| settings.Provider != row.Provider || settings.Model != row.Model || taxonomyRevision != row.TaxonomyRevision)
 		{
 			return false;

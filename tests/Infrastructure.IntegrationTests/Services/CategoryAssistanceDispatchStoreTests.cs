@@ -46,6 +46,46 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 	}
 
 	[Fact]
+	public async Task ObsoleteQueuedClaimCannotDispatchOrBeReclaimed()
+	{
+		await SeedAsync("old queued " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId)).QuestionPolicyVersion = "obsolete";
+			await db.SaveChangesAsync();
+		}
+		(await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default)).Should().BeNull();
+		(await store.ClaimQueuedAsync(default)).Should().BeNull();
+		await using var verify = fixture.CreateDbContext();
+		(await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId)).State.Should().Be("stale");
+		(await verify.CategoryAssistanceAttempts.CountAsync()).Should().Be(1);
+		(await verify.CategoryAssistanceDailyUsage.CountAsync()).Should().Be(0);
+	}
+
+	[Fact]
+	public async Task ObsoleteInflightClaimCannotPublishAndRetainsDebit()
+	{
+		await SeedAsync("old inflight " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId)).QuestionPolicyVersion = "obsolete";
+			await db.SaveChangesAsync();
+		}
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 7, 3, default)).Should().BeFalse();
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Suggested), Ready, default);
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("stale"); row.ResultJson.Should().BeNull();
+		row.FirstStageInputTokens.Should().Be(7);
+		(await verify.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(1);
+	}
+
+	[Fact]
 	public async Task ConcurrentSecondAuthorizationsDebitOnceAndRetainFirstUsageAfterFailure()
 	{
 		await SeedAsync("second concurrent " + Guid.NewGuid());
@@ -829,6 +869,51 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			var work = (await store.ClaimQueuedAsync(default))!;
 			var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
 			await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Abstained), Ready, default);
+			Guid secondReceipt = Guid.NewGuid(), secondItem = Guid.NewGuid();
+			await using (var db = fixture.CreateDbContext())
+			{
+				db.Receipts.Add(new ReceiptEntity { Id = secondReceipt, Location = "Dispatch store", Date = new DateOnly(2020, 1, 1), TaxAmountCurrency = Currency.USD });
+				db.ReceiptItems.Add(new ReceiptItemEntity
+				{
+					Id = secondItem,
+					ReceiptId = secondReceipt,
+					Description = description,
+					Category = "",
+					UnitPriceCurrency = Currency.USD,
+					TotalAmountCurrency = Currency.USD
+				});
+				await db.SaveChangesAsync();
+			}
+			await using (var db = fixture.CreateDbContext())
+			await using (var tx = await db.Database.BeginTransactionAsync())
+			{
+				(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, seed.Actor, Guid.NewGuid(), secondItem, false, false)).Should().BeTrue();
+				await tx.CommitAsync();
+			}
+			(await store.ClaimQueuedAsync(default)).Should().BeNull();
+			await using var verify = fixture.CreateDbContext();
+			(await verify.CategoryAssistanceObservations.AsNoTracking().SingleAsync(x => x.ReceiptItemId == secondItem)).AttemptId.Should().Be(work.AttemptId);
+			(await verify.CategoryAssistanceAttempts.CountAsync(x => x.SourceHash == work.Source.Hash)).Should().Be(1);
+		}
+		finally { await DisableAsync(seed.Actor); }
+	}
+
+	[Fact]
+	public async Task ObsoleteAttemptCapturesRepeatedSaveWithoutResending()
+	{
+		string description = "duplicate " + Guid.NewGuid();
+		var seed = await SeedAsync(description);
+		try
+		{
+			var store = Dispatch();
+			var work = (await store.ClaimQueuedAsync(default))!;
+			var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+			await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Abstained), Ready, default);
+			await using (var db = fixture.CreateDbContext())
+			{
+				(await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId)).QuestionPolicyVersion = "obsolete";
+				await db.SaveChangesAsync();
+			}
 			Guid secondReceipt = Guid.NewGuid(), secondItem = Guid.NewGuid();
 			await using (var db = fixture.CreateDbContext())
 			{
