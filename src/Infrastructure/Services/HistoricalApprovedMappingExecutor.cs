@@ -16,8 +16,10 @@ internal sealed class HistoricalApprovedMappingExecutor(
 {
 	// The manual correction is durable intent: subsequent automatic mapping execution
 	// treats both a manual category and an explicit manual null as protected.
-	internal Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
-			new HistoricalReclassificationService(factory, clock, options).UndoApprovedMappingChunkAsync(actor, id, command, limit, ct);
+	// The initiating user request captures this generation once and passes it to every chunk.
+	// Never refresh it in a worker: restore rotates it while holding the shared write gate.
+	internal Task<HistoricalProgress> UndoChunkAsync(Guid expectedRestoreGeneration, string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
+			new HistoricalReclassificationService(factory, clock, options).UndoApprovedMappingChunkAsync(actor, id, command, limit, expectedRestoreGeneration, ct);
 
 	internal async Task<HistoricalProgress> ApplyChunkAsync(string actor, Guid id, int limit, CancellationToken ct = default)
 	{

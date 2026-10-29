@@ -223,10 +223,10 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	public Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
 		RunChunkAsync(actor, id, command, limit, ct);
 
-	internal Task<HistoricalProgress> UndoApprovedMappingChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default)
+	internal Task<HistoricalProgress> UndoApprovedMappingChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, Guid expectedRestoreGeneration, CancellationToken ct = default)
 	{
 		ArgumentNullException.ThrowIfNull(command);
-		return RunChunkAsync(actor, id, command, limit, ct, HistoricalOperationKind.ApprovedMappingV1);
+		return RunChunkAsync(actor, id, command, limit, ct, HistoricalOperationKind.ApprovedMappingV1, expectedRestoreGeneration);
 	}
 
 	public async Task<HistoricalProgress> CancelAsync(string actor, Guid id, CancellationToken ct = default)
@@ -244,7 +244,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	}
 
 	private async Task<HistoricalProgress> RunChunkAsync(string actor, Guid id, HistoricalUndoCommand? undo, int limit, CancellationToken ct,
-			HistoricalOperationKind kind = HistoricalOperationKind.ManualV1)
+			HistoricalOperationKind kind = HistoricalOperationKind.ManualV1, Guid? expectedRestoreGeneration = null)
 	{
 		ValidateLimit(limit);
 		if (undo != null && (undo.TaxonomyRevisionId == Guid.Empty || string.IsNullOrWhiteSpace(undo.Reason) || undo.Reason.Contains('\0')))
@@ -252,6 +252,13 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
+		if (kind == HistoricalOperationKind.ApprovedMappingV1)
+		{
+			Guid currentGeneration = await db.CategoryAssistanceSettings.AsNoTracking()
+				.Select(x => x.RestoreGeneration).SingleAsync(ct);
+			if (expectedRestoreGeneration == Guid.Empty || expectedRestoreGeneration != currentGeneration)
+			{ throw new TaxonomyException(409, "Automatic undo request predates restore."); }
+		}
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
 		if (operation.Kind != kind)
 		{ throw new TaxonomyException(409, "Historical operation kind does not match the execution path."); }

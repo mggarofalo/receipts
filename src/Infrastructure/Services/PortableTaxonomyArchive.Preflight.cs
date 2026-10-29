@@ -44,10 +44,6 @@ internal static partial class PortableTaxonomyArchive
 		if (candidate)
 		{
 			ValidateCandidate(existing); ValidateCandidate(incoming);
-			Require(existing.HistoricalOperations.Concat(incoming.HistoricalOperations)
-				.Where(h => h.Kind == HistoricalOperationKind.ApprovedMappingV1)
-				.All(h => h.State != HistoricalOperationState.Undoing),
-				"In-progress automatic undo cannot be restored until a safe correction path exists.");
 			// Compare deterministic post-restore state to permit exact snapshot replay.
 			AbandonPendingAutomatic(existing);
 			AbandonPendingAutomatic(incoming);

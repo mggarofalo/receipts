@@ -10,6 +10,12 @@ namespace Infrastructure.IntegrationTests.Services;
 
 public sealed partial class ClassificationTests
 {
+	private Guid CurrentRestoreGeneration()
+	{
+		using var db = fixture.CreateDbContext();
+		return db.CategoryAssistanceSettings.AsNoTracking().Select(x => x.RestoreGeneration).Single();
+	}
+
 	private HistoricalApprovedMappingExecutor ApprovedExecutor() => new(new Factory(fixture), TimeProvider.System,
 		Options.Create(new ClassificationOptions { WritesEnabled = true }));
 

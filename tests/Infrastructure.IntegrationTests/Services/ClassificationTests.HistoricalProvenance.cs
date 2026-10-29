@@ -62,7 +62,7 @@ public sealed partial class ClassificationTests
 		(await Assert.ThrowsAsync<TaxonomyException>(() => capture.CaptureAsync(request))).Status.Should().Be(409);
 		foreach (Guid id in ids)
 		{
-			(await Assert.ThrowsAsync<TaxonomyException>(() => ApprovedExecutor().UndoChunkAsync(
+			(await Assert.ThrowsAsync<TaxonomyException>(() => ApprovedExecutor().UndoChunkAsync(CurrentRestoreGeneration(),
 				Actor, id, new(seed.Revision, "Undo"), 1))).Status.Should().Be(409);
 		}
 		var stored = await db.HistoricalOperations.AsNoTracking().Where(x => ids.Contains(x.Id)).ToListAsync();
