@@ -9,7 +9,7 @@ import { useLocation, useNavigate } from "react-router";
  * - On every authenticated location change, writes the pathname (with search)
  *   to localStorage — unless it's a route we don't want to be the landing
  *   target (root, auth flows).
- * - On the first mount only, if the current path is exactly "/" and a stored
+ * - On the first mount only, if the current URL is exactly "/" and a stored
  *   route exists and is still considered trackable, redirect to it.
  *
  * The hook is intended to mount inside `Layout`, which already lives behind
@@ -64,7 +64,7 @@ export function useLastRoutePersistence(): void {
   useEffect(() => {
     if (didInitialRedirect.current) return;
     didInitialRedirect.current = true;
-    if (location.pathname !== "/") return;
+    if (location.pathname !== "/" || location.search || location.hash) return;
     const stored = readStoredRoute();
     if (!stored) return;
     if (!isTrackableRoute(stored)) return;

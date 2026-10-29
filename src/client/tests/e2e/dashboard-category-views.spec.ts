@@ -60,8 +60,12 @@ for (const width of [1280, 375]) {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     await page.getByRole("main").getByRole("link", { name: "Reports", exact: true }).click();
     await expect(page).toHaveURL(/\/reports\?/);
+    await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
     await page.goBack();
+    await expect(page).toHaveURL(url.href);
+    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Category view" })).toHaveValue("currentHierarchy");
+    await expect(page.getByText("Current groceries", { exact: true }).last()).toBeVisible();
     await page.reload();
     await expect(page.getByText("Current groceries", { exact: true }).last()).toBeVisible();
     expect(requests.some((q) => q.includes("categoryView=asClassified") && q.includes("limit=100"))).toBe(true);
