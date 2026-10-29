@@ -103,14 +103,30 @@ internal static partial class PortableTaxonomyArchive
 		return state with { IncludesHistorical = true, HistoricalOperations = operations, HistoricalItems = items };
 	}
 
-	private static void ValidateHistorical(State s)
+	private static void ValidateHistorical(State s) => ValidateHistorical(s, allowAutomatic: false);
+
+	internal static void ValidateHistoricalCandidate(State s) => ValidateHistorical(s, allowAutomatic: true);
+
+	private static void ValidateHistorical(State s, bool allowAutomatic)
 	{
 		Unique(s.HistoricalOperations); Unique(s.HistoricalItems);
 		var headers = s.HistoricalOperations.ToDictionary(x => x.Id);
 		var assignments = s.Assignments.ToDictionary(x => x.Id);
 		HashSet<Guid> operationIds = [];
+		foreach (var row in s.HistoricalItems)
+		{
+			Require(row.ApplyOperationId != Guid.Empty && row.UndoOperationId != Guid.Empty
+				&& operationIds.Add(row.ApplyOperationId) && operationIds.Add(row.UndoOperationId),
+				"Invalid historical manifest evidence: duplicate operation ID.");
+		}
 		foreach (var h in s.HistoricalOperations)
 		{
+			var rows = s.HistoricalItems.Where(i => i.OperationId == h.Id).ToList();
+			if (allowAutomatic && h.Kind == HistoricalOperationKind.ApprovedMappingV1)
+			{
+				PortableAutomaticHistoricalV14.Validate(s, h, rows);
+				continue;
+			}
 			Require(h.Kind == HistoricalOperationKind.ManualV1, "Automatic historical operations cannot be restored yet.");
 			Require(h.ApprovedMappingRevisionId == null, "Manual historical headers cannot carry automatic provenance.");
 			Require(h.Id != Guid.Empty && Text(h.Actor) && Text(h.Reason) && Hash(h.RequestHash)
@@ -133,7 +149,6 @@ internal static partial class PortableTaxonomyArchive
 			Require(undo ? Text(h.UndoReason) && s.Revisions.Any(r => r.Id == h.UndoTaxonomyRevisionId)
 				: h.UndoReason == null, "Invalid frozen historical undo intent.");
 			Require(undo == (h.State is HistoricalOperationState.Undoing or HistoricalOperationState.Undone), "Historical state differs from undo intent.");
-			var rows = s.HistoricalItems.Where(i => i.OperationId == h.Id).ToList();
 			Require(h.State != HistoricalOperationState.Preview || rows.All(i => i.State == HistoricalItemState.Pending), "Preview has applied results.");
 			Require(h.State != HistoricalOperationState.Completed || rows.All(i => i.State != HistoricalItemState.Pending), "Completed operation has pending items.");
 			Require(h.State != HistoricalOperationState.Undone || rows.All(i => i.State != HistoricalItemState.Applied || i.UndoState != HistoricalItemState.Pending), "Undone operation has pending undo items.");
@@ -142,8 +157,7 @@ internal static partial class PortableTaxonomyArchive
 				Require(row.ApprovedMappingRevisionId == null, "Manual historical items cannot carry automatic provenance.");
 				Require(row.ItemId != Guid.Empty && row.ReceiptId != Guid.Empty && row.ItemRevision != Guid.Empty && row.ReceiptRevision != Guid.Empty
 					&& groups.Any(g => g.Group == new HistoricalGroupKey(row.Store, row.RawDescription, row.ItemCode) && g.TargetCategoryId == row.TargetCategoryId)
-					&& row.ApplyOperationId != Guid.Empty && row.UndoOperationId != Guid.Empty
-					&& operationIds.Add(row.ApplyOperationId) && operationIds.Add(row.UndoOperationId), "Invalid historical manifest evidence.");
+					&& row.ApplyOperationId != Guid.Empty && row.UndoOperationId != Guid.Empty, "Invalid historical manifest evidence.");
 				Require(row.ExpectedAssignmentId is Guid previous
 					? assignments.TryGetValue(previous, out var a) && a.ReceiptItemId == row.ItemId && a.CategoryId == row.PreviousCategoryId && a.RecordedAt <= h.CapturedAt
 					: row.PreviousCategoryId == null, "Historical previous assignment differs from evidence.");
@@ -182,7 +196,11 @@ internal static partial class PortableTaxonomyArchive
 				&& o.AssignmentId == a.Id && o.RequestHash == hash), "Historical applied result differs from classification history.");
 	}
 
-	private static void ValidateHistoricalDestination(State existing, State incoming)
+	private static void ValidateHistoricalDestination(State existing, State incoming) => ValidateHistoricalDestination(existing, incoming, allowAutomatic: false);
+
+	internal static void ValidateHistoricalCandidateDestination(State existing, State incoming) => ValidateHistoricalDestination(existing, incoming, allowAutomatic: true);
+
+	private static void ValidateHistoricalDestination(State existing, State incoming, bool allowAutomatic)
 	{
 		// Older formats contain no historical operations. Preserve the destination's retained
 		// evidence; never interpret omission as deletion. For v12, a shared operation must be
@@ -194,7 +212,7 @@ internal static partial class PortableTaxonomyArchive
 		{
 			HistoricalOperations = [.. incoming.HistoricalOperations, .. existing.HistoricalOperations.Where(h => !incomingIds.Contains(h.Id))],
 			HistoricalItems = [.. incoming.HistoricalItems, .. existing.HistoricalItems.Where(i => !incomingIds.Contains(i.OperationId))]
-		});
+		}, allowAutomatic);
 		if (!incoming.IncludesHistorical) { return; }
 		foreach (var header in existing.HistoricalOperations)
 		{
