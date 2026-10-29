@@ -1,6 +1,6 @@
 # Offline Jev production question and decision parity
 
-This tool references the shipped Infrastructure/Application assemblies and calls
+The original single-fixture mode references the shipped Infrastructure/Application assemblies and calls
 `JevSuggestionQuestions.Serialize` and the hierarchical `CategorySuggestionPolicy.Decide`
 directly. There is no copied question wording or decision policy. It instantiates
 no provider, HTTP client, application host, database, or model. It reads only the
@@ -46,3 +46,54 @@ This adapter covers question serialization and typed judgment policy only. It
 does not validate raw provider-response parsing, authorization, concurrency,
 credential lifecycle, transport errors, end-to-end orchestration, or model quality.
 Those remain separate provider/integration tests. It cannot send inference calls.
+
+## Offline paired packet runner
+
+`offline-plan` verifies the frozen private packet hashes and six production source
+snapshots against the supplied checkout, requires exactly 24 cases sharing one
+ordered taxonomy, and writes exact baseline payloads to a new private file.
+It does not read annotation labels or evaluate cases. It hashes the frozen
+evidence-only annotation packet solely to verify packet integrity.
+
+```powershell
+dotnet run --project tools/Receipts.JevProductionParity -- offline-plan <private-packet-directory> <repository-root> <new-private-plan.json>
+dotnet run --project tools/Receipts.JevProductionParity -- offline-replay <private-cases.json> <private-exchanges.json> <new-private-replay.json>
+dotnet test tests/Infrastructure.Tests/Infrastructure.Tests.csproj --filter FullyQualifiedName~OfflinePairedEvaluationTests
+```
+
+Cases have `id` and production `request` fields. Exchanges are a sequential JSON
+array of `{ "body": "<exact raw HTTP response text>", "statusCode": 200,
+"requestSha256": "<lowercase SHA256 of exact request bytes>" }` objects.
+The CLI requires every exchange to have a request fingerprint. Replay itself
+does not verify a real cohort's freeze; use the validated plan and independently
+verify input provenance before interpreting a real replay. Replay accepts 1–24
+cases to support synthetic fixtures and preserves every supplied case in its
+denominator. No real holdout responses have been collected by this work.
+
+Replay invokes the actual `JevCategoryAssistanceSelectedProvider.SuggestAsync`
+and `VerifySelectedAsync` with a fixed synthetic binding and placeholder key.
+Its `HttpClient` has an in-memory handler with no network transport. Environment
+credentials, application configuration, database and real connection bindings
+are never loaded. Production payload serialization, raw Choice validation,
+hierarchy reduction and the bound selected-path parser all execute unchanged.
+This verifies offline production semantics; real authorization revocation and
+HTTP networking still need separate integration evidence.
+
+The baseline is shared between arms. Valid global abstentions skip the second
+exchange. Assignments require the inherited production global fit gate 0.7;
+treatment retains the same full path at selected support >=0.7, including useful
+parent stops. Missing or request-mismatched exchanges are `unknown`; invalid or
+HTTP error responses are `failed`. Either stops processing, preserves the suffix
+as `unattempted`, and retains the attempt reservation. No retries, response
+repair, real write, labeling, scoring or acceptance conclusion occurs. A completed
+artifact exits 0 even when replay records a stopped run; inspect `stopped` and
+outcome statuses. Input/artifact errors exit 2 without echoing private contents.
+
+Replay simulates the frozen reservation policy: at most 48 attempts, USD
+0.002752512 each, USD 0.132120576 maximum new reservation, plus USD 4.75 prior
+carry = USD 4.882120576 combined ceiling reservation. This is offline accounting,
+not a live ledger or account balance check. Pricing/context/free-output and actual
+available credit remain unverified; later dispatch requires explicit authorization
+and those checks. There is no live dispatch command. Request payloads and outcome
+identifiers are written only to the exclusive-created output; keep all real
+input/output files outside git. Run the DLL directly after build to avoid restore.

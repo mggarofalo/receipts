@@ -1,6 +1,11 @@
 using System.Text.Json;
 using Receipts.JevProductionParity;
 
+if (args.Length > 0 && args[0].StartsWith("offline-", StringComparison.Ordinal))
+{
+	return await OfflineCommand.RunAsync(args);
+}
+
 if (args.Length != 1)
 {
 	Console.Error.WriteLine("Usage: Receipts.JevProductionParity <sanitized-fixture.json>");
