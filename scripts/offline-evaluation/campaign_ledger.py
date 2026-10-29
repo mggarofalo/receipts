@@ -6,7 +6,9 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
+import stat
 import threading
 import uuid
 
@@ -15,7 +17,152 @@ TOKENS_PER_ATTEMPT = 65_536
 # USD 0.042 / million input tokens = 42 nanodollars / input token.
 NANODOLLARS_PER_TOKEN = 42
 RESERVATION_NANODOLLARS = TOKENS_PER_ATTEMPT * NANODOLLARS_PER_TOKEN
-MAX_LEDGER_BYTES = 1_048_576
+MAX_LEDGER_BYTES = 2_097_152
+# Complete canonical record bytes, including chain metadata and terminating LF.
+RECORD_BYTE_CAPS = {"policy": 2_048, "bind": 1_179_648, "verifier": 524_288, "verifiers": 524_288, "verifiers-v2": 524_288,
+                    "start": 512, "attempt": 512, "outcome": 512, "finish": 512}
+
+
+def required_capacity(policy):
+    """One binding, one legacy verifier OR entire batched vector, four records/call.
+
+    All batch payloads share the existing verifier record cap. No journal
+    expansion: 96 calls still require at most 1,902,592 canonical bytes.
+    """
+    return (RECORD_BYTE_CAPS["policy"] + RECORD_BYTE_CAPS["bind"]
+            + RECORD_BYTE_CAPS["verifier"] + policy.max_calls * 4 * 512)
+
+
+def _record_kind(body):
+    if not isinstance(body, dict):
+        raise LedgerError("record body object required")
+    kind = body.get("kind")
+    if kind == "stage":
+        if set(body) != {"kind", "event"} or not isinstance(body["event"], dict):
+            raise LedgerError("invalid stage event")
+        event = body["event"]
+        kind = event.get("op")
+        fields = {
+            "start": {"op", "index", "request_sha256"},
+            "finish": {"op", "index", "receipt_sha256"},
+            "verifier": {"op", "payload", "plan_sha256", "responses"},
+            "verifiers": {"op", "batches", "plan_sha256", "responses"},
+            "verifiers-v2": {"op", "batches", "plan_sha256", "responses"},
+        }
+        if kind == "bind":
+            required = {"op", "format", "plan", "artifacts", "private_root"}
+            if (not required <= set(event) or set(event) - required - {"executor", "transport"}
+                    or event["format"] not in ("offline-stage-v1", "offline-paired-stage-v1", "offline-batched-paired-stage-v1", "live-paired-stage-v1", "live-batched-paired-stage-v1", "offline-batched-paired-stage-v2", "live-batched-paired-stage-v2")
+                    or not isinstance(event["plan"], dict) or not isinstance(event["artifacts"], dict)
+                    or not isinstance(event["private_root"], str)):
+                raise LedgerError("invalid binding event")
+            plan = event["plan"]
+            if (set(plan) != {"case", "plan_sha256", "production", "shortlist"}
+                    or not isinstance(plan["case"], str) or not 0 < len(plan["case"]) <= 100
+                    or not _sha(plan["plan_sha256"]) or not isinstance(plan["production"], str)
+                    or not isinstance(plan["shortlist"], list) or not 1 <= len(plan["shortlist"]) <= 94
+                    or any(not isinstance(value, str) for value in plan["shortlist"])
+                    or any(key in event and not isinstance(event[key], dict) for key in ("executor", "transport"))):
+                raise LedgerError("invalid bound plan")
+        elif kind in fields:
+            if set(event) != fields[kind]:
+                raise LedgerError("invalid stage fields")
+            if kind in ("start", "finish"):
+                key = "request_sha256" if kind == "start" else "receipt_sha256"
+                if type(event["index"]) is not int or not 0 <= event["index"] < 96 or not _sha(event[key]):
+                    raise LedgerError("invalid stage index/hash")
+            elif kind in ("verifiers", "verifiers-v2"):
+                batches = event["batches"]
+                if (not isinstance(batches, list) or len(batches) > (28 if kind == "verifiers-v2" else 5)
+                        or not isinstance(event["responses"], list) or len(event["responses"]) > 95
+                        or any(not _sha(value) for value in event["responses"])
+                        or (not batches and event["plan_sha256"] is not None)
+                        or (batches and not _sha(event["plan_sha256"]))):
+                    raise LedgerError("invalid batched verifier binding")
+                for index, batch in enumerate(batches):
+                    if (not isinstance(batch, dict)
+                            or set(batch) != {"index", "isGlobalCoverage", "payload", "questionIds"}
+                            or type(batch["index"]) is not int or batch["index"] != index
+                            or type(batch["isGlobalCoverage"]) is not bool
+                            or (kind == "verifiers" and batch["isGlobalCoverage"] != (index == len(batches) - 1))
+                            or not isinstance(batch["payload"], str) or not batch["payload"]
+                            or len(batch["payload"].encode("utf-8")) > 32 * 1024
+                            or not isinstance(batch["questionIds"], list) or not batch["questionIds"]
+                            or any(not isinstance(q, str) or not q for q in batch["questionIds"])
+                            or len(set(batch["questionIds"])) != len(batch["questionIds"])):
+                        raise LedgerError("invalid ordered verification batch")
+                if kind == "verifiers-v2" and batches:
+                    coverage = [b["isGlobalCoverage"] for b in batches]
+                    if (coverage[0] or not coverage[-1]
+                            or any(coverage[i] and not coverage[i + 1] for i in range(len(coverage) - 1))
+                            or len(event["responses"]) + len(batches) > 30):
+                        raise LedgerError("complete ordered paths then coverage within 30 calls required")
+                if batches and len(batches) < 2:
+                    raise LedgerError("verification paths and final global coverage required")
+            elif (not isinstance(event["responses"], list) or len(event["responses"]) > 95
+                  or any(not _sha(value) for value in event["responses"])
+                  or (event["payload"] is None and event["plan_sha256"] is not None)
+                  or (event["payload"] is not None and
+                      (not isinstance(event["payload"], str) or not event["payload"] or not _sha(event["plan_sha256"])))):
+                raise LedgerError("invalid verifier event")
+        else:
+            raise LedgerError("unknown stage kind")
+    elif kind == "policy":
+        if (set(body) != {"kind", "version", "policy"} or type(body["version"]) is not int
+                or body["version"] != 1 or not isinstance(body["policy"], dict)
+                or set(body["policy"]) != set(Policy.__dataclass_fields__)):
+            raise LedgerError("invalid policy header")
+        Policy(**body["policy"]).validate()
+    elif kind == "attempt":
+        if (set(body) not in ({"kind", "id", "payload_sha256", "payload_bytes"},
+                              {"kind", "id", "payload_sha256", "payload_bytes", "stage_id"})
+                or ("stage_id" in body and not _valid_stage_id(body["stage_id"]))
+                or not isinstance(body["id"], str) or len(body["id"]) != 36
+                or not _sha(body["payload_sha256"]) or type(body["payload_bytes"]) is not int):
+            raise LedgerError("invalid attempt fields")
+    elif kind == "outcome":
+        if (set(body) != {"kind", "id", "status"} or not isinstance(body["id"], str)
+                or body["status"] not in ("success", "error", "unknown")):
+            raise LedgerError("invalid outcome fields")
+    else:
+        raise LedgerError("unknown record kind")
+    return kind
+
+
+def _valid_stage_id(value):
+    return (isinstance(value, list) and len(value) == 4
+            and all(isinstance(part, str) and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,31}", part)
+                    for part in value[:3])
+            and type(value[3]) is int and 0 <= value[3] < 96)
+
+
+def _sha(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+def _check_record(body, data):
+    kind = _record_kind(body)
+    if len(data) > RECORD_BYTE_CAPS[kind]:
+        raise LedgerError("record size limit reached")
+    return kind
+
+
+def _check_counts(records, policy):
+    counts = {}
+    for row in records:
+        kind = _record_kind(row["body"])
+        if kind in ("verifiers", "verifiers-v2"):
+            kind = "verifier"
+        counts[kind] = counts.get(kind, 0) + 1
+        cap = 1 if kind in ("policy", "bind", "verifier") else policy.max_calls
+        if counts[kind] > cap:
+            raise LedgerError("record count exceeds campaign policy")
+    return counts
+
+
+def _check_capacity(policy):
+    if required_capacity(policy) > MAX_LEDGER_BYTES:
+        raise LedgerError("insufficient journal capacity for campaign policy")
 
 
 class LedgerError(ValueError):
@@ -24,6 +171,30 @@ class LedgerError(ValueError):
 
 class LedgerBusy(LedgerError):
     """Another owner holds the journal; no automatic retry."""
+
+
+def require_plain_absolute_path(path, *, allow_missing_leaf=False):
+    """Reject link/reparse ancestry before following any component.
+
+    The caller must keep its private directory and ancestry stable while operating;
+    this check is not protection against malicious concurrent filesystem changes.
+    """
+    path = Path(path)
+    if not path.is_absolute() or '..' in path.parts:
+        raise LedgerError("absolute path without parent traversal required")
+    current = Path(path.anchor)
+    for part in ('', *path.parts[1:]):
+        if part:
+            current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            if allow_missing_leaf and current == path:
+                return path
+            raise FileNotFoundError("path ancestor does not exist") from None
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            raise LedgerError("reparse/link ancestry is not permitted")
+    return path
 
 
 @dataclass(frozen=True)
@@ -58,7 +229,7 @@ class Policy:
 
 
 def _canonical(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii")
 
 
 def _unique(pairs):
@@ -78,7 +249,13 @@ class CampaignLedger:
     """
 
     def __init__(self, path, *, create_policy=None):
-        self.path = Path(path).resolve()
+        self.path = require_plain_absolute_path(path, allow_missing_leaf=create_policy is not None)
+        require_plain_absolute_path(str(self.path) + ".lock", allow_missing_leaf=True)
+        # Stage events may contain exact private payloads. Reject checkout
+        # ancestry before creating either the journal or its persistent lock.
+        for candidate in (self.path, Path(str(self.path) + ".lock")):
+            if any((parent / ".git").exists() for parent in (candidate.parent, *candidate.parents)):
+                raise LedgerError("private journal and lock outside a checkout required")
         self._lock_file = None
         self._journal = None
         self._mutex = threading.Lock()
@@ -140,6 +317,11 @@ class CampaignLedger:
         record = {"sequence": len(records), "previous": previous, "body": body}
         record["hash"] = hashlib.sha256(_canonical(record)).hexdigest()
         data = _canonical(record) + b"\n"
+        kind = _check_record(body, data)
+        policy = Policy(**(records[0]["body"]["policy"] if records else body["policy"]))
+        _check_counts([*records, record], policy)
+        if kind in ("start", "attempt"):
+            _check_capacity(policy)
         self._journal.seek(0, os.SEEK_END)
         if self._journal.tell() + len(data) > MAX_LEDGER_BYTES:
             raise LedgerError("journal size limit reached")
@@ -159,18 +341,22 @@ class CampaignLedger:
         records = []
         attempts = {}
         outcomes = set()
+        stage_ids = set()
         policy = None
         try:
-            for line in data.splitlines():
+            for line in data[:-1].split(b"\n"):
                 row = json.loads(line, object_pairs_hook=_unique)
-                if set(row) != {"sequence", "previous", "body", "hash"}:
+                if not isinstance(row, dict) or set(row) != {"sequence", "previous", "body", "hash"}:
                     raise LedgerError("invalid record fields")
                 unsigned = {key: row[key] for key in ("sequence", "previous", "body")}
                 if (type(row["sequence"]) is not int or row["sequence"] != len(records)
                         or row["previous"] != (records[-1]["hash"] if records else "0" * 64)
                         or row["hash"] != hashlib.sha256(_canonical(unsigned)).hexdigest()):
                     raise LedgerError("journal integrity check failed")
+                if line + b"\n" != _canonical(row) + b"\n":
+                    raise LedgerError("noncanonical journal record")
                 body = row["body"]
+                _check_record(body, line + b"\n")
                 if not records:
                     if set(body) != {"kind", "version", "policy"} or body["kind"] != "policy" or type(body["version"]) is not int or body["version"] != 1:
                         raise LedgerError("invalid policy header")
@@ -179,8 +365,11 @@ class CampaignLedger:
                     policy = Policy(**body["policy"])
                     policy.validate()
                 elif body["kind"] == "attempt":
-                    if set(body) != {"kind", "id", "payload_sha256", "payload_bytes"}:
-                        raise LedgerError("invalid attempt fields")
+                    if "stage_id" in body:
+                        stage_id = tuple(body["stage_id"])
+                        if stage_id in stage_ids:
+                            raise LedgerError("duplicate stage reservation")
+                        stage_ids.add(stage_id)
                     if (str(uuid.UUID(body["id"])) != body["id"] or body["id"] in attempts
                             or type(body["payload_bytes"]) is not int
                             or not 0 < body["payload_bytes"] <= policy.max_payload_bytes
@@ -188,6 +377,9 @@ class CampaignLedger:
                             or any(c not in "0123456789abcdef" for c in body["payload_sha256"])):
                         raise LedgerError("invalid attempt")
                     attempts[body["id"]] = body
+                elif body["kind"] == "stage":
+                    if set(body) != {"kind", "event"} or not isinstance(body["event"], dict):
+                        raise LedgerError("invalid stage event")
                 elif body["kind"] == "outcome":
                     if (set(body) != {"kind", "id", "status"} or body["id"] not in attempts
                             or body["id"] in outcomes or body["status"] not in ("success", "error", "unknown")):
@@ -198,6 +390,7 @@ class CampaignLedger:
                 records.append(row)
         except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as error:
             raise LedgerError("malformed journal; no automatic repair") from error
+        _check_counts(records, policy)
         reserved = policy.unknown_carry_nanodollars + len(attempts) * RESERVATION_NANODOLLARS
         if len(attempts) > policy.max_calls or reserved > policy.budget_nanodollars:
             raise LedgerError("journal exceeds campaign policy")
@@ -210,7 +403,7 @@ class CampaignLedger:
                     "missing_outcomes": len(attempts) - len(outcomes),
                     "reserved_nanodollars": reserved}
 
-    def reserve_attempt(self, payload):
+    def reserve_attempt(self, payload, *, stage_id=None):
         """Durably count an attempt BEFORE dispatch; returns a single-use audit ID.
 
         No dispatch exists here. The caller must never reuse an ID or retry a
@@ -220,12 +413,20 @@ class CampaignLedger:
             records, policy, attempts, _, reserved = self._read()
             if type(payload) is not bytes or not 0 < len(payload) <= policy.max_payload_bytes:
                 raise LedgerError("payload must be nonempty bytes within the byte cap")
+            if stage_id is not None:
+                if not _valid_stage_id(stage_id):
+                    raise LedgerError("invalid stage identity")
+                if any(a.get("stage_id") == stage_id for a in attempts.values()):
+                    raise LedgerError("stage already reserved; no retry")
             if len(attempts) >= policy.max_calls or reserved + RESERVATION_NANODOLLARS > policy.budget_nanodollars:
                 raise LedgerError("campaign call/spend allowance exhausted")
             attempt_id = str(uuid.uuid4())
-            self._append({"kind": "attempt", "id": attempt_id,
-                          "payload_sha256": hashlib.sha256(payload).hexdigest(),
-                          "payload_bytes": len(payload)}, records)
+            body = {"kind": "attempt", "id": attempt_id,
+                    "payload_sha256": hashlib.sha256(payload).hexdigest(),
+                    "payload_bytes": len(payload)}
+            if stage_id is not None:
+                body["stage_id"] = stage_id
+            self._append(body, records)
             return attempt_id
 
     def record_outcome(self, attempt_id, status):
@@ -238,3 +439,17 @@ class CampaignLedger:
             if attempt_id not in attempts or attempt_id in outcomes or status not in ("success", "error", "unknown"):
                 raise LedgerError("invalid or duplicate outcome")
             self._append({"kind": "outcome", "id": attempt_id, "status": status}, records)
+
+    def stage_history(self):
+        """Read immutable stage evidence under the same lifetime campaign lock."""
+        with self._operation():
+            records, _, _, _, _ = self._read()
+            return [row["body"] for row in records[1:]]
+
+    def append_stage_event(self, event):
+        """Durable offline controller evidence; never releases a reservation."""
+        with self._operation():
+            records, _, _, _, _ = self._read()
+            if not isinstance(event, dict):
+                raise LedgerError("stage event object required")
+            self._append({"kind": "stage", "event": event}, records)

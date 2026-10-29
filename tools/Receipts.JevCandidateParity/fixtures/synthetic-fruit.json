@@ -1,0 +1,20 @@
+{
+  "id": "synthetic-fruit-v1",
+  "purchase": { "description": "Fresh apples", "store": null, "productCode": null },
+  "taxonomyRevision": "synthetic-v1",
+  "taxonomy": [
+    { "id": "food", "name": "Food", "definition": "Edible goods", "parentId": null },
+    { "id": "apple", "name": "Apples", "definition": "Fresh apples", "parentId": "food" },
+    { "id": "tools", "name": "Tools", "definition": "Hand and power tools", "parentId": null }
+  ],
+  "shortlistedIds": ["apple"],
+  "judgment": {
+    "taxonomyRevision": "synthetic-v1",
+    "purchaseEvidenceProbability": 0.95,
+    "unlistedAlternativeProbability": 0.1,
+    "paths": {
+      "apple": { "supportProbability": 0.95, "contextSufficiencyProbability": 0.95 },
+      "food": { "supportProbability": 0.95, "contextSufficiencyProbability": 0.95 }
+    }
+  }
+}
