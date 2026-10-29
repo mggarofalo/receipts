@@ -12,7 +12,7 @@ const STORAGE_KEY = "receipts:last-route";
 function Probe() {
   useLastRoutePersistence();
   const location = useLocation();
-  return <div data-testid="path">{location.pathname + (location.search ?? "")}</div>;
+  return <div data-testid="path">{location.pathname + location.search + location.hash}</div>;
 }
 
 function harness(initialEntry: string) {
@@ -76,6 +76,15 @@ describe("useLastRoutePersistence", () => {
     harness("/");
     expect(screen.getByTestId("path")).toHaveTextContent("/cards");
   });
+
+  it.each(["/?categoryView=currentHierarchy", "/#main-content"])(
+    "preserves an explicit dashboard URL %s instead of restoring the stored route",
+    (url) => {
+      window.localStorage.setItem(STORAGE_KEY, "/cards");
+      harness(url);
+      expect(screen.getByTestId("path")).toHaveTextContent(url);
+    },
+  );
 
   it("does not redirect when stored route is untrackable", () => {
     window.localStorage.setItem(STORAGE_KEY, "/login");
