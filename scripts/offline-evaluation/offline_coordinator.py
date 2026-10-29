@@ -1,7 +1,6 @@
-"""Synthetic offline stage runner; no network or real-model integration.
+"""Named-stage coordinator for recorded and explicit live transport.
 
-The caller supplies request bytes and a parser. Only RecordedTransport is
-accepted. A named, charged reservation precedes consuming the response. A
+The caller supplies request bytes, a parser, and an explicit transport. A named, charged reservation precedes consuming the response. A
 complete response file is flushed before publication and before parsing.
 """
 import base64
@@ -12,6 +11,7 @@ from pathlib import Path
 
 from campaign_ledger import CampaignLedger, LedgerError, _canonical, _unique, _valid_stage_id, require_plain_absolute_path
 from guarded_exchange import MAX_RESPONSE_BYTES, RecordedTransport
+from cohort_live_transport import CohortLiveTransport
 from stage_campaign import owner
 
 
@@ -24,7 +24,7 @@ def _hash(data):
 
 
 class OfflineCoordinator:
-    """One ledger, independent named stages, recorded transport only.
+    """One ledger and independent named stages.
 
     A completed response can be parsed again after interruption. Missing or
     incomplete response evidence is unknown, not permission to dispatch again.
@@ -60,8 +60,8 @@ class OfflineCoordinator:
             if any(r['kind'] == 'attempt' and r['stage_id'][0] == stage_id[0]
                    and outcomes.get(r['id']) != 'success' for r in history if r['kind'] == 'attempt'):
                 raise UnresolvedStage('an earlier stage in this case is unresolved')
-            if type(transport) is not RecordedTransport:
-                raise LedgerError('recorded transport required for a new stage')
+            if type(transport) not in (RecordedTransport, CohortLiveTransport):
+                raise LedgerError('supported transport required for a new stage')
             attempt_id = self.ledger.reserve_attempt(payload, stage_id=stage_id)
             attempt = {'id': attempt_id, 'stage_id': stage_id, 'payload_sha256': _hash(payload), 'payload_bytes': len(payload)}
             response = transport.exchange(payload)

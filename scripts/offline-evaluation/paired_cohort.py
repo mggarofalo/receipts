@@ -1,15 +1,17 @@
-"""Recorded-only paired cohort scheduler using the actual C# offline exchange."""
+"""Paired cohort scheduler using the actual C# offline exchange."""
 import hashlib
 import json
 import os
 import shutil
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 from campaign_ledger import LedgerError, _canonical, _unique, _valid_stage_id, require_plain_absolute_path
 from guarded_exchange import RecordedTransport, validate_envelope
 from offline_coordinator import OfflineCoordinator
+from cohort_live_transport import CohortLiveTransport
 
 
 class CohortIdentityError(LedgerError):
@@ -21,11 +23,14 @@ class PairedCohort:
 
     Inputs are bound by an exclusively created manifest before any reservation.
     Callers must preserve the private directory and ledger together. This is a
-    local offline scheduler, not provenance attestation or a live transport.
+    local scheduler; the optional live transport is an explicit opt-in.
     """
-    def __init__(self, coordinator, host, dll, cases):
+    def __init__(self, coordinator, host, dll, cases, *, live_transport=None):
         if type(coordinator) is not OfflineCoordinator or not isinstance(cases, list) or not cases:
             raise LedgerError('coordinator and nonempty ordered cohort required')
+        if live_transport is not None and type(live_transport) is not CohortLiveTransport:
+            raise LedgerError('invalid live transport')
+        self.live_transport = live_transport
         ids = []
         for case in cases:
             if (not isinstance(case, dict) or set(case) != {'id', 'input'}
@@ -48,7 +53,8 @@ class PairedCohort:
             try:
                 old = json.loads(path.read_bytes(), object_pairs_hook=_unique)
                 if (old.get('format') != 'paired-cohort-v2' or old.get('cases') != self.cases
-                        or old.get('build') != self._identity):
+                        or old.get('build') != self._identity
+                        or old.get('transport') != self._transport_identity()):
                     raise CohortIdentityError('cohort or build changed')
             except (OSError, ValueError, AttributeError) as error:
                 raise CohortIdentityError('invalid or changed cohort manifest') from error
@@ -64,7 +70,7 @@ class PairedCohort:
             plans.append(plan)
         self._plans = plans
         manifest = _canonical({'format': 'paired-cohort-v2', 'cases': self.cases,
-                               'build': self._identity, 'plans': plans})
+                               'build': self._identity, 'plans': plans, 'transport': self._transport_identity()})
         self._manifest, self._manifest_path = manifest, path
         if path.exists():
             if path.read_bytes() != manifest:
@@ -77,6 +83,9 @@ class PairedCohort:
                 stream.flush()
                 os.fsync(stream.fileno())
 
+    def _transport_identity(self):
+        return self.live_transport.identity if self.live_transport else {'mode': 'recorded'}
+
     def _build_identity(self):
         # Bind the host, the runner output's managed files and the Python
         # coordinator sources. This is a change detector, not attestation of
@@ -87,7 +96,10 @@ class PairedCohort:
                      if p.is_file() and p.suffix.lower() in ('.dll', '.json'))
             files += [Path(__file__).resolve().parent / name for name in
                       ('paired_cohort.py', 'offline_coordinator.py', 'campaign_ledger.py',
-                       'guarded_exchange.py', 'stage_campaign.py')]
+                       'guarded_exchange.py', 'stage_campaign.py', 'cohort_live_transport.py',
+                       'live_https_worker.py')]
+            if self.live_transport is not None:
+                files += [Path(sys.executable).resolve(), Path(__file__).resolve().parent / 'live_stage_campaign.py']
             if Path(self.dll) not in files:
                 raise CohortIdentityError('runner DLL missing')
             return {str(require_plain_absolute_path(path)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -128,7 +140,7 @@ class PairedCohort:
             current_manifest = path.read_bytes()
         except (OSError, LedgerError) as error:
             raise CohortIdentityError('cohort manifest unavailable') from error
-        if current_manifest != self._manifest or _canonical({'format': 'paired-cohort-v2', 'cases': self.cases, 'build': self._identity, 'plans': self._plans}) != self._manifest:
+        if current_manifest != self._manifest or _canonical({'format': 'paired-cohort-v2', 'cases': self.cases, 'build': self._identity, 'plans': self._plans, 'transport': self._transport_identity()}) != self._manifest:
             raise CohortIdentityError('cohort, build or plan changed')
         matches = [item for item in self.cases if item['id'] == case]
         if len(matches) != 1 or not isinstance(responses, dict):
@@ -143,14 +155,16 @@ class PairedCohort:
             stage = [case, arm, phase, index]
             key = (arm, phase, index)
             recorded = responses.get(key)
-            if recorded is None:
+            if self.live_transport is not None and recorded is not None:
+                raise LedgerError('recorded responses forbidden in live mode')
+            if recorded is None and self.live_transport is None:
                 # The coordinator ignores this transport for a retained response;
                 # for a new stage it must fail before reservation.
                 if not any(r['kind'] == 'attempt' and r.get('stage_id') == stage
                            for r in self.coordinator.ledger.stage_history()):
                     raise LedgerError('missing recorded response')
                 recorded = b''
-            if type(recorded) is not bytes:
+            if self.live_transport is None and type(recorded) is not bytes:
                 raise LedgerError('recorded response bytes required')
             payload = payload.encode('utf-8')
             def parse(raw):
@@ -170,7 +184,7 @@ class PairedCohort:
                 if result != {'validated': True, 'maximumNetworkCalls': 0}:
                     raise LedgerError('actual C# validation failed')
                 return raw.decode('utf-8')
-            return self.coordinator.execute(stage, payload, RecordedTransport(recorded), parse)
+            return self.coordinator.execute(stage, payload, self.live_transport or RecordedTransport(recorded), parse)
 
         replies['production'] = exchange('baseline', 'production', 0, initial['productionPayload'])
         for index, payload in enumerate(initial['shortlistPayloads']):

@@ -64,12 +64,20 @@ def verify_artifacts(artifacts):
 
 
 def _parse(raw):
-    return json.loads(raw, object_pairs_hook=_unique,
-                      parse_constant=lambda _: (_ for _ in ()).throw(LedgerError("nonfinite JSON")))
+    try:
+        return json.loads(raw, object_pairs_hook=_unique,
+                          parse_constant=lambda _: (_ for _ in ()).throw(LedgerError("nonfinite JSON")))
+    except RecursionError:
+        raise LedgerError("JSON nesting too deep") from None
 
 
 def _probability(value):
-    return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value) and 0 <= value <= 1
+    except OverflowError:
+        return False
 
 
 def _distribution_total_valid(values):
