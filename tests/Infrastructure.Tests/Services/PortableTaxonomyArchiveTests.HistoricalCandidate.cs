@@ -29,7 +29,15 @@ public sealed partial class PortableTaxonomyArchiveTests
 	public async Task CandidateReader_ValidatesCompleteSqliteArchive()
 	{
 		var (basis, header, item) = AutomaticState();
-		var state = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
+		var protection = DispositionState();
+		// Source fields have no service-side size limit; candidate backup must preserve them.
+		var longDescription = new string('x', 128 * 1024 + 1);
+		var disposition = protection.ReviewDispositions.Single();
+		disposition.RawDescription = longDescription;
+		disposition.SourceHash = HistoricalReclassificationService.DispositionSourceHash(new(disposition.Store, longDescription, disposition.ItemCode));
+		foreach (var operation in protection.ReviewDispositionOperations)
+		{ operation.RawDescription = longDescription; operation.SourceHash = disposition.SourceHash; }
+		var state = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item], IncludesReviewDispositions = true, ReviewDispositions = protection.ReviewDispositions, ReviewDispositionOperations = protection.ReviewDispositionOperations };
 		await using var sqlite = new SqliteConnection("Data Source=:memory:");
 		await sqlite.OpenAsync();
 		await using var command = sqlite.CreateCommand();
@@ -58,6 +66,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 		foreach (var row in state.MappingRevisions) { await Write("category_mapping_archive", "revision", row, row.Id); }
 		foreach (var row in state.MappingHeads) { await Write("category_mapping_archive", "head", row, row.SourceFingerprint); }
 		await PortableTaxonomyArchive.WriteHistoricalCandidateAsync(sqlite, state, CancellationToken.None);
+		await PortableTaxonomyArchive.WriteReviewDispositionsAsync(sqlite, state, CancellationToken.None);
 		command.Parameters.Clear();
 		command.CommandText = """
 			INSERT INTO receipts VALUES($receipt,$store);
@@ -76,6 +85,15 @@ public sealed partial class PortableTaxonomyArchiveTests
 
 		var read = await PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
 		read.HistoricalItems.Should().BeEquivalentTo(state.HistoricalItems);
+		read.ReviewDispositions.Should().BeEquivalentTo(state.ReviewDispositions);
+		read.ReviewDispositionOperations.Should().BeEquivalentTo(state.ReviewDispositionOperations);
+		command.CommandText = "UPDATE review_disposition_archive SET payload=json_remove(payload, '$.SourceHash') WHERE kind='disposition'";
+		await command.ExecuteNonQueryAsync();
+		Func<Task> malformedDisposition = () => PortableTaxonomyArchive.ReadCandidateAsync(sqlite, CancellationToken.None);
+		await malformedDisposition.Should().ThrowAsync<InvalidDataException>();
+		command.CommandText = "UPDATE review_disposition_archive SET payload=$payload WHERE kind='disposition'";
+		command.Parameters.AddWithValue("$payload", System.Text.Json.JsonSerializer.Serialize(state.ReviewDispositions.Single()));
+		await command.ExecuteNonQueryAsync();
 		read.MappingRevisions.Should().BeEquivalentTo(state.MappingRevisions);
 		command.Parameters.Clear();
 		command.CommandText = "UPDATE receipt_items SET description='different'";

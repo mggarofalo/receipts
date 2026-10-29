@@ -28,6 +28,9 @@ internal static partial class PortableTaxonomyArchive
 		List<LegacyMigrationItemEntity> MigrationItems)
 	{
 		internal List<SourceRevision> SourceRevisions { get; init; } = [];
+		internal bool IncludesReviewDispositions { get; init; }
+		internal List<HistoricalGroupDispositionEntity> ReviewDispositions { get; init; } = [];
+		internal List<HistoricalDispositionOperationEntity> ReviewDispositionOperations { get; init; } = [];
 		internal bool IncludesHistorical { get; init; }
 		internal List<HistoricalOperationEntity> HistoricalOperations { get; init; } = [];
 		internal List<HistoricalOperationItemEntity> HistoricalItems { get; init; } = [];
@@ -101,10 +104,14 @@ internal static partial class PortableTaxonomyArchive
 			state = state with
 			{
 				HistoricalOperations = await source.HistoricalOperations.AsNoTracking().ToListAsync(ct),
-				HistoricalItems = await source.HistoricalOperationItems.AsNoTracking().ToListAsync(ct)
+				HistoricalItems = await source.HistoricalOperationItems.AsNoTracking().ToListAsync(ct),
+				IncludesReviewDispositions = true,
+				ReviewDispositions = await source.HistoricalGroupDispositions.AsNoTracking().ToListAsync(ct),
+				ReviewDispositionOperations = await source.HistoricalDispositionOperations.AsNoTracking().ToListAsync(ct)
 			};
 			ValidateCandidate(state);
 			await WriteHistoricalCandidateAsync(sqlite, state, ct);
+			await WriteReviewDispositionsAsync(sqlite, state, ct);
 		}
 	}
 
@@ -153,6 +160,7 @@ internal static partial class PortableTaxonomyArchive
 			state = candidate ? await ReadHistoricalCandidateAsync(sqlite, state, ct) : await ReadHistoricalAsync(sqlite, state, ct);
 			state = await ReadSourceRevisionsAsync(sqlite, state, ct);
 		}
+		if (candidate) { state = await ReadReviewDispositionsAsync(sqlite, state, ct); }
 		Validate(state, candidate);
 		if (candidate) { await ValidateCandidateBusinessReferencesAsync(sqlite, state, ct); }
 		return state;
@@ -166,7 +174,7 @@ internal static partial class PortableTaxonomyArchive
 	{
 		ValidateUniqueKeys(state);
 		ValidateMappings(state);
-		if (allowAutomatic) { ValidateHistoricalCandidate(state); }
+		if (allowAutomatic) { ValidateHistoricalCandidate(state); ValidateReviewDispositions(state); }
 		else { ValidateHistorical(state); }
 		var revisions = state.Revisions.ToDictionary(r => r.Id);
 		var identities = state.Identities.Select(r => r.Id).ToHashSet();

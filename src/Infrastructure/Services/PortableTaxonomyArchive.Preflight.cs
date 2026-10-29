@@ -24,6 +24,9 @@ internal static partial class PortableTaxonomyArchive
 			await db.ClassificationOperations.AsNoTracking().ToListAsync(ct), await db.LegacyMigrations.AsNoTracking().ToListAsync(ct),
 			await db.LegacyMigrationCrosswalks.AsNoTracking().ToListAsync(ct), await db.LegacyMigrationItems.AsNoTracking().ToListAsync(ct))
 		{
+			IncludesReviewDispositions = candidate,
+			ReviewDispositions = candidate ? await db.HistoricalGroupDispositions.AsNoTracking().ToListAsync(ct) : [],
+			ReviewDispositionOperations = candidate ? await db.HistoricalDispositionOperations.AsNoTracking().ToListAsync(ct) : [],
 			IncludesHistorical = true,
 			HistoricalOperations = await db.HistoricalOperations.AsNoTracking().ToListAsync(ct),
 			HistoricalItems = await db.HistoricalOperationItems.AsNoTracking().ToListAsync(ct),
@@ -44,6 +47,7 @@ internal static partial class PortableTaxonomyArchive
 		if (candidate)
 		{
 			ValidateCandidate(existing); ValidateCandidate(incoming);
+			ValidateReviewDispositionDestination(existing, incoming);
 			// Compare deterministic post-restore state to permit exact snapshot replay.
 			AbandonPendingAutomatic(existing);
 			AbandonPendingAutomatic(incoming);
