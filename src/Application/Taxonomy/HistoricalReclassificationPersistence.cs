@@ -10,7 +10,7 @@ public sealed record HistoricalItemPage(IReadOnlyList<HistoricalItemResult> Item
 	IReadOnlyList<HistoricalUndoResult> UndoItems, int? NextOffset);
 public sealed record HistoricalOperationSummary(Guid OperationId, HistoricalOperationState State,
 		DateTimeOffset CapturedAt, Guid TaxonomyRevisionId, string Reason,
-		IReadOnlyList<HistoricalGroupSelection> Groups, HistoricalProgress Progress);
+		IReadOnlyList<HistoricalGroupSelection> Groups, HistoricalProgress Progress, Guid? UndoTaxonomyRevisionId = null);
 public sealed record HistoricalOperationPage(IReadOnlyList<HistoricalOperationSummary> Items, int? NextOffset);
 public enum HistoricalGroupDisposition { Later, LeaveAsIs }
 public sealed record HistoricalDispositionRecord(HistoricalGroupKey Group, HistoricalGroupDisposition? Disposition,
@@ -20,6 +20,7 @@ public sealed record HistoricalDispositionRequest(HistoricalGroupKey Group, Hist
 
 public interface IHistoricalOperationService
 {
+	Task<HistoricalOperationPage> ListAutomaticAsync(string actor, int offset, int limit, CancellationToken ct = default);
 	Task<HistoricalProgress> SavePreviewAsync(HistoricalPreviewRequest request, CancellationToken ct = default);
 	Task<HistoricalProgress> ReadAsync(string actor, Guid id, CancellationToken ct = default);
 	Task<HistoricalOperationSummary> ReadSummaryAsync(string actor, Guid id, CancellationToken ct = default);

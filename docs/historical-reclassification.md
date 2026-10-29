@@ -2,6 +2,14 @@
 
 ## Authenticated operation API
 
+The Classification workspace includes a collapsed **Automatic classification activity**
+section. It lists the signed-in actor's approved-mapping batches with purchase
+descriptions, stores, category paths and counts. Its optional Undo action completes
+bounded chunks with a fixed audit reason, retaining conditional checks so later edits
+are preserved. It works independently of assistance provider configuration.
+`GET /api/historical-reclassifications/activity` pages this automatic activity;
+the existing operation list remains dedicated to manual cleanup.
+
 `POST /api/historical-reclassifications` captures a server-built preview. The request
 contains only an operation ID, expected taxonomy revision, reason, and one to 25 exact
 source groups with explicit target category choices. The server rejects a selected

@@ -16,6 +16,16 @@ namespace API.Controllers;
 public sealed class HistoricalReclassificationsController(IHistoricalOperationService service,
 	IHistoricalGroupReader groups) : ControllerBase
 {
+	[HttpGet("activity")]
+	[EndpointSummary("List own automatic historical classification activity")]
+	public async Task<Results<Ok<HistoricalOperationPage>, BadRequestProblem>> Activity(
+		[FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default)
+	{
+		if (offset < 0 || limit is < 1 or > 25)
+		{ return ApiProblem.BadRequest("Use a nonnegative offset and limit of 1 to 25."); }
+		return TypedResults.Ok(await service.ListAutomaticAsync(Actor(), offset, limit, ct));
+	}
+
 	[HttpGet("groups")]
 	[EndpointSummary("Browse live exact-source historical purchase groups")]
 	public async Task<Results<Ok<HistoricalGroupPage>, BadRequestProblem>> Groups(

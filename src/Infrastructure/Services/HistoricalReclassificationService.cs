@@ -12,6 +12,21 @@ namespace Infrastructure.Services;
 public sealed class HistoricalReclassificationService(IDbContextFactory<ApplicationDbContext> factory,
 		TimeProvider clock, IOptions<ClassificationOptions> options) : IHistoricalOperationService
 {
+	public async Task<HistoricalOperationPage> ListAutomaticAsync(string actor, int offset, int limit, CancellationToken ct = default)
+	{
+		if (string.IsNullOrWhiteSpace(actor) || offset < 0 || limit is < 1 or > 25)
+		{ throw new ArgumentException("Actor, nonnegative offset and limit of 1 to 25 are required."); }
+		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
+		List<HistoricalOperationEntity> rows = await db.HistoricalOperations.AsNoTracking()
+			.Where(x => x.Actor == actor && x.Kind == HistoricalOperationKind.ApprovedMappingV1)
+			.OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
+			.Skip(offset).Take(limit + 1).ToListAsync(ct);
+		List<HistoricalOperationSummary> summaries = [];
+		foreach (HistoricalOperationEntity row in rows.Take(limit))
+		{ summaries.Add(await SummaryAsync(db, row, ct)); }
+		return new(summaries, rows.Count > limit ? checked(offset + limit) : null);
+	}
+
 	public async Task<HistoricalOperationPage> ListAsync(string actor, int offset, int limit, CancellationToken ct = default)
 	{
 		if (string.IsNullOrWhiteSpace(actor) || offset < 0 || limit is < 1 or > 25)
@@ -203,7 +218,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	{
 		var selections = JsonSerializer.Deserialize<HistoricalGroupSelection[]>(row.SelectionJson) ?? [];
 		return new(row.Id, row.State, row.CapturedAt, row.TaxonomyRevisionId,
-				row.Reason, selections, await ProgressAsync(db, row, ct));
+				row.Reason, selections, await ProgressAsync(db, row, ct), row.UndoTaxonomyRevisionId);
 	}
 
 	public async Task<HistoricalItemPage> ReadItemsAsync(string actor, Guid id, int offset, int limit, CancellationToken ct = default)
