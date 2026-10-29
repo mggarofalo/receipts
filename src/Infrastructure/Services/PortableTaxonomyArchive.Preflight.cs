@@ -46,8 +46,11 @@ internal static partial class PortableTaxonomyArchive
 			ValidateCandidate(existing); ValidateCandidate(incoming);
 			Require(existing.HistoricalOperations.Concat(incoming.HistoricalOperations)
 				.Where(h => h.Kind == HistoricalOperationKind.ApprovedMappingV1)
-				.All(h => h.State is HistoricalOperationState.Completed or HistoricalOperationState.Undone),
-				"Pending or in-progress automatic historical operations cannot be restored.");
+				.All(h => h.State != HistoricalOperationState.Undoing),
+				"In-progress automatic undo cannot be restored until a safe correction path exists.");
+			// Compare deterministic post-restore state to permit exact snapshot replay.
+			AbandonPendingAutomatic(existing);
+			AbandonPendingAutomatic(incoming);
 		}
 		else { Validate(existing); Validate(incoming); }
 		ValidateMappingDestination(existing, incoming);
@@ -79,6 +82,23 @@ internal static partial class PortableTaxonomyArchive
 			var latest = incoming.Assignments.Where(a => a.ReceiptItemId == current.ReceiptItemId).MaxBy(a => a.Sequence);
 			Require(latest != null && latest.Sequence >= old.Sequence, "Restore would overwrite a later classification.");
 		}
+	}
+
+	private static void AbandonPendingAutomatic(State state)
+	{
+		foreach (var operation in state.HistoricalOperations.Where(h =>
+			h.Kind == HistoricalOperationKind.ApprovedMappingV1 &&
+			h.State is HistoricalOperationState.Preview or HistoricalOperationState.Applying))
+		{ operation.State = HistoricalOperationState.Cancelled; }
+	}
+
+	// Only after candidate preflight, under the restore write gate and transaction.
+	internal static async Task AbandonDestinationAutomaticAsync(ApplicationDbContext db, CancellationToken ct)
+	{
+		var operations = await db.HistoricalOperations.Where(h =>
+			h.Kind == HistoricalOperationKind.ApprovedMappingV1 &&
+			(h.State == HistoricalOperationState.Preview || h.State == HistoricalOperationState.Applying)).ToListAsync(ct);
+		foreach (var operation in operations) { operation.State = HistoricalOperationState.Cancelled; }
 	}
 
 	private static void Prefix<T>(IEnumerable<T> existing, IEnumerable<T> incoming)

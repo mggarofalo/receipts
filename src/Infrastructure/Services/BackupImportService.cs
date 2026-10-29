@@ -131,6 +131,7 @@ public partial class BackupImportService(
 				else { await PortableTaxonomyArchive.PreflightDestinationAsync(context, taxonomy, cancellationToken); }
 			}
 			catch (InvalidDataException exception) { throw new InvalidOperationException(exception.Message, exception); }
+			if (candidate) { await PortableTaxonomyArchive.AbandonDestinationAutomaticAsync(context, cancellationToken); }
 			await RemovePristineBootstrapAsync(context, cancellationToken);
 		}
 

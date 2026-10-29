@@ -79,22 +79,105 @@ public sealed partial class ClassificationTests
 	}
 
 	[Fact]
-	public async Task CandidateRestore_RejectsPendingAutomaticWorkBeforeMutation()
+	public async Task CandidateRestore_AbandonsPartialApplyPreservesEffectsAndReplays()
 	{
 		await using var source = await fixture.CreateIsolatedAsync();
 		await using var destination = await fixture.CreateIsolatedAsync();
-		var subject = new ClassificationTests(source);
+		var original = new ClassificationTests(source);
+		var captured = await original.CaptureExecutableAsync(extraItems: 1);
+		var progress = await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+		progress.State.Should().Be(HistoricalOperationState.Applying);
+		progress.Applied.Should().Be(1); progress.Pending.Should().Be(1);
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		try
+		{
+			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
+			for (int attempt = 0; attempt < 2; attempt++)
+			{
+				await using var input = File.OpenRead(path);
+				await importer.ImportCandidateFromSqliteAsync(input, default);
+			}
+			var restored = new ClassificationTests(destination);
+			var stopped = await restored.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+			stopped.State.Should().Be(HistoricalOperationState.Cancelled);
+			stopped.Applied.Should().Be(1); stopped.Pending.Should().Be(1);
+			await using var db = destination.CreateDbContext();
+			var rows = await db.HistoricalOperationItems.AsNoTracking().Where(x => x.OperationId == captured.Request.OperationId).ToListAsync();
+			var applied = rows.Single(x => x.State == HistoricalItemState.Applied);
+			(await restored.Service().HistoryAsync(applied.ItemId, null, 1)).Items.Single().Id.Should().Be(applied.AppliedAssignmentId!.Value);
+			var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Restore prior choice");
+			(await restored.ApprovedExecutor().UndoChunkAsync(Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
+		}
+		finally { File.Delete(path); }
+	}
+
+	[Fact]
+	public async Task CandidateRestore_RollsBackDestinationAbandonmentAndFencesOldWorker()
+	{
+		await using var destination = await fixture.CreateIsolatedAsync();
+		var subject = new ClassificationTests(destination);
 		var captured = await subject.CaptureExecutableAsync();
+		string path = await new BackupService(new Factory(destination), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		try
+		{
+			var failing = new BackupImportService(new FailAfterAbandonFactory(destination), NullLogger<BackupImportService>.Instance);
+			await using (var input = File.OpenRead(path))
+			{
+				Func<Task> import = () => failing.ImportCandidateFromSqliteAsync(input, default);
+				await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected after abandonment");
+			}
+			await using (var db = destination.CreateDbContext())
+			{
+				(await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == captured.Request.OperationId)).State.Should().Be(HistoricalOperationState.Preview);
+			}
+			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
+			await using (var input = File.OpenRead(path)) { await importer.ImportCandidateFromSqliteAsync(input, default); }
+			var stopped = await subject.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 1);
+			stopped.State.Should().Be(HistoricalOperationState.Cancelled);
+			stopped.Applied.Should().Be(0); stopped.Pending.Should().Be(1);
+		}
+		finally { File.Delete(path); }
+	}
+
+	private sealed class FailAfterAbandonDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	{
+		private bool abandoned;
+		public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+		{
+			if (abandoned) { throw new InvalidOperationException("Injected after abandonment"); }
+			bool cancelling = ChangeTracker.Entries<HistoricalOperationEntity>().Any(x => x.State == EntityState.Modified && x.Entity.State == HistoricalOperationState.Cancelled);
+			int result = await base.SaveChangesAsync(cancellationToken);
+			abandoned = cancelling;
+			return result;
+		}
+	}
+
+	private sealed class FailAfterAbandonFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new FailAfterAbandonDb(fixture.CreateOptions());
+	}
+
+	[Fact]
+	public async Task CandidateRestore_RejectsInProgressUndoBeforeMutation()
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		await using var destination = await fixture.CreateIsolatedAsync();
+		var original = new ClassificationTests(source);
+		var captured = await original.CaptureExecutableAsync(extraItems: 1);
+		await original.ApprovedExecutor().ApplyChunkAsync(Actor, captured.Request.OperationId, 2);
+		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Restore prior choice");
+		var progress = await original.ApprovedExecutor().UndoChunkAsync(Actor, captured.Request.OperationId, undo, 1);
+		progress.State.Should().Be(HistoricalOperationState.Undoing);
 		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
 			await using var input = File.OpenRead(path);
 			Func<Task> import = () => importer.ImportCandidateFromSqliteAsync(input, default);
-			await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Pending or in-progress*");
+			await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*In-progress automatic undo*");
 			await using var db = destination.CreateDbContext();
-			(await db.ReceiptItems.AnyAsync(x => x.Id == captured.Item)).Should().BeFalse();
 			(await db.HistoricalOperations.AnyAsync(x => x.Id == captured.Request.OperationId)).Should().BeFalse();
+			(await db.ReceiptItems.AnyAsync(x => x.Id == captured.Item)).Should().BeFalse();
 		}
 		finally { File.Delete(path); }
 	}
@@ -128,7 +211,7 @@ public sealed partial class ClassificationTests
 	}
 
 	[Fact]
-	public async Task CandidateRestore_RejectsPendingDestinationWorkBeforeMutation()
+	public async Task CandidateRestore_RejectsDivergentDestinationBeforeMutation()
 	{
 		await using var source = await fixture.CreateIsolatedAsync();
 		await using var destination = await fixture.CreateIsolatedAsync();
@@ -142,7 +225,7 @@ public sealed partial class ClassificationTests
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
 			await using var input = File.OpenRead(path);
 			Func<Task> import = () => importer.ImportCandidateFromSqliteAsync(input, default);
-			await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Pending or in-progress*");
+			await import.Should().ThrowAsync<InvalidOperationException>();
 			await using var db = destination.CreateDbContext();
 			(await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == pending.Request.OperationId)).State.Should().Be(HistoricalOperationState.Preview);
 			(await db.HistoricalOperations.AnyAsync(x => x.Id == completed.Request.OperationId)).Should().BeFalse();

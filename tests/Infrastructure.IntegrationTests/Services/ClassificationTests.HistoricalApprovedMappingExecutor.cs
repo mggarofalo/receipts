@@ -13,7 +13,7 @@ public sealed partial class ClassificationTests
 	private HistoricalApprovedMappingExecutor ApprovedExecutor() => new(new Factory(fixture), TimeProvider.System,
 		Options.Create(new ClassificationOptions { WritesEnabled = true }));
 
-	private async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync()
+	private async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync(int extraItems = 0)
 	{
 		var seed = await HistoricalSeedAsync();
 		var group = (await HistoricalRequest(seed.Item, seed.Revision, seed.Root)).Groups.Single().Group;
@@ -22,13 +22,20 @@ public sealed partial class ClassificationTests
 		var item = ReceiptItemEntityGenerator.Generate(original.ReceiptId);
 		item.Description = original.Description; item.ReceiptItemCode = original.ReceiptItemCode;
 		item.Category = ""; item.Subcategory = null;
-		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).CreateAsync([item], default);
+		var items = new List<Infrastructure.Entities.Core.ReceiptItemEntity> { item };
+		for (int n = 0; n < extraItems; n++)
+		{
+			var extra = ReceiptItemEntityGenerator.Generate(original.ReceiptId);
+			extra.Description = original.Description; extra.ReceiptItemCode = original.ReceiptItemCode;
+			extra.Category = ""; extra.Subcategory = null; items.Add(extra);
+		}
+		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).CreateAsync(items, default);
 		var assignment = (await Service().HistoryAsync(item.Id, null, 1)).Items.Single().Id;
 		var source = new NormalizationSourceKey(group.Store, group.RawDescription, group.ItemCode);
 		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
 			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
 		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, []);
-		(await new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System).CaptureAsync(request)).Should().Be(1);
+		(await new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System).CaptureAsync(request)).Should().Be(1 + extraItems);
 		return (request, item.Id, assignment, seed.Root);
 	}
 

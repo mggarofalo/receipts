@@ -176,15 +176,15 @@ public sealed partial class PortableTaxonomyArchiveTests
 	}
 
 	[Fact]
-	public void CandidateDestination_RejectsPendingAutomaticWork()
+	public void CandidateDestination_AbandonsPendingAutomaticWork()
 	{
 		var (basis, header, item) = AutomaticState();
 		var pending = basis with { IncludesHistorical = true, HistoricalOperations = [header], HistoricalItems = [item] };
 		var empty = basis with { IncludesHistorical = true, HistoricalOperations = [], HistoricalItems = [] };
-		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(empty, pending))
-				.Should().Throw<InvalidDataException>().WithMessage("*Pending or in-progress*");
-		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(pending, empty))
-				.Should().Throw<InvalidDataException>().WithMessage("*Pending or in-progress*");
+		PortableTaxonomyArchive.ValidateCandidateDestination(empty, pending);
+		header.State.Should().Be(HistoricalOperationState.Cancelled);
+		item.State.Should().Be(HistoricalItemState.Pending);
+		PortableTaxonomyArchive.ValidateCandidateDestination(pending, empty);
 	}
 
 	private static void CompleteWithoutEffect(Infrastructure.Entities.Taxonomy.HistoricalOperationEntity header,
