@@ -301,7 +301,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		if (reverting && kind == HistoricalOperationKind.ApprovedMappingV1 &&
 				operation.UndoTaxonomyRevisionId == null && head.RevisionId != undo!.TaxonomyRevisionId)
 		{
-			throw new TaxonomyException(409, "Taxonomy changed before automatic undo started. Refresh and retry.",
+			throw new TaxonomyException(409, "Categories changed. Try Undo again.",
 					new Dictionary<string, object?> { ["code"] = "stale-undo-taxonomy" });
 		}
 		operation.State = reverting ? HistoricalReclassificationPolicy.BeginUndo(operation.State) : HistoricalReclassificationPolicy.BeginApply(operation.State);

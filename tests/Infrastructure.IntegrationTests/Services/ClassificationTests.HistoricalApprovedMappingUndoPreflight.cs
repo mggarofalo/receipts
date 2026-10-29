@@ -35,12 +35,14 @@ public sealed partial class ClassificationTests
 			var error = await HistoricalJson(await client.PostAsync(route,
 					HistoricalBody(new { stale.TaxonomyRevisionId, stale.Reason, limit = 1 })), HttpStatusCode.Conflict);
 			error.GetProperty("code").GetString().Should().Be("stale-undo-taxonomy");
+			error.GetProperty("detail").GetString().Should().Be("Categories changed. Try Undo again.");
 		}
 		else
 		{
 			var error = await Assert.ThrowsAsync<TaxonomyException>(() => executor.UndoChunkAsync(
 					CurrentRestoreGeneration(), Actor, captured.Request.OperationId, stale, 1));
 			error.Status.Should().Be(409);
+			error.Message.Should().Be("Categories changed. Try Undo again.");
 			error.Extensions["code"].Should().Be("stale-undo-taxonomy");
 		}
 		await using (var db = fixture.CreateDbContext())
