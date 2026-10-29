@@ -2,6 +2,14 @@
 
 ## Authenticated operation API
 
+The Classification workspace includes a collapsed **Automatic classification activity**
+section. It lists the signed-in actor's approved-mapping batches with purchase
+descriptions, stores, category paths and counts. Its optional Undo action completes
+bounded chunks with a fixed audit reason, retaining conditional checks so later edits
+are preserved. It works independently of assistance provider configuration.
+`GET /api/historical-reclassifications/activity` pages this automatic activity;
+the existing operation list remains dedicated to manual cleanup.
+
 `POST /api/historical-reclassifications` captures a server-built preview. The request
 contains only an operation ID, expected taxonomy revision, reason, and one to 25 exact
 source groups with explicit target category choices. The server rejects a selected
@@ -26,12 +34,20 @@ operational preferences. Each successful disposition request stores an immutable
 operation ledger entry with its exact source, requested state, expected version, and
 original response in the same transaction as the current disposition. An older
 operation ID therefore replays its original result after later updates; reusing the
-ID with a changed request conflicts. The dispositions and their ledger are outside
-the portable taxonomy archive. Neither is classification or verification evidence.
+ID with a changed request conflicts. The dispositions and their ledger are included in
+the public v14 portable taxonomy archive. Format 14 import transfers current
+dispositions and their complete operation ledger under the restore write gate, rejecting
+divergent destination decisions. Public export captures v14 automatic history, saved preferences and private dispositions,
+including retry records. Public import accepts v14 and legacy v13 archives. The
+long-running API host runs deterministic approved-mapping reuse, with the automatic
+activity and conditional undo surface described above. Saved preferences and
+dispositions are not classification or verification evidence.
 
 The foundation originally defined contracts and pure policies; persistence and the
 authenticated operation API now implement the workflow described below. The service
-does not run Jev or change purchase assignments until a user applies a captured preview.
+does not run Jev. Manual cleanup changes purchase assignments only when a user applies
+a captured preview; the background worker independently reuses explicit category
+approvals. Jev automatic classification remains unimplemented.
 
 ## Explicit evidence and selection
 

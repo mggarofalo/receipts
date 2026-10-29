@@ -14,13 +14,16 @@ namespace Infrastructure.Tests.Services;
 public sealed partial class PortableTaxonomyArchiveTests
 {
 	[Fact]
-	public void RequiredTables_V9RemainsCompatibleAndV10RequiresHistoryAndTrash()
+	public void RequiredTables_PreservesOlderFormatsAndRequiresV14ReviewState()
 	{
 		PortableBackupFormat.RequiredTablesFor(9).Should().NotContain("taxonomy_archive");
 		PortableBackupFormat.RequiredTablesFor(9).Should().NotContain("portable_deletion_state");
 		PortableBackupFormat.RequiredTablesFor(10).Should().Contain(["taxonomy_archive", "portable_deletion_state"]);
 		PortableBackupFormat.RequiredTablesFor(13).Should().Contain(["taxonomy_archive", "portable_deletion_state"]);
-		FluentActions.Invoking(() => PortableBackupFormat.RequiredTablesFor(PortableBackupFormat.CurrentVersion + 1))
+		PortableBackupFormat.RequiredTablesFor(13).Should().NotContain(["review_disposition_archive", "review_preference_archive"]);
+		PortableBackupFormat.RequiredTablesFor(14).Should().BeEquivalentTo([
+			.. PortableBackupFormat.RequiredTablesFor(13), "review_disposition_archive", "review_preference_archive"]);
+		FluentActions.Invoking(() => PortableBackupFormat.RequiredTablesFor(PortableBackupFormat.LatestImportVersion + 1))
 				.Should().Throw<InvalidOperationException>();
 	}
 

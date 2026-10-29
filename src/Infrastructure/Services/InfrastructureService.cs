@@ -248,6 +248,8 @@ public static class InfrastructureService
 		// TryAdd so callers (tests, specific deployments) can override with a FakeTimeProvider.
 		services.TryAddSingleton(TimeProvider.System);
 		services.AddScoped<Application.Classification.ICategoryAssistanceSettingsStore, CategoryAssistanceSettingsStore>();
+		services.AddScoped<OrganizationDiscoveryStore>();
+		services.AddScoped<Application.Classification.IOrganizationDiscoveryReader>(sp => sp.GetRequiredService<OrganizationDiscoveryStore>());
 		services.AddScoped<Application.Taxonomy.ITaxonomyService, TaxonomyService>();
 		services.AddScoped<Application.Taxonomy.ICategoryMappingService, CategoryMappingService>();
 		services.Configure<Application.Taxonomy.ClassificationOptions>(configuration.GetSection("Classification"));

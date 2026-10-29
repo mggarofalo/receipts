@@ -19,7 +19,14 @@ public partial class BackupImportService(
 {
 	private const long MaxFileSizeBytes = 100 * 1024 * 1024; // 100 MB
 
-	public async Task<BackupImportResult> ImportFromSqliteAsync(Stream sqliteStream, CancellationToken cancellationToken)
+	public Task<BackupImportResult> ImportFromSqliteAsync(Stream sqliteStream, CancellationToken cancellationToken)
+		=> ImportFromSqliteCoreAsync(sqliteStream, cancellationToken, requireCandidate: false);
+
+	// Internal evaluation seam that requires a v14 archive. Public import also accepts v14.
+	internal Task<BackupImportResult> ImportCandidateFromSqliteAsync(Stream sqliteStream, CancellationToken cancellationToken)
+		=> ImportFromSqliteCoreAsync(sqliteStream, cancellationToken, requireCandidate: true);
+
+	private async Task<BackupImportResult> ImportFromSqliteCoreAsync(Stream sqliteStream, CancellationToken cancellationToken, bool requireCandidate)
 	{
 		string tempPath = Path.GetTempFileName();
 		try
@@ -40,7 +47,7 @@ public partial class BackupImportService(
 				}
 			}
 
-			return await ImportFromFileAsync(tempPath, cancellationToken);
+			return await ImportFromFileAsync(tempPath, cancellationToken, requireCandidate);
 		}
 		finally
 		{
@@ -55,9 +62,10 @@ public partial class BackupImportService(
 		}
 	}
 
-	private async Task<BackupImportResult> ImportFromFileAsync(string sqlitePath, CancellationToken cancellationToken)
+	private async Task<BackupImportResult> ImportFromFileAsync(string sqlitePath, CancellationToken cancellationToken, bool requireCandidate)
 	{
 		ValidateSqliteFile(sqlitePath);
+		bool candidate = false;
 		PortableTaxonomyArchive.State? taxonomy = null;
 		Application.Taxonomy.LegacyMigrationRequest? legacyTaxonomy = null;
 		List<PortableTaxonomyArchive.DeletionState>? deletion = null;
@@ -65,6 +73,9 @@ public partial class BackupImportService(
 		{
 			await preflight.OpenAsync(cancellationToken);
 			int preflightVersion = ReadExportVersion(preflight);
+			candidate = preflightVersion == PortableAutomaticHistoricalV14.Version;
+			if (requireCandidate && preflightVersion != PortableAutomaticHistoricalV14.Version)
+			{ throw new InvalidOperationException("Candidate import requires version 14."); }
 			if (preflightVersion >= 5)
 			{
 				foreach (string table in PortableBackupFormat.RequiredTablesFor(preflightVersion))
@@ -79,7 +90,8 @@ public partial class BackupImportService(
 			{
 				try
 				{
-					taxonomy = await PortableTaxonomyArchive.ReadAsync(preflight, cancellationToken, preflightVersion);
+					taxonomy = candidate ? await PortableTaxonomyArchive.ReadCandidateAsync(preflight, cancellationToken)
+							: await PortableTaxonomyArchive.ReadAsync(preflight, cancellationToken, preflightVersion);
 					deletion = await PortableTaxonomyArchive.ReadDeletionStateAsync(preflight, taxonomy, cancellationToken);
 				}
 				catch (Exception exception) when (exception is InvalidDataException or System.Text.Json.JsonException or ArgumentException)
@@ -115,8 +127,13 @@ public partial class BackupImportService(
 		if (taxonomy != null)
 		{
 			await PortableTaxonomyArchive.LockDestinationAsync(context, cancellationToken);
-			try { await PortableTaxonomyArchive.PreflightDestinationAsync(context, taxonomy, cancellationToken); }
+			try
+			{
+				if (candidate) { await PortableTaxonomyArchive.PreflightCandidateDestinationAsync(context, taxonomy, cancellationToken); }
+				else { await PortableTaxonomyArchive.PreflightDestinationAsync(context, taxonomy, cancellationToken); }
+			}
 			catch (InvalidDataException exception) { throw new InvalidOperationException(exception.Message, exception); }
+			await PortableTaxonomyArchive.AbandonDestinationAutomaticAsync(context, cancellationToken);
 			await RemovePristineBootstrapAsync(context, cancellationToken);
 		}
 
@@ -299,9 +316,9 @@ public partial class BackupImportService(
 			return 1;
 		}
 
-		if (!int.TryParse(result.ToString(), out int version) || version < 1 || version > PortableBackupFormat.CurrentVersion)
+		if (!int.TryParse(result.ToString(), out int version) || version < 1 || version > PortableBackupFormat.LatestImportVersion)
 		{
-			throw new InvalidOperationException($"Unsupported backup export_version '{result}'. Supported versions are 1 through {PortableBackupFormat.CurrentVersion}.");
+			throw new InvalidOperationException($"Unsupported backup export_version '{result}'. Supported versions are 1 through {PortableBackupFormat.LatestImportVersion}.");
 		}
 		return version;
 	}

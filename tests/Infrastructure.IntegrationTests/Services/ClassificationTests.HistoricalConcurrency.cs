@@ -15,7 +15,7 @@ public sealed partial class ClassificationTests
 {
 	// Pause after PostgreSQL grants the transaction gate. The competing service
 	// uses another physical connection; pg_blocking_pids proves actual contention.
-	private sealed class HistoricalRaceGate(bool pause) : DbCommandInterceptor
+	private sealed class HistoricalRaceGate(bool pause, bool writeGateOnly = false) : DbCommandInterceptor
 	{
 		public TaskCompletionSource<int> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		public TaskCompletionSource Acquired { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -23,14 +23,14 @@ public sealed partial class ClassificationTests
 		public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command,
 			CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
 		{
-			if (command.CommandText.Contains("pg_advisory_xact_lock"))
+			if (command.CommandText.Contains("pg_advisory_xact_lock") && (!writeGateOnly || command.Parameters.Count == 2))
 			{ Entered.TrySetResult(((NpgsqlConnection)command.Connection!).ProcessID); }
 			return ValueTask.FromResult(result);
 		}
 		public override async ValueTask<int> NonQueryExecutedAsync(DbCommand command,
 			CommandExecutedEventData eventData, int result, CancellationToken cancellationToken = default)
 		{
-			if (command.CommandText.Contains("pg_advisory_xact_lock"))
+			if (command.CommandText.Contains("pg_advisory_xact_lock") && (!writeGateOnly || command.Parameters.Count == 2))
 			{
 				Acquired.TrySetResult();
 				if (pause) { await Release.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken); }

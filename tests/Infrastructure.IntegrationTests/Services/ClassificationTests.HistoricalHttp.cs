@@ -33,7 +33,7 @@ public sealed partial class ClassificationTests
 		}
 	}
 
-	private async Task<WebApplication> HistoricalHttpHostAsync()
+	private async Task<WebApplication> HistoricalHttpHostAsync(bool backgroundMappings = false)
 	{
 		WebApplicationBuilder builder = WebApplication.CreateBuilder();
 		builder.WebHost.UseTestServer();
@@ -48,6 +48,14 @@ public sealed partial class ClassificationTests
 		builder.Services.AddSingleton<Application.Taxonomy.IHistoricalOperationService>(Historical());
 		builder.Services.AddSingleton<Application.Taxonomy.IHistoricalGroupReader>(
 			new Infrastructure.Services.HistoricalGroupReader(new Factory(fixture)));
+		if (backgroundMappings)
+		{
+			builder.Configuration["Jev:Enabled"] = "false";
+			builder.Services.AddSingleton<IDbContextFactory<Infrastructure.ApplicationDbContext>>(new Factory(fixture));
+			builder.Services.AddSingleton(TimeProvider.System);
+			builder.Services.Configure<Application.Taxonomy.ClassificationOptions>(options => options.WritesEnabled = true);
+			builder.Services.AddHostedService<Infrastructure.Services.ApprovedMappingBackgroundWorker>();
+		}
 		WebApplication app = builder.Build();
 		app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 		await app.StartAsync();

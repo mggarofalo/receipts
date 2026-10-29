@@ -13,7 +13,14 @@ public class BackupService(
 	IDbContextFactory<ApplicationDbContext> dbContextFactory,
 	ILogger<BackupService> logger) : IBackupService
 {
-	public async Task<string> ExportToSqliteAsync(CancellationToken cancellationToken = default)
+	public Task<string> ExportToSqliteAsync(CancellationToken cancellationToken = default)
+			=> ExportToSqliteCoreAsync(true, cancellationToken);
+
+	// Compatibility alias for internal callers of the v14 codec.
+	internal Task<string> ExportCandidateToSqliteAsync(CancellationToken cancellationToken = default)
+			=> ExportToSqliteCoreAsync(true, cancellationToken);
+
+	private async Task<string> ExportToSqliteCoreAsync(bool candidate, CancellationToken cancellationToken)
 	{
 		string tempPath = Path.Combine(Path.GetTempPath(), $"receipts-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.db");
 		logger.LogInformation("Starting SQLite export to {Path}", tempPath);
@@ -80,8 +87,8 @@ public class BackupService(
 			await ExportNormalizedDescriptionSettingsAsync(source, sqlite, cancellationToken);
 			await ExportAcceptedDuplicatePairsAsync(source, sqlite, cancellationToken);
 			await PortableCatalogArchive.ExportAsync(source, sqlite, cancellationToken);
-			await PortableTaxonomyArchive.ExportAsync(source, sqlite, cancellationToken);
-			await WriteMetadataAsync(sqlite, cancellationToken);
+			await PortableTaxonomyArchive.ExportAsync(source, sqlite, cancellationToken, candidate);
+			await WriteMetadataAsync(sqlite, cancellationToken, candidate);
 
 
 			await transaction.CommitAsync(cancellationToken);
@@ -715,11 +722,11 @@ public class BackupService(
 		}
 	}
 
-	private static async Task WriteMetadataAsync(SqliteConnection sqlite, CancellationToken cancellationToken)
+	private static async Task WriteMetadataAsync(SqliteConnection sqlite, CancellationToken cancellationToken, bool candidate)
 	{
 		Dictionary<string, string> metadata = new()
 		{
-			["export_version"] = PortableBackupFormat.CurrentVersion.ToString(CultureInfo.InvariantCulture),
+			["export_version"] = (candidate ? PortableAutomaticHistoricalV14.Version : PortableBackupFormat.CurrentVersion).ToString(CultureInfo.InvariantCulture),
 			["exported_at"] = DateTimeOffset.UtcNow.ToString("O"),
 			["format"] = "receipts-sqlite-backup",
 		};

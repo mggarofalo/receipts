@@ -22,6 +22,8 @@ public class BackupServiceTests : IDisposable
 
 		_dbContextFactory = new TestDbContextFactory(options);
 		_service = new BackupService(_dbContextFactory, NullLogger<BackupService>.Instance);
+		using ApplicationDbContext source = _dbContextFactory.CreateDbContext();
+		CurrentBackupFixture.Seed(source);
 	}
 
 	[Fact]
@@ -39,7 +41,7 @@ public class BackupServiceTests : IDisposable
 
 		// Verify all tables exist
 		string[] expectedTables = ["backup_metadata", "cards", "categories", "subcategories",
-			"item_templates", "receipts", "receipt_items", "transactions", "adjustments"];
+			"item_templates", "receipts", "receipt_items", "transactions", "adjustments", "review_disposition_archive", "review_preference_archive"];
 
 		foreach (string table in expectedTables)
 		{
@@ -59,7 +61,7 @@ public class BackupServiceTests : IDisposable
 		await using SqliteCommand versionCmd = conn.CreateCommand();
 		versionCmd.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
 		string? version = (string?)await versionCmd.ExecuteScalarAsync();
-		version.Should().Be("13");
+		version.Should().Be("14");
 	}
 
 	[Fact]

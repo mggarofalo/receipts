@@ -431,7 +431,7 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// click. It also keeps the two write paths consistent — the Postgres path inserts via raw
 		// ON CONFLICT SQL, which bypasses the change tracker and could never have been audited anyway.
 		// Replay tombstones and the reconciled review queue are bookkeeping; business/evidence mutations retain their item/catalog audits.
-		HashSet<Type> excludedTypes = [typeof(ReceiptWriteRequestEntity), typeof(NormalizationReviewWorkEntity), typeof(NormalizationAssistanceAttemptEntity), typeof(NormalizationAiRunEntity), typeof(NormalizationAiProposalEntity), typeof(NormalizationAiConnectionEntity), typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
+		HashSet<Type> excludedTypes = [typeof(Infrastructure.Entities.Organization.OrganizationDirtySourceEntity), typeof(Infrastructure.Entities.Organization.OrganizationRunEntity), typeof(Infrastructure.Entities.Organization.OrganizationSourceEntity), typeof(Infrastructure.Entities.Organization.OrganizationItemEntity), typeof(Infrastructure.Entities.Organization.OrganizationDirtyItemEntity), typeof(ReceiptWriteRequestEntity), typeof(NormalizationReviewWorkEntity), typeof(NormalizationAssistanceAttemptEntity), typeof(NormalizationAiRunEntity), typeof(NormalizationAiProposalEntity), typeof(NormalizationAiConnectionEntity), typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 
@@ -741,3 +741,4 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	}
 
 }
+

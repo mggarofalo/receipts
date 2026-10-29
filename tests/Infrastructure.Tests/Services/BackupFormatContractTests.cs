@@ -12,7 +12,7 @@ public class BackupFormatContractTests
 {
 	[Theory]
 	[InlineData("0")]
-	[InlineData("14")]
+	[InlineData("15")]
 	[InlineData("invalid")]
 	[InlineData("")]
 	public async Task Import_ExplicitUnsupportedOrMalformedVersion_IsRejected(string version)
@@ -24,6 +24,27 @@ public class BackupFormatContractTests
 
 		Func<Task> import = () => artifact.Import(importer);
 		await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*export_version*");
+	}
+
+	[Fact]
+	public async Task Import_UnsupportedVersion_IsRejectedBeforeUpdatingExistingRows()
+	{
+		DbContextOptions<ApplicationDbContext> options = Options();
+		Guid receiptId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = new(options))
+		{
+			seed.Receipts.Add(new() { Id = receiptId, Location = "Before", Date = new(2024, 1, 1) });
+			await seed.SaveChangesAsync();
+		}
+		using Artifact artifact = new();
+		await artifact.CreateCurrentSchema();
+		artifact.Execute("UPDATE backup_metadata SET value = '15' WHERE key = 'export_version'");
+		artifact.Execute("INSERT INTO receipts VALUES ($id, 'After', '2024-01-01', '0', 'USD', NULL, NULL)", ("$id", receiptId.ToString()));
+
+		Func<Task> import = () => artifact.Import(Importer(options));
+		await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("*export_version*");
+		await using ApplicationDbContext read = new(options);
+		(await read.Receipts.SingleAsync()).Location.Should().Be("Before");
 	}
 
 	[Theory]
@@ -48,6 +69,27 @@ public class BackupFormatContractTests
 
 		await using ApplicationDbContext read = new(options);
 		(await read.Receipts.SingleAsync()).Location.Should().Be("Before");
+	}
+
+	[Theory]
+	[InlineData("review_disposition_archive")]
+	[InlineData("review_preference_archive")]
+	public async Task Import_V14MissingReviewTable_RejectsBeforeDestinationAccess(string table)
+	{
+		using Artifact artifact = new();
+		await artifact.CreateCurrentSchema();
+		artifact.Execute("UPDATE backup_metadata SET value = '14' WHERE key = 'export_version'");
+		string present = table == "review_disposition_archive" ? "review_preference_archive" : "review_disposition_archive";
+		artifact.Execute($"CREATE TABLE {present}(kind TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(kind,id))");
+		var importer = new BackupImportService(new UnavailableFactory(), NullLogger<BackupImportService>.Instance);
+
+		Func<Task> import = () => artifact.Import(importer);
+		await import.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*missing required '{table}'*");
+	}
+
+	private sealed class UnavailableFactory : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => throw new InvalidOperationException("Destination must not be accessed.");
 	}
 
 	private static DbContextOptions<ApplicationDbContext> Options() => new DbContextOptionsBuilder<ApplicationDbContext>()

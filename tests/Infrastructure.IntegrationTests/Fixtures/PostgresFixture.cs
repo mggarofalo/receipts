@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -11,10 +13,19 @@ public class PostgresFixture : IAsyncLifetime
 	private readonly string? _databaseName;
 	private readonly string? _isolatedConnectionString;
 
-	public PostgresFixture() => _container = new PostgreSqlBuilder("pgvector/pgvector:pg17").Build();
+	private readonly string? _migration;
 
-	private PostgresFixture(string adminConnectionString, string databaseName)
+	public PostgresFixture() : this(null) { }
+
+	internal PostgresFixture(string? migration)
 	{
+		_migration = migration;
+		_container = new PostgreSqlBuilder("pgvector/pgvector:pg17").Build();
+	}
+
+	private PostgresFixture(string adminConnectionString, string databaseName, string? migration)
+	{
+		_migration = migration;
 		_adminConnectionString = adminConnectionString;
 		_databaseName = databaseName;
 		_isolatedConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName }.ConnectionString;
@@ -22,7 +33,7 @@ public class PostgresFixture : IAsyncLifetime
 
 	// Each test owns a database, while the collection shares only the PostgreSQL server.
 	// Disposal drops that test database; immutable application evidence is never reset.
-	public async Task<PostgresFixture> CreateIsolatedAsync()
+	public async Task<PostgresFixture> CreateIsolatedAsync(string? migration = null)
 	{
 		string name = $"test_{Guid.NewGuid():N}";
 		await using (NpgsqlConnection admin = new(ConnectionString))
@@ -31,7 +42,7 @@ public class PostgresFixture : IAsyncLifetime
 			await using NpgsqlCommand create = new($"CREATE DATABASE \"{name}\"", admin);
 			await create.ExecuteNonQueryAsync();
 		}
-		PostgresFixture isolated = new(ConnectionString, name);
+		PostgresFixture isolated = new(ConnectionString, name, migration);
 		try
 		{
 			await isolated.InitializeAsync();
@@ -83,7 +94,7 @@ public class PostgresFixture : IAsyncLifetime
 		// migrations so the cache picks up the newly-created extension.
 		await using (ApplicationDbContext context = CreateDbContext())
 		{
-			await context.Database.MigrateAsync();
+			await context.GetService<IMigrator>().MigrateAsync(_migration);
 		}
 
 		await using NpgsqlConnection reloadConnection = await _dataSource.OpenConnectionAsync();

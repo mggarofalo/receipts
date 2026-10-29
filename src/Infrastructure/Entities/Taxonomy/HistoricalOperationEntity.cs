@@ -2,9 +2,13 @@ using Application.Taxonomy;
 
 namespace Infrastructure.Entities.Taxonomy;
 
+public enum HistoricalOperationKind { ManualV1, ApprovedMappingV1 }
+
 public sealed class HistoricalOperationEntity
 {
 	public Guid Id { get; set; }
+	public HistoricalOperationKind Kind { get; set; } = HistoricalOperationKind.ManualV1;
+	public Guid? ApprovedMappingRevisionId { get; set; }
 	public string Actor { get; set; } = string.Empty;
 	public string RequestHash { get; set; } = string.Empty;
 	public string SelectionJson { get; set; } = string.Empty;
@@ -21,6 +25,7 @@ public sealed class HistoricalOperationItemEntity
 	public Guid OperationId { get; set; }
 	public Guid ItemId { get; set; }
 	public Guid ReceiptId { get; set; }
+	public Guid? ApprovedMappingRevisionId { get; set; }
 	public string Store { get; set; } = string.Empty;
 	public string RawDescription { get; set; } = string.Empty;
 	public string? ItemCode { get; set; }

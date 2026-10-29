@@ -12,13 +12,28 @@ namespace Infrastructure.Services;
 public sealed class HistoricalReclassificationService(IDbContextFactory<ApplicationDbContext> factory,
 		TimeProvider clock, IOptions<ClassificationOptions> options) : IHistoricalOperationService
 {
+	public async Task<HistoricalOperationPage> ListAutomaticAsync(string actor, int offset, int limit, CancellationToken ct = default)
+	{
+		if (string.IsNullOrWhiteSpace(actor) || offset < 0 || limit is < 1 or > 25)
+		{ throw new ArgumentException("Actor, nonnegative offset and limit of 1 to 25 are required."); }
+		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
+		List<HistoricalOperationEntity> rows = await db.HistoricalOperations.AsNoTracking()
+			.Where(x => x.Actor == actor && x.Kind == HistoricalOperationKind.ApprovedMappingV1)
+			.OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
+			.Skip(offset).Take(limit + 1).ToListAsync(ct);
+		List<HistoricalOperationSummary> summaries = [];
+		foreach (HistoricalOperationEntity row in rows.Take(limit))
+		{ summaries.Add(await SummaryAsync(db, row, ct)); }
+		return new(summaries, rows.Count > limit ? checked(offset + limit) : null);
+	}
+
 	public async Task<HistoricalOperationPage> ListAsync(string actor, int offset, int limit, CancellationToken ct = default)
 	{
 		if (string.IsNullOrWhiteSpace(actor) || offset < 0 || limit is < 1 or > 25)
 		{ throw new ArgumentException("Actor, nonnegative offset and limit of 1 to 25 are required."); }
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		List<HistoricalOperationEntity> rows = await db.HistoricalOperations.AsNoTracking()
-				.Where(x => x.Actor == actor).OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
+				.Where(x => x.Actor == actor && x.Kind == HistoricalOperationKind.ManualV1).OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
 				.Skip(offset).Take(limit + 1).ToListAsync(ct);
 		List<HistoricalOperationSummary> summaries = [];
 		foreach (HistoricalOperationEntity row in rows.Take(limit))
@@ -38,9 +53,11 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 				request.OperationId == Guid.Empty ||
 				request.Disposition is not (null or HistoricalGroupDisposition.Later or HistoricalGroupDisposition.LeaveAsIs))
 		{ throw new TaxonomyException(400, "Valid exact source, disposition, version and operation ID are required."); }
-		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request.Group)));
+		string hash = DispositionSourceHash(request.Group);
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
+		// Restore and historical execution take the same gate before inspecting review state.
+		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		// Operation ID precedes source in the lock order, including when the ID is reused across sources.
 		await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"historical-disposition-operation:" + request.OperationId.ToString("D")}, 0))", ct);
 		HistoricalDispositionOperationEntity? previous = await db.HistoricalDispositionOperations.AsNoTracking()
@@ -58,8 +75,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 					previous.Disposition, previous.ResultVersion, previous.OperationId,
 					previous.ResultUpdatedAt);
 		}
-		// Serialize first insert and updates for this actor/source without taking the classification write gate.
-		await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({actor + hash}, 0))", ct);
+		// Serialize first insert and updates for this actor/source after taking the write gate.
+		await LockDispositionSourceAsync(db, actor, hash, ct);
 		HistoricalGroupDispositionEntity? row = await db.HistoricalGroupDispositions
 				.SingleOrDefaultAsync(x => x.Actor == actor && x.SourceHash == hash, ct);
 		if (row != null && (row.Store != request.Group.Store ||
@@ -103,6 +120,12 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		return ToRecord(row);
 	}
 
+	internal static string DispositionSourceHash(HistoricalGroupKey group) =>
+		Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(group)));
+
+	internal static Task<int> LockDispositionSourceAsync(ApplicationDbContext db, string actor, string hash, CancellationToken ct) =>
+		db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({actor + hash}, 0))", ct);
+
 	private static HistoricalDispositionRecord ToRecord(HistoricalGroupDispositionEntity row) =>
 			new(new(row.Store, row.RawDescription, row.ItemCode), row.Disposition,
 					row.Version, row.OperationId, row.UpdatedAt);
@@ -128,7 +151,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		HistoricalOperationEntity? existing = await db.HistoricalOperations.SingleOrDefaultAsync(x => x.Id == request.OperationId, ct);
 		if (existing != null)
 		{
-			if (existing.Actor != request.Actor || existing.RequestHash != hash)
+			if (existing.Kind != HistoricalOperationKind.ManualV1 || existing.Actor != request.Actor || existing.RequestHash != hash)
 			{ throw new TaxonomyException(409, "Operation ID was already used with a different request."); }
 			return await ProgressAsync(db, existing, ct);
 		}
@@ -181,13 +204,13 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	public async Task<HistoricalProgress> ReadAsync(string actor, Guid id, CancellationToken ct = default)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
-		return await ProgressAsync(db, await OwnedAsync(db, actor, id, false, ct), ct);
+		return await ProgressAsync(db, await ManualOwnedAsync(db, actor, id, ct), ct);
 	}
 
 	public async Task<HistoricalOperationSummary> ReadSummaryAsync(string actor, Guid id, CancellationToken ct = default)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
-		return await SummaryAsync(db, await OwnedAsync(db, actor, id, false, ct), ct);
+		return await SummaryAsync(db, await ManualOwnedAsync(db, actor, id, ct), ct);
 	}
 
 	private static async Task<HistoricalOperationSummary> SummaryAsync(ApplicationDbContext db,
@@ -195,7 +218,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	{
 		var selections = JsonSerializer.Deserialize<HistoricalGroupSelection[]>(row.SelectionJson) ?? [];
 		return new(row.Id, row.State, row.CapturedAt, row.TaxonomyRevisionId,
-				row.Reason, selections, await ProgressAsync(db, row, ct));
+				row.Reason, selections, await ProgressAsync(db, row, ct), row.UndoTaxonomyRevisionId);
 	}
 
 	public async Task<HistoricalItemPage> ReadItemsAsync(string actor, Guid id, int offset, int limit, CancellationToken ct = default)
@@ -203,7 +226,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		ValidateLimit(limit);
 		if (offset < 0) { throw new ArgumentOutOfRangeException(nameof(offset)); }
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
-		await OwnedAsync(db, actor, id, false, ct);
+		await ManualOwnedAsync(db, actor, id, ct);
 		List<HistoricalOperationItemEntity> rows = await db.HistoricalOperationItems.AsNoTracking().Where(x => x.OperationId == id)
 			.OrderBy(x => x.ItemId).Skip(offset).Take(limit + 1).ToListAsync(ct);
 		return new(rows.Take(limit).Select(x => new HistoricalItemResult(x.Evidence(), x.State, x.AppliedAssignmentId, x.Reason)).ToArray(),
@@ -214,8 +237,21 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	public Task<HistoricalProgress> ApplyChunkAsync(string actor, Guid id, int limit, CancellationToken ct = default) =>
 		RunChunkAsync(actor, id, null, limit, ct);
 
-	public Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
-		RunChunkAsync(actor, id, command, limit, ct);
+	public async Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default)
+	{
+		ArgumentNullException.ThrowIfNull(command);
+		await using var db = await factory.CreateDbContextAsync(ct);
+		var operation = await OwnedAsync(db, actor, id, false, ct);
+		Guid? generation = operation.Kind == HistoricalOperationKind.ApprovedMappingV1
+			? await db.CategoryAssistanceSettings.AsNoTracking().Select(x => (Guid?)x.RestoreGeneration).SingleAsync(ct) : null;
+		return await RunChunkAsync(actor, id, command, limit, ct, operation.Kind, generation);
+	}
+
+	internal Task<HistoricalProgress> UndoApprovedMappingChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, Guid expectedRestoreGeneration, CancellationToken ct = default)
+	{
+		ArgumentNullException.ThrowIfNull(command);
+		return RunChunkAsync(actor, id, command, limit, ct, HistoricalOperationKind.ApprovedMappingV1, expectedRestoreGeneration);
+	}
 
 	public async Task<HistoricalProgress> CancelAsync(string actor, Guid id, CancellationToken ct = default)
 	{
@@ -223,13 +259,16 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
+		if (operation.Kind != HistoricalOperationKind.ManualV1)
+		{ throw new TaxonomyException(409, "Automatic historical operations cannot be run by the manual service."); }
 		operation.State = HistoricalReclassificationPolicy.Cancel(operation.State);
 		await db.SaveChangesAsync(ct);
 		await transaction.CommitAsync(ct);
 		return await ProgressAsync(db, operation, ct);
 	}
 
-	private async Task<HistoricalProgress> RunChunkAsync(string actor, Guid id, HistoricalUndoCommand? undo, int limit, CancellationToken ct)
+	private async Task<HistoricalProgress> RunChunkAsync(string actor, Guid id, HistoricalUndoCommand? undo, int limit, CancellationToken ct,
+			HistoricalOperationKind kind = HistoricalOperationKind.ManualV1, Guid? expectedRestoreGeneration = null)
 	{
 		ValidateLimit(limit);
 		if (undo != null && (undo.TaxonomyRevisionId == Guid.Empty || string.IsNullOrWhiteSpace(undo.Reason) || undo.Reason.Contains('\0')))
@@ -237,7 +276,18 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
+		if (kind == HistoricalOperationKind.ApprovedMappingV1)
+		{
+			Guid currentGeneration = await db.CategoryAssistanceSettings.AsNoTracking()
+				.Select(x => x.RestoreGeneration).SingleAsync(ct);
+			if (expectedRestoreGeneration == Guid.Empty || expectedRestoreGeneration != currentGeneration)
+			{ throw new TaxonomyException(409, "Automatic undo request predates restore."); }
+		}
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
+		if (operation.Kind != kind)
+		{ throw new TaxonomyException(409, "Historical operation kind does not match the execution path."); }
+		if (kind == HistoricalOperationKind.ApprovedMappingV1 && operation.ApprovedMappingRevisionId is null)
+		{ throw new TaxonomyException(409, "Automatic historical capture lacks mapping identity."); }
 		bool reverting = undo != null;
 		if (reverting && operation.UndoTaxonomyRevisionId != null &&
 			(operation.UndoTaxonomyRevisionId != undo!.TaxonomyRevisionId || operation.UndoReason != undo.Reason))
@@ -245,9 +295,17 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		if ((!reverting && operation.State is HistoricalOperationState.Completed or HistoricalOperationState.Cancelled or HistoricalOperationState.Undoing or HistoricalOperationState.Undone) ||
 			(reverting && operation.State == HistoricalOperationState.Undone))
 		{ return await ProgressAsync(db, operation, ct); }
+		TaxonomyHeadEntity head = await HeadAsync(db, ct);
+		// Only an initial automatic undo can refresh its taxonomy intent. A resumed
+		// undo keeps its saved revision so subsequent taxonomy changes still conflict.
+		if (reverting && kind == HistoricalOperationKind.ApprovedMappingV1 &&
+				operation.UndoTaxonomyRevisionId == null && head.RevisionId != undo!.TaxonomyRevisionId)
+		{
+			throw new TaxonomyException(409, "Categories changed. Try Undo again.",
+					new Dictionary<string, object?> { ["code"] = "stale-undo-taxonomy" });
+		}
 		operation.State = reverting ? HistoricalReclassificationPolicy.BeginUndo(operation.State) : HistoricalReclassificationPolicy.BeginApply(operation.State);
 		if (reverting) { operation.UndoTaxonomyRevisionId = undo!.TaxonomyRevisionId; operation.UndoReason = undo.Reason; }
-		TaxonomyHeadEntity head = await HeadAsync(db, ct);
 		List<HistoricalOperationItemEntity> rows = await Pending(db, id, reverting).OrderBy(x => x.ItemId).Take(limit).ToListAsync(ct);
 		await ReceiptFactLock.AcquireAsync(db, rows.Select(x => x.ReceiptId), ct);
 		await NormalizationWriteGuard.LockItemsAsync(db, rows.Select(x => x.ItemId).ToArray(), ct);
@@ -295,6 +353,14 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 
 	private static Task<TaxonomyHeadEntity> HeadAsync(ApplicationDbContext db, CancellationToken ct) =>
 		db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(ct);
+
+	private static async Task<HistoricalOperationEntity> ManualOwnedAsync(ApplicationDbContext db, string actor, Guid id, CancellationToken ct)
+	{
+		HistoricalOperationEntity row = await OwnedAsync(db, actor, id, false, ct);
+		if (row.Kind != HistoricalOperationKind.ManualV1)
+		{ throw new TaxonomyException(404, "Historical operation does not exist."); }
+		return row;
+	}
 
 	private static async Task<HistoricalOperationEntity> OwnedAsync(ApplicationDbContext db, string actor, Guid id, bool locked, CancellationToken ct)
 	{

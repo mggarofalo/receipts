@@ -132,6 +132,36 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 		catch (TaxonomyException error) { return error.Status == 404 ? ApiProblem.NotFound(error.Message) : ApiProblem.BadRequest(error.Message); }
 	}
 
+	[HttpGet("review-preferences")]
+	[EndpointSummary("List your saved category review decisions")]
+	public async Task<Results<Ok<CategoryAssistanceSavedReviewPage>, BadRequestProblem, ForbiddenProblem>>
+		SavedReviewPreferences([FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default)
+	{
+		try
+		{
+			return TypedResults.Ok(await reviewPreferenceStore.ListSavedAsync(
+				User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", offset, limit, ct));
+		}
+		catch (TaxonomyException error)
+		{
+			return error.Status == 403 ? new ForbiddenProblem(error.Message, "writer_required") : ApiProblem.BadRequest(error.Message);
+		}
+	}
+
+	[HttpPut("review-preferences/{attemptId:guid}")]
+	[EndpointSummary("Change a saved category review decision")]
+	public async Task<Results<Ok<CategoryAssistanceReviewPreference>, BadRequestProblem, ForbiddenProblem,
+		NotFoundProblem, ConflictProblem>> UpdateSavedReviewPreference(Guid attemptId,
+		[FromBody] CategoryAssistanceReviewPreferenceRequest request, CancellationToken ct)
+	{
+		try
+		{
+			return TypedResults.Ok(await reviewPreferenceStore.UpdateSavedAsync(
+				User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "", attemptId, request, ct));
+		}
+		catch (TaxonomyException error) { return ReviewError(error); }
+	}
+
 	[HttpGet("suggestions/{attemptId:guid}/review-preference")]
 	[EndpointSummary("Read your category assistance review preference")]
 	public async Task<Results<Ok<CategoryAssistanceReviewPreference>, BadRequestProblem, ForbiddenProblem,

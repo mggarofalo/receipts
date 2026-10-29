@@ -314,3 +314,10 @@ An ambiguous legacy label is never chosen by name during restore. Offline
 inspection and normalization preserve format 13 and its mapping evidence.
 
 A version-13 YNAB mapping may fill an unbound legacy mapping. It cannot change an existing mapping's stable category identity or budget scope; conflicting evidence rejects the restore transaction. Mutable external YNAB category details may be restored normally.
+
+
+### Format 14 restore rollout
+
+Public export and import use complete format 14 archives, including automatic historical operations and saved review decisions. Legacy formats remain importable. The long-running API host runs deterministic approved-mapping reuse with automatic activity and conditional undo in the Classification workspace. This worker reuses explicit category approvals without calling a provider; Jev automatic classification remains unimplemented.
+
+Format 14 restores automatic historical manifests, disposition state and its operation ledger, and detached review preferences with their operation ledger. Both review archive tables are required even when empty. The importer selects v14 validation from the archive version, validates destination consistency under the existing write gate, and performs abandonment of pending automatic work, restore generation fencing, business upserts and history restoration in one transaction. Failed imports roll back those changes. Divergent destination decisions reject atomically; exact replays preserve their retry history. No provider attempts or jobs are imported. Formats 1–13 retain their existing validation and restore behavior.

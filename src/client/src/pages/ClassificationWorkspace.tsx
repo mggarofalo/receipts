@@ -12,6 +12,7 @@ import { extractErrorMessage } from "@/lib/problem-details";
 import { categoryPaths, type CategoryChoice } from "@/lib/category-paths";
 import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
 import { RememberCategoryControl } from "@/components/categories/RememberCategory";
+import { AutomaticClassificationActivity } from "@/components/categories/AutomaticClassificationActivity";
 import { PageHead } from "@/components/primitives";
 import { Button } from "@/components/ui/button";
 
@@ -200,6 +201,7 @@ export default function ClassificationWorkspace() {
           </Link>
         )}
       </nav>
+      <AutomaticClassificationActivity />
       {visiblePending.length > 0 && (
         <section
           aria-label="Completed classifications awaiting future mapping"

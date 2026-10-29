@@ -1,3 +1,5 @@
+using Application.Taxonomy;
+using Infrastructure.Entities.Taxonomy;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Services;
@@ -7,6 +9,13 @@ internal static partial class PortableTaxonomyArchive
 	// Caller must hold the restore coordination lock and taxonomy head lock until commit.
 	// This method is read-only: no archived row is attached to the destination context.
 	internal static async Task PreflightDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
+				=> await PreflightDestinationCoreAsync(db, incoming, ct, candidate: false);
+
+	// The v14 importer validates automatic history and saved review decisions together.
+	internal static Task PreflightCandidateDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
+			=> PreflightDestinationCoreAsync(db, incoming, ct, candidate: true);
+
+	private static async Task PreflightDestinationCoreAsync(ApplicationDbContext db, State incoming, CancellationToken ct, bool candidate)
 	{
 		var existing = new State(await db.TaxonomyIdentities.AsNoTracking().ToListAsync(ct),
 			await db.TaxonomyHeads.AsNoTracking().ToListAsync(ct), await db.TaxonomyRevisions.AsNoTracking().ToListAsync(ct),
@@ -15,6 +24,12 @@ internal static partial class PortableTaxonomyArchive
 			await db.ClassificationOperations.AsNoTracking().ToListAsync(ct), await db.LegacyMigrations.AsNoTracking().ToListAsync(ct),
 			await db.LegacyMigrationCrosswalks.AsNoTracking().ToListAsync(ct), await db.LegacyMigrationItems.AsNoTracking().ToListAsync(ct))
 		{
+			IncludesReviewPreferences = candidate,
+			ReviewPreferences = candidate ? await db.CategoryAssistanceReviewPreferences.AsNoTracking().ToListAsync(ct) : [],
+			ReviewOperations = candidate ? await db.CategoryAssistanceReviewOperations.AsNoTracking().ToListAsync(ct) : [],
+			IncludesReviewDispositions = candidate,
+			ReviewDispositions = candidate ? await db.HistoricalGroupDispositions.AsNoTracking().ToListAsync(ct) : [],
+			ReviewDispositionOperations = candidate ? await db.HistoricalDispositionOperations.AsNoTracking().ToListAsync(ct) : [],
 			IncludesHistorical = true,
 			HistoricalOperations = await db.HistoricalOperations.AsNoTracking().ToListAsync(ct),
 			HistoricalItems = await db.HistoricalOperationItems.AsNoTracking().ToListAsync(ct),
@@ -22,15 +37,47 @@ internal static partial class PortableTaxonomyArchive
 			MappingRevisions = await db.CategoryMappingRevisions.AsNoTracking().ToListAsync(ct),
 			MappingHeads = await db.CategoryMappingHeads.AsNoTracking().ToListAsync(ct)
 		};
-		ValidateDestination(existing, incoming);
+		ValidateDestination(existing, incoming, candidate);
+		if (candidate && incoming.IncludesReviewPreferences)
+		{
+			var ids = incoming.ReviewPreferences.Select(x => x.AttemptId).Distinct().ToArray();
+			var attempts = await db.CategoryAssistanceAttempts.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+			foreach (var row in incoming.ReviewPreferences)
+			{
+				if (attempts.TryGetValue(row.AttemptId, out var attempt))
+				{
+					Require(attempt.Location == row.Location && attempt.Description == row.Description && attempt.ItemCodeKey == row.ItemCodeKey,
+						"Review preference source conflicts with destination attempt.");
+				}
+			}
+		}
 		await PreflightSourceRevisionsAsync(db, incoming, ct);
 	}
 
-	internal static void ValidateDestination(State existing, State incoming)
+	internal static void ValidateDestination(State existing, State incoming) => ValidateDestination(existing, incoming, candidate: false);
+
+	internal static void ValidateCandidateDestination(State existing, State incoming) => ValidateDestination(existing, incoming, candidate: true);
+
+	private static void ValidateDestination(State existing, State incoming, bool candidate)
 	{
-		Validate(existing); Validate(incoming);
+		if (candidate)
+		{
+			ValidateCandidate(existing); ValidateCandidate(incoming);
+			ValidateReviewDispositionDestination(existing, incoming);
+			ValidateReviewPreferenceDestination(existing, incoming);
+			// Compare deterministic post-restore state to permit exact snapshot replay.
+			AbandonPendingAutomatic(existing);
+			AbandonPendingAutomatic(incoming);
+		}
+		else
+		{
+			// The source format constrains incoming evidence; the destination may
+			// retain valid automatic history written by the current application.
+			ValidateCandidate(existing); Validate(incoming);
+			AbandonPendingAutomatic(existing);
+		}
 		ValidateMappingDestination(existing, incoming);
-		ValidateHistoricalDestination(existing, incoming);
+		ValidateHistoricalCandidateDestination(existing, incoming);
 		// A destination is a strict prefix of the archive, including all immutable rows.
 		// Reject stale backups even when their head happens to share a revision ID.
 		Require(existing.Revisions.Count <= incoming.Revisions.Count, "Restore would rewind taxonomy head.");
@@ -57,6 +104,23 @@ internal static partial class PortableTaxonomyArchive
 			var latest = incoming.Assignments.Where(a => a.ReceiptItemId == current.ReceiptItemId).MaxBy(a => a.Sequence);
 			Require(latest != null && latest.Sequence >= old.Sequence, "Restore would overwrite a later classification.");
 		}
+	}
+
+	private static void AbandonPendingAutomatic(State state)
+	{
+		foreach (var operation in state.HistoricalOperations.Where(h =>
+			h.Kind == HistoricalOperationKind.ApprovedMappingV1 &&
+			h.State is HistoricalOperationState.Preview or HistoricalOperationState.Applying))
+		{ operation.State = HistoricalOperationState.Cancelled; }
+	}
+
+	// Only after destination preflight, under the restore write gate and transaction.
+	internal static async Task AbandonDestinationAutomaticAsync(ApplicationDbContext db, CancellationToken ct)
+	{
+		var operations = await db.HistoricalOperations.Where(h =>
+			h.Kind == HistoricalOperationKind.ApprovedMappingV1 &&
+			(h.State == HistoricalOperationState.Preview || h.State == HistoricalOperationState.Applying)).ToListAsync(ct);
+		foreach (var operation in operations) { operation.State = HistoricalOperationState.Cancelled; }
 	}
 
 	private static void Prefix<T>(IEnumerable<T> existing, IEnumerable<T> incoming)

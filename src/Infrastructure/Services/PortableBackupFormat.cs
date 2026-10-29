@@ -2,7 +2,9 @@ namespace Infrastructure.Services;
 
 internal static class PortableBackupFormat
 {
-	public const int CurrentVersion = 13;
+	// Public capture and restore use the complete v14 archive.
+	public const int CurrentVersion = PortableAutomaticHistoricalV14.Version;
+	public const int LatestImportVersion = PortableAutomaticHistoricalV14.Version;
 
 	// v5+ is a complete portable snapshot. Legacy partial-file compatibility is handled
 	// separately by the importer; missing v5 tables must not silently lose durable state.
@@ -17,10 +19,10 @@ internal static class PortableBackupFormat
 
 	public static IReadOnlyList<string> RequiredTablesFor(int version)
 	{
-		if (version < 1 || version > CurrentVersion) { throw new InvalidOperationException($"Unsupported backup version {version}."); }
+		if (version < 1 || version > LatestImportVersion) { throw new InvalidOperationException($"Unsupported backup version {version}."); }
 		if (version < 5) { return []; }
 		return version < 7 ? LegacyRequiredTables
 			: version < 10 ? [.. LegacyRequiredTables, "normalization_catalog"]
-			: [.. LegacyRequiredTables, "normalization_catalog", "taxonomy_archive", "portable_deletion_state", .. (version >= 11 ? new[] { "category_mapping_archive" } : Array.Empty<string>()), .. (version >= 12 ? new[] { "historical_operation_archive", "source_revision_archive" } : Array.Empty<string>())];
+			: [.. LegacyRequiredTables, "normalization_catalog", "taxonomy_archive", "portable_deletion_state", .. (version >= 11 ? new[] { "category_mapping_archive" } : Array.Empty<string>()), .. (version >= 12 ? new[] { "historical_operation_archive", "source_revision_archive" } : Array.Empty<string>()), .. (version >= 14 ? new[] { "review_disposition_archive", "review_preference_archive" } : Array.Empty<string>())];
 	}
 }

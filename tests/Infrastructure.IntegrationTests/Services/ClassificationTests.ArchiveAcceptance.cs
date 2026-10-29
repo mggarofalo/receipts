@@ -111,7 +111,7 @@ public sealed partial class ClassificationTests
 			byte[] original = await File.ReadAllBytesAsync(source);
 			var inspection = new OfflinePortableBackupInspection();
 			var baseline = await inspection.InspectAsync(source);
-			baseline.FormatVersion.Should().Be(13);
+			baseline.FormatVersion.Should().Be(14);
 			baseline.RowCounts["historical_operation_archive"].Should().BeGreaterThan(0);
 			var merge = new OfflineConsolidationDecision(Guid.NewGuid(), loser, survivor);
 			var name = new OfflineCanonicalDecision(Guid.NewGuid(), survivor, "Survivor " + survivor, null);
@@ -124,7 +124,7 @@ public sealed partial class ClassificationTests
 			await service.ApplyAsync(source, manifestPath, output);
 			await service.VerifyAsync(source, manifestPath, output);
 			var transformed = await inspection.InspectAsync(output);
-			transformed.FormatVersion.Should().Be(13);
+			transformed.FormatVersion.Should().Be(14);
 			inspection.VerifyBaseline(baseline, transformed);
 			transformed.FactualTableSha256["historical_operation_archive"].Should().Be(baseline.FactualTableSha256["historical_operation_archive"]);
 			transformed.FactualTableSha256["source_revision_archive"].Should().Be(baseline.FactualTableSha256["source_revision_archive"]);
@@ -148,7 +148,7 @@ public sealed partial class ClassificationTests
 	[InlineData(true)]
 	public async Task ArchiveAcceptanceSourceMigrationDowngradeBoundary(bool retainedAudit)
 	{
-		var isolated = new PostgresFixture(); await isolated.InitializeAsync();
+		var isolated = new PostgresFixture("20261027110503_RaiseCategoryAssistanceDailyLimit"); await isolated.InitializeAsync();
 		try { await new ClassificationTests(isolated).AcceptanceSourceDowngrade(retainedAudit); }
 		finally { await isolated.DisposeAsync(); }
 	}
@@ -182,7 +182,7 @@ public sealed partial class ClassificationTests
 		{
 			await db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
 			(await db.Database.GetAppliedMigrationsAsync()).Should().NotContain(migration);
-			await db.GetService<IMigrator>().MigrateAsync();
+			await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
 			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
 			(await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM matching.\"SourceRevisionRestores\"").SingleAsync()).Should().Be(0);
 		}

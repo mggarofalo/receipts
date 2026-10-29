@@ -38,6 +38,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/historical-reclassifications/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List own automatic historical classification activity */
+        get: operations["HistoricalReclassifications_Activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/historical-reclassifications": {
         parameters: {
             query?: never;
@@ -152,6 +169,26 @@ export interface paths {
         put?: never;
         /** Conditionally undo the next bounded applied chunk */
         post: operations["HistoricalReclassifications_Undo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read aggregate background discovery progress
+         * @description Discovery captures local observations only. It does not classify purchases or create categories. Disable category assistance settings to stop further discovery. Provider readiness does not authorize automatic effects.
+         */
+        get: operations["OrganizationDiscovery_Status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -289,6 +326,43 @@ export interface paths {
         /** Page eligible receipt items for a suggestion */
         get: operations["CategoryAssistance_EligibleItems"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/review-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the current actor's saved review decisions */
+        get: operations["CategoryAssistance_SavedReviewPreferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/category-assistance/review-preferences/{attemptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change a saved review decision or remove its exclusions
+         * @description Retained exclusions must be a subset of the existing saved exclusions. No provider attempt is required.
+         */
+        put: operations["CategoryAssistance_UpdateSavedReviewPreference"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3799,6 +3873,8 @@ export interface components {
         };
         HistoricalOperationSummary: {
             /** Format: uuid */
+            undoTaxonomyRevisionId?: string | null;
+            /** Format: uuid */
             operationId: string;
             state: components["schemas"]["HistoricalOperationState"];
             /** Format: date-time */
@@ -3895,6 +3971,33 @@ export interface components {
             /** Format: uuid */
             undoAssignmentId: null | string;
             reason: null | string;
+        };
+        OrganizationDiscoveryStatusResponse: {
+            discovery: components["schemas"]["OrganizationDiscoveryProgress"];
+            /** @description Suggestion provider capability; discovery remains local when unavailable. */
+            capability: string;
+            /** @description Always false in this discovery-only release. */
+            automaticClassificationAvailable: boolean;
+        };
+        OrganizationDiscoveryProgress: {
+            enabled: boolean;
+            /** @description Disabled or awaiting_run returns zero counts. Scanning and watching report only the current settings, restore and taxonomy context. */
+            state: string;
+            /**
+             * Format: int64
+             * @description Distinct exact sources currently attached to observed purchases.
+             */
+            sourceGroups: number;
+            /** Format: int64 */
+            observedItems: number;
+            /** Format: int64 */
+            protectedItems: number;
+            /** Format: int64 */
+            unavailableItems: number;
+            /** Format: int64 */
+            invalidSourceItems: number;
+            /** Format: date-time */
+            updatedAt: string | null;
         };
         CategoryAssistanceStatusResponse: {
             capability: string;
@@ -4007,6 +4110,27 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             completedAt: string | null;
+        };
+        CategoryAssistanceSavedReviewPage: {
+            /** Format: int32 */
+            total: number;
+            /** Format: int32 */
+            offset: number;
+            /** Format: int32 */
+            limit: number;
+            items: components["schemas"]["CategoryAssistanceSavedReview"][];
+        };
+        CategoryAssistanceSavedReview: {
+            /** Format: uuid */
+            attemptId: string;
+            location: string;
+            description: string;
+            itemCodeKey: string;
+            /** @enum {string} */
+            state: "active" | "later" | "left_as_is";
+            /** Format: uuid */
+            revision: string;
+            excludedItemIds: string[];
         };
         CategoryAssistanceReviewPreference: {
             /** Format: uuid */
@@ -6883,6 +7007,45 @@ export interface operations {
             };
         };
     };
+    HistoricalReclassifications_Activity: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoricalOperationPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     HistoricalReclassifications_List: {
         parameters: {
             query?: {
@@ -7325,7 +7488,7 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Conflict */
+            /** @description Initial automatic undo rejects a stale taxonomy revision before saving intent or row outcomes, with problem extension code stale-undo-taxonomy. Refresh taxonomy and retry only this preflight conflict. Resumptions retain their frozen revision; other conflicts do not carry this code. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7333,6 +7496,33 @@ export interface operations {
                 content: {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
+            };
+        };
+    };
+    OrganizationDiscovery_Status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current discovery context and aggregate counts, without receipt or source details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationDiscoveryStatusResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -7752,6 +7942,123 @@ export interface operations {
             };
             /** @description Suggestion missing */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_SavedReviewPreferences: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved review decisions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceSavedReviewPage"];
+                };
+            };
+            /** @description Invalid pagination */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CategoryAssistance_UpdateSavedReviewPreference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryAssistanceReviewPreferenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved actor review state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryAssistanceReviewPreference"];
+                };
+            };
+            /** @description Invalid review preference */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active writer required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Saved decision missing */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Revision, operation or exclusion conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

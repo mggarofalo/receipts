@@ -54,6 +54,10 @@ public class BackupResourceLifetimeTests
 	public async Task Export_Success_ReturnsCallerOwnedReadableAndDeletableFile()
 	{
 		DbContextOptions<ApplicationDbContext> options = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase($"backup-lifetime-{Guid.NewGuid():N}").Options;
+		using (ApplicationDbContext source = new(options))
+		{
+			CurrentBackupFixture.Seed(source);
+		}
 		Mock<IDbContextFactory<ApplicationDbContext>> factory = new();
 		factory.Setup(row => row.CreateDbContextAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => new ApplicationDbContext(options));
 		PathLogger logger = new();

@@ -609,8 +609,6 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Actor", "OperationId");
 
-                    b.HasIndex("AttemptId");
-
                     b.ToTable("ReviewOperations", "category_assistance");
                 });
 
@@ -623,9 +621,27 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("AttemptId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
                     b.Property<string>("ExcludedItemIdsJson")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("ItemCodeKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("text")
+                        .UseCollation("C");
 
                     b.Property<Guid>("Revision")
                         .IsConcurrencyToken()
@@ -637,8 +653,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Actor", "AttemptId");
-
-                    b.HasIndex("AttemptId");
 
                     b.ToTable("ReviewPreferences", "category_assistance", t =>
                         {
@@ -2336,6 +2350,212 @@ namespace Infrastructure.Migrations
                     b.ToTable("NormalizationAssistancePreferences", "matching");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Organization.OrganizationDirtyItemEntity", b =>
+                {
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ItemId");
+
+                    b.ToTable("DirtyItems", "organization");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Organization.OrganizationDirtySourceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("Cursor")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<int>("FormatVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Store")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DirtySources", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationDirtySource_Kind", "\"Kind\" IN ('raw','normalized')");
+
+                            t.HasCheckConstraint("CK_OrganizationDirtySource_Version", "\"FormatVersion\" = 1");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Organization.OrganizationItemEntity", b =>
+                {
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ExpectedAssignmentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("FormatVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ItemRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ObservedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("PreviousCategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ReceiptRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SourceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("RunId", "ItemId");
+
+                    b.HasIndex("RunId", "SourceId");
+
+                    b.HasIndex("RunId", "State", "ItemId");
+
+                    b.ToTable("Items", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationItem_State", "\"State\" IN ('observed','protected','unavailable','invalid_source')");
+
+                            t.HasCheckConstraint("CK_OrganizationItem_Version", "\"FormatVersion\" = 1");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Organization.OrganizationRunEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("Cursor")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("FormatVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("HighWater")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PolicyRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("RestoreGeneration")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TaxonomyRevision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Active")
+                        .IsUnique()
+                        .HasFilter("\"Active\"");
+
+                    b.ToTable("Runs", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationRun_State", "(\"Active\" AND \"State\" IN ('scanning','watching')) OR (NOT \"Active\" AND \"State\" = 'stale')");
+
+                            t.HasCheckConstraint("CK_OrganizationRun_Version", "\"FormatVersion\" = 1");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Organization.OrganizationSourceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<int>("FormatVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ItemCode")
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("NormalizedDescription")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NormalizedHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<string>("NormalizedItemCode")
+                        .HasColumnType("text");
+
+                    b.Property<string>("NormalizedStore")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RawHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Store")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "RawHash")
+                        .IsUnique();
+
+                    b.ToTable("Sources", "organization", t =>
+                        {
+                            t.HasCheckConstraint("CK_OrganizationSource_Version", "\"FormatVersion\" = 1");
+                        });
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.SeedHistoryEntry", b =>
                 {
                     b.Property<string>("SeedId")
@@ -2569,6 +2789,32 @@ namespace Infrastructure.Migrations
                     b.ToTable("HistoricalGroupDispositions", "taxonomy");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalMappingSweepEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Completed")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("Cursor")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PendingOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("RestoreGeneration")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("HistoricalMappingSweeps", "taxonomy");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2579,8 +2825,17 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text")
                         .UseCollation("C");
 
+                    b.Property<Guid?>("ApprovedMappingRevisionId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("CapturedAt")
                         .HasColumnType("timestamptz");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("ManualV1");
 
                     b.Property<string>("Reason")
                         .IsRequired()
@@ -2609,6 +2864,8 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ApprovedMappingRevisionId");
+
                     b.HasIndex("TaxonomyRevisionId");
 
                     b.HasIndex("UndoTaxonomyRevisionId");
@@ -2628,6 +2885,9 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("ApplyOperationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ApprovedMappingRevisionId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("ExpectedAssignmentId")
@@ -2688,6 +2948,8 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("ApplyOperationId")
                         .IsUnique();
+
+                    b.HasIndex("ApprovedMappingRevisionId");
 
                     b.HasIndex("ExpectedAssignmentId");
 
@@ -3173,24 +3435,6 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
-            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewOperationEntity", b =>
-                {
-                    b.HasOne("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", null)
-                        .WithMany()
-                        .HasForeignKey("AttemptId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewPreferenceEntity", b =>
-                {
-                    b.HasOne("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", null)
-                        .WithMany()
-                        .HasForeignKey("AttemptId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Infrastructure.Entities.Core.AcceptedDuplicatePairEntity", b =>
                 {
                     b.HasOne("Infrastructure.Entities.Core.ReceiptEntity", null)
@@ -3353,6 +3597,30 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Organization.OrganizationItemEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Organization.OrganizationRunEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Organization.OrganizationSourceEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RunId", "SourceId")
+                        .HasPrincipalKey("RunId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Organization.OrganizationSourceEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Organization.OrganizationRunEntity", null)
+                        .WithMany()
+                        .HasForeignKey("RunId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.CategoryMappingHeadEntity", b =>
                 {
                     b.HasOne("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", null)
@@ -3402,6 +3670,11 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", b =>
                 {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovedMappingRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
                         .WithMany()
                         .HasForeignKey("TaxonomyRevisionId")
@@ -3419,6 +3692,11 @@ namespace Infrastructure.Migrations
                     b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)
                         .WithMany()
                         .HasForeignKey("AppliedAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovedMappingRevisionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity", null)

@@ -10,7 +10,9 @@ using Infrastructure.Entities.Core;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Options;
@@ -24,8 +26,249 @@ namespace Infrastructure.IntegrationTests.Services;
 [Trait("Prerequisite", "Postgres")]
 public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 {
-	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
+	private sealed class Factory(PostgresFixture fixture, IInterceptor? interceptor = null) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => interceptor is null ? fixture.CreateDbContext() :
+		new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(interceptor).Options);
+	}
+
+	private sealed class PauseSave : SaveChangesInterceptor
+	{
+		public TaskCompletionSource<int> Arrived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+			InterceptionResult<int> result, CancellationToken cancellationToken = default)
+		{
+			Arrived.TrySetResult(((NpgsqlConnection)eventData.Context!.Database.GetDbConnection()).ProcessID);
+			await Release.Task.WaitAsync(TimeSpan.FromSeconds(20), cancellationToken);
+			return result;
+		}
+	}
+
+	private static async Task WaitForBlockedGate(PostgresFixture fixture, int holderPid, Task waiter, CancellationToken ct)
+	{
+		await using var observer = new NpgsqlConnection(fixture.ConnectionString);
+		await observer.OpenAsync(ct);
+		await using var command = new NpgsqlCommand("SELECT EXISTS (SELECT 1 FROM pg_locks l WHERE l.locktype='advisory' AND NOT l.granted AND l.database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND @holder = ANY(pg_blocking_pids(l.pid)))", observer);
+		command.Parameters.AddWithValue("holder", holderPid);
+		while (!(bool)(await command.ExecuteScalarAsync(ct))!)
+		{
+			if (waiter.IsCompleted) { await waiter; throw new InvalidOperationException("Expected a waiter on the holder's gate."); }
+			await Task.Delay(20, ct);
+		}
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task DiscoveryAndPreferenceUpdateSerializeButManifestRemainsAdvisory(bool updateFirst)
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		await using var setup = fixture.CreateDbContext();
+		var discovery = new OrganizationDiscoveryStore(new Factory(fixture), TimeProvider.System);
+		var run = await discovery.StartAsync((await setup.CategoryAssistanceSettings.SingleAsync()).Revision, default);
+		var pause = new PauseSave();
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture, updateFirst ? pause : null), TimeProvider.System);
+		var scanner = new OrganizationDiscoveryStore(new Factory(fixture, updateFirst ? null : pause), TimeProvider.System);
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+		var request = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), Guid.Empty, "later", [seed.Item]);
+		Task first = updateFirst ? preferences.UpdateAsync(seed.Actor, seed.Attempt, request, timeout.Token)
+			: scanner.DiscoverAsync(run, 100, timeout.Token);
+		try
+		{
+			int holderPid = await pause.Arrived.Task.WaitAsync(timeout.Token);
+			Task second = updateFirst ? scanner.DiscoverAsync(run, 100, timeout.Token)
+				: preferences.UpdateAsync(seed.Actor, seed.Attempt, request, timeout.Token);
+			await WaitForBlockedGate(fixture, holderPid, second, timeout.Token);
+			pause.Release.TrySetResult();
+			await Task.WhenAll(first, second);
+			var manifest = await setup.OrganizationItems.AsNoTracking().SingleAsync(x => x.ItemId == seed.Item, timeout.Token);
+			manifest.State.Should().Be(updateFirst ? "protected" : "observed");
+			if (updateFirst) { manifest.SourceId.Should().BeNull(); }
+			else { manifest.SourceId.Should().NotBeNull(); }
+			// A preference saved after discovery need not invalidate the advisory manifest.
+			// An executor must acquire the gate and re-read the committed preference itself.
+			await using var executor = fixture.CreateDbContext();
+			await using var tx = await executor.Database.BeginTransactionAsync(timeout.Token);
+			await NormalizationWriteGuard.AcquireWriteGateAsync(executor, timeout.Token);
+			var row = await executor.CategoryAssistanceReviewPreferences.AsNoTracking()
+				.SingleAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt, timeout.Token);
+			row.State.Should().Be("later");
+			CategoryAssistanceReviewPreferenceStore.Excluded(row).Should().Equal(seed.Item);
+			await tx.CommitAsync(timeout.Token);
+		}
+		finally { pause.Release.TrySetResult(); timeout.Cancel(); }
+	}
+
+	[Fact]
+	public async Task PreferenceUpdateAndHistoricalWriterSerializeBeforeReadingExclusions()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		await using var blocker = new NpgsqlConnection(fixture.ConnectionString);
+		await blocker.OpenAsync();
+		await using var blockerTx = await blocker.BeginTransactionAsync();
+		await using var lockAttempt = new NpgsqlCommand(
+			"SELECT \"Id\" FROM category_assistance.\"Attempts\" WHERE \"Id\" = @id FOR UPDATE", blocker, blockerTx);
+		lockAttempt.Parameters.AddWithValue("id", seed.Attempt);
+		await lockAttempt.ExecuteScalarAsync();
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+		var update = preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), Guid.Empty, "later", [seed.Item]), timeout.Token);
+		await using var waiting = new NpgsqlCommand(
+			"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid)))", blocker, blockerTx);
+		while (!(bool)(await waiting.ExecuteScalarAsync(timeout.Token))!)
+		{
+			if (update.IsCompleted) { await update; throw new InvalidOperationException("Update did not wait for attempt lock."); }
+			await Task.Delay(20, timeout.Token);
+		}
+		await using var executor = fixture.CreateDbContext();
+		await using var executorTx = await executor.Database.BeginTransactionAsync(timeout.Token);
+		var acquire = NormalizationWriteGuard.AcquireWriteGateAsync(executor, timeout.Token);
+		await using var gateWait = new NpgsqlCommand(
+			"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND pid = @pid)", blocker, blockerTx);
+		gateWait.Parameters.AddWithValue("pid", ((NpgsqlConnection)executor.Database.GetDbConnection()).ProcessID);
+		while (!(bool)(await gateWait.ExecuteScalarAsync(timeout.Token))!)
+		{
+			if (acquire.IsCompleted) { await acquire; throw new InvalidOperationException("Historical writer did not wait for preference update."); }
+			await Task.Delay(20, timeout.Token);
+		}
+		await blockerTx.CommitAsync(timeout.Token);
+		await update;
+		await acquire;
+		var row = await executor.CategoryAssistanceReviewPreferences.AsNoTracking()
+			.SingleAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt, timeout.Token);
+		CategoryAssistanceReviewPreferenceStore.Excluded(row).Should().Equal(seed.Item);
+		row.State.Should().Be("later");
+		await executorTx.CommitAsync(timeout.Token);
+	}
+
+	[Fact]
+	public async Task PreferenceUpdateWaitsForHistoricalWriterGate()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var preferences = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		await using var executor = fixture.CreateDbContext();
+		await using var executorTx = await executor.Database.BeginTransactionAsync();
+		await NormalizationWriteGuard.AcquireWriteGateAsync(executor, CancellationToken.None);
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+		var update = preferences.UpdateAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), Guid.Empty, "later", [seed.Item]), timeout.Token);
+		await using var observer = new NpgsqlConnection(fixture.ConnectionString);
+		await observer.OpenAsync(timeout.Token);
+		await using var waiting = new NpgsqlCommand(
+			"SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND @holder = ANY(pg_blocking_pids(pid)))", observer);
+		waiting.Parameters.AddWithValue("holder", ((NpgsqlConnection)executor.Database.GetDbConnection()).ProcessID);
+		while (!(bool)(await waiting.ExecuteScalarAsync(timeout.Token))!)
+		{
+			if (update.IsCompleted) { await update; throw new InvalidOperationException("Preference update did not wait for historical writer."); }
+			await Task.Delay(20, timeout.Token);
+		}
+		(await executor.CategoryAssistanceReviewPreferences.AsNoTracking()
+			.AnyAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt, timeout.Token)).Should().BeFalse();
+		await executorTx.CommitAsync(timeout.Token);
+		var result = await update;
+		result.ExcludedItemIds.Should().Equal(seed.Item);
+	}
+
+	[Fact]
+	public async Task SavedReviewWithoutAttemptCanBeReopenedAndRetainsReplayAndActorScope()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var other = Guid.NewGuid().ToString();
+		var detached = seed.Attempt;
+		var historical = seed.Item;
+		var source = NormalizationCatalogPolicy.Normalize(new("Store", "Bread", null));
+		var store = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		var originalRequest = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), Guid.Empty, "later", [historical]);
+		var original = await store.UpdateAsync(seed.Actor, detached, originalRequest, default);
+		var revision = original.Revision;
+		await using (var db = fixture.CreateDbContext())
+		{
+			db.Users.Add(new ApplicationUser { Id = other, UserName = other, NormalizedUserName = other.ToUpperInvariant() });
+			(await db.ReceiptItems.SingleAsync(x => x.Id == historical)).DeletedAt = DateTimeOffset.UtcNow;
+			await db.SaveChangesAsync();
+			await db.CategoryAssistanceObservations.Where(x => x.AttemptId == detached).ExecuteDeleteAsync();
+			await db.CategoryAssistanceAttempts.Where(x => x.Id == detached).ExecuteDeleteAsync();
+			db.CategoryAssistanceReviewPreferences.AddRange(
+				new CategoryAssistanceReviewPreferenceEntity { Actor = seed.Actor, AttemptId = Guid.NewGuid(), Location = "000", Description = "first" },
+				new CategoryAssistanceReviewPreferenceEntity { Actor = seed.Actor, AttemptId = Guid.NewGuid(), Location = "zzz", Description = "last" });
+			await db.SaveChangesAsync();
+		}
+		(await store.UpdateAsync(seed.Actor, detached, originalRequest, default)).Should().BeEquivalentTo(original);
+		var listed = await store.ListSavedAsync(seed.Actor, 0, 25, default);
+		listed.Items.Should().ContainSingle(x => x.AttemptId == detached && x.Description == source.Description);
+		listed.Total.Should().Be(3);
+		var middle = await store.ListSavedAsync(seed.Actor, 1, 1, default);
+		middle.Items.Should().ContainSingle(x => x.AttemptId == detached);
+		(middle.Total, middle.Offset, middle.Limit).Should().Be((3, 1, 1));
+		(await store.ListSavedAsync(seed.Actor, 3, 1, default)).Items.Should().BeEmpty();
+		foreach (var (offset, limit) in new[] { (-1, 25), (0, 0), (0, 101) })
+		{
+			Func<Task> invalidPage = () => store.ListSavedAsync(seed.Actor, offset, limit, default);
+			await invalidPage.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 400);
+		}
+		(await store.ListSavedAsync(other, 0, 25, default)).Items.Should().BeEmpty();
+		Func<Task> notOwner = () => store.UpdateSavedAsync(other, detached, new(Guid.NewGuid(), revision, "active", []), default);
+		await notOwner.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 404);
+		Func<Task> add = () => store.UpdateSavedAsync(seed.Actor, detached,
+			new(Guid.NewGuid(), revision, "active", [historical, Guid.NewGuid()]), default);
+		await add.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		var request = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), revision, "active", [historical]);
+		var reopened = await store.UpdateSavedAsync(seed.Actor, detached, request, default);
+		reopened.ExcludedItemIds.Should().Equal(historical);
+		var cleared = await store.UpdateSavedAsync(seed.Actor, detached, new(Guid.NewGuid(), reopened.Revision, "left_as_is", []), default);
+		(await store.UpdateSavedAsync(seed.Actor, detached, request, default)).Should().BeEquivalentTo(reopened);
+		(await store.UpdateAsync(seed.Actor, detached, request, default)).Should().BeEquivalentTo(reopened);
+		Func<Task> oldRouteCollision = () => store.UpdateAsync(seed.Actor, detached, request with { State = "later" }, default);
+		await oldRouteCollision.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		(await store.ListSavedAsync(seed.Actor, 0, 25, default)).Items.Single(x => x.AttemptId == detached)
+			.Revision.Should().Be(cleared.Revision);
+		Func<Task> stale = () => store.UpdateSavedAsync(seed.Actor, detached, new(Guid.NewGuid(), revision, "active", []), default);
+		await stale.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		Func<Task> collision = () => store.UpdateSavedAsync(seed.Actor, detached, request with { State = "later" }, default);
+		await collision.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 409);
+		async Task<bool> Compete(string state)
+		{
+			try { await store.UpdateSavedAsync(seed.Actor, detached, new(Guid.NewGuid(), cleared.Revision, state, []), default); return true; }
+			catch (TaxonomyException error) when (error.Status == 409) { return false; }
+		}
+		(await Task.WhenAll(Compete("active"), Compete("later"))).Count(x => x).Should().Be(1);
+		await using var verify = fixture.CreateDbContext();
+		(await verify.CategoryAssistanceAttempts.AnyAsync(x => x.Id == detached)).Should().BeFalse();
+		var saved = await verify.CategoryAssistanceReviewPreferences.SingleAsync(x => x.Actor == seed.Actor && x.AttemptId == detached);
+		(saved.Location, saved.Description, saved.ItemCodeKey).Should().Be((source.Location, source.Description, ""));
+		(await verify.ReceiptItems.IgnoreQueryFilters().SingleAsync(x => x.Id == historical)).DeletedAt.Should().NotBeNull();
+		var actor = await verify.Users.SingleAsync(x => x.Id == seed.Actor);
+		actor.LockoutEnabled = true;
+		actor.LockoutEnd = DateTimeOffset.UtcNow.AddHours(1);
+		await verify.SaveChangesAsync();
+		Func<Task> lockedList = () => store.ListSavedAsync(seed.Actor, 0, 25, default);
+		await lockedList.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 403);
+		Func<Task> lockedReplay = () => store.UpdateSavedAsync(seed.Actor, detached, request, default);
+		await lockedReplay.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 403);
+		Func<Task> lockedOldReplay = () => store.UpdateAsync(seed.Actor, detached, originalRequest, default);
+		await lockedOldReplay.Should().ThrowAsync<TaxonomyException>().Where(x => x.Status == 403);
+	}
+
+	[Fact]
+	public async Task SavedAndSuggestionReviewEndpointsShareOperationLedger()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var store = new CategoryAssistanceReviewPreferenceStore(new Factory(fixture), TimeProvider.System);
+		var request = new CategoryAssistanceReviewPreferenceRequest(Guid.NewGuid(), Guid.Empty, "later", [seed.Item]);
+		var saved = await store.UpdateAsync(seed.Actor, seed.Attempt, request, default);
+		(await store.UpdateSavedAsync(seed.Actor, seed.Attempt, request, default)).Should().BeEquivalentTo(saved);
+		var changed = await store.UpdateSavedAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), saved.Revision, "active", []), default);
+		(await store.UpdateAsync(seed.Actor, seed.Attempt, request, default)).Should().BeEquivalentTo(saved);
+		(await store.GetAsync(seed.Actor, seed.Attempt, default)).Revision.Should().Be(changed.Revision);
+	}
 
 	[Fact]
 	public async Task ReviewPreferencesRejectUnrelatedExcludedItemsWithoutRecordingAnOperation()
@@ -70,6 +313,12 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 			"later", [seed.Item]);
 		var later = await preferences.UpdateAsync(seed.Actor, seed.Attempt, laterRequest, CancellationToken.None);
 		later.State.Should().Be("later");
+		await using (var verifySource = fixture.CreateDbContext())
+		{
+			var attempt = await verifySource.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == seed.Attempt);
+			var preference = await verifySource.CategoryAssistanceReviewPreferences.AsNoTracking().SingleAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt);
+			(preference.Location, preference.Description, preference.ItemCodeKey).Should().Be((attempt.Location, attempt.Description, attempt.ItemCodeKey));
+		}
 		(await preferences.GetAsync(other, seed.Attempt, CancellationToken.None)).State.Should().Be("active");
 		(await read.ListSuggestionsAsync(seed.Actor, "active", 0, 100, CancellationToken.None)).Items
 			.Should().NotContain(x => x.AttemptId == seed.Attempt);
@@ -398,6 +647,8 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 			.SingleAsync(x => x.Id == seed.Attempt);
 		try
 		{
+			// Capture with the current model before removing columns introduced later.
+			await db.GetService<IMigrator>().MigrateAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
 			Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
 			var refusal = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
 			refusal.SqlState.Should().Be(PostgresErrorCodes.RaiseException);

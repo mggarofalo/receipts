@@ -32,14 +32,37 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 
 	internal static async Task<PurchaseClassification> AssignInTransactionAsync(ApplicationDbContext db, string actor, Guid itemId,
 		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared = false, Action? onChanged = null)
+		=> await AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, prepared, onChanged, null);
+
+	// The caller owns the transaction and must atomically persist its historical outcome.
+	// Frozen revisions, eligibility, suppression and progress remain the caller's responsibility.
+	internal static Task<PurchaseClassification> AssignApprovedMappingInTransactionAsync(ApplicationDbContext db, string actor,
+		Guid itemId, Guid categoryId, Guid taxonomyRevisionId, Guid? expectedAssignmentId, Guid operationId,
+		CategoryMappingReuseEvidence evidence, bool enabled, TimeProvider clock, CancellationToken ct)
+	{
+		if (db.Database.CurrentTransaction == null)
+		{ throw new InvalidOperationException("Approved mapping assignment requires a caller-owned transaction."); }
+		if (evidence == null || evidence.MappingRevisionId == Guid.Empty || evidence.ApprovalTaxonomyRevisionId == Guid.Empty
+			|| string.IsNullOrWhiteSpace(evidence.SourceFingerprint) || categoryId == Guid.Empty)
+		{ throw new TaxonomyException(400, "Valid approved mapping evidence and category are required."); }
+		ClassificationCommand command = new(categoryId, taxonomyRevisionId, expectedAssignmentId, operationId, JsonSerializer.Serialize(evidence));
+		return AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, false, null, evidence);
+	}
+
+	private static async Task<PurchaseClassification> AssignCoreAsync(ApplicationDbContext db, string actor, Guid itemId,
+		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared,
+		Action? onChanged, CategoryMappingReuseEvidence? mappingEvidence)
 	{
 		if (string.IsNullOrWhiteSpace(actor) || command.OperationId == Guid.Empty || command.TaxonomyRevisionId == Guid.Empty
 			|| string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Contains('\0'))
 		{ throw new TaxonomyException(400, "Actor, operation ID, taxonomy revision and reason are required."); }
 		if (!enabled) { throw new TaxonomyException(409, WritesDisabledMessage); }
-		TaxonomyHeadEntity head = await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(ct);
+		TaxonomyHeadEntity head = await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").AsNoTracking().SingleAsync(ct);
 		if (!prepared) { await RequireReadyAsync(db, ct); }
-		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command })));
+		// Preserve the manual request hash and separate mapping operations from manual ones.
+		string hash = mappingEvidence == null
+			? Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command })))
+			: Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command, mappingEvidence })));
 		ClassificationOperationEntity? replay = await db.ClassificationOperations.AsNoTracking().SingleOrDefaultAsync(x => x.Actor == actor && x.OperationId == command.OperationId, ct);
 		if (replay != null)
 		{
@@ -49,14 +72,37 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		if (head.RevisionId != command.TaxonomyRevisionId) { throw new TaxonomyException(409, "Taxonomy changed. Refresh before retrying."); }
 		Guid parentId = await db.ReceiptItems.Where(x => x.Id == itemId).Select(x => x.ReceiptId).SingleOrDefaultAsync(ct);
 		await ReceiptFactLock.AcquireAsync(db, new List<Guid> { parentId }, ct);
-		ReceiptItemEntity? item = await db.ReceiptItems.FromSqlInterpolated($"SELECT * FROM receipts.\"ReceiptItems\" WHERE \"Id\" = {itemId} FOR UPDATE").IgnoreAutoIncludes().SingleOrDefaultAsync(ct);
+		ReceiptItemEntity? item = await db.ReceiptItems.FromSqlInterpolated($"SELECT * FROM receipts.\"ReceiptItems\" WHERE \"Id\" = {itemId} FOR UPDATE").IgnoreAutoIncludes().AsNoTracking().SingleOrDefaultAsync(ct);
 		if (item == null || !await db.Receipts.AnyAsync(x => x.Id == item.ReceiptId, ct)) { throw new TaxonomyException(404, "Receipt item does not exist."); }
+		// Do not flush unvalidated source changes or discard a caller's pending current assignment.
+		db.ChangeTracker.DetectChanges();
+		bool dirtyCurrent = db.ChangeTracker.Entries<CurrentClassificationEntity>().Any(entry => entry.Entity.ReceiptItemId == itemId
+			&& entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
+		bool dirtySource = mappingEvidence != null && (db.ChangeTracker.Entries<ReceiptItemEntity>().Any(entry => entry.Entity.Id == itemId
+			&& entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+			|| db.ChangeTracker.Entries<ReceiptEntity>().Any(entry => entry.Entity.Id == item.ReceiptId
+				&& entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted));
+		if (dirtyCurrent || dirtySource)
+		{ throw new TaxonomyException(409, "Pending changes must be saved or discarded before classification."); }
 		CurrentClassificationEntity? current = await db.CurrentClassifications.SingleOrDefaultAsync(x => x.ReceiptItemId == itemId, ct);
+		// A caller may already track an older current row; refresh it after taking the receipt lock.
+		if (current != null) { await db.Entry(current).ReloadAsync(ct); }
 		if (current?.AssignmentId != command.ExpectedAssignmentId) { throw new TaxonomyException(409, "Classification changed. Refresh before retrying."); }
 		if (command.CategoryId is Guid category && !await db.TaxonomyNodes.AnyAsync(x => x.RevisionId == head.RevisionId && x.CategoryId == category && !x.Archived, ct))
 		{ throw new TaxonomyException(400, "Category must be selectable in the expected taxonomy revision."); }
+		if (mappingEvidence != null)
+		{
+			string location = await db.Receipts.Where(x => x.Id == item.ReceiptId).Select(x => x.Location).SingleAsync(ct);
+			NormalizationSourceKey source = NormalizationCatalogPolicy.Normalize(new(location, item.Description, item.ReceiptItemCode));
+			CategoryMappingResolution resolution = await CategoryMappingService.ResolveInTransactionAsync(db, source,
+				mappingEvidence.SourceFingerprint, head.RevisionId, null, ct);
+			if (resolution.Disposition != "approved" || resolution.CategoryId != command.CategoryId
+				|| resolution.MappingRevisionId != mappingEvidence.MappingRevisionId
+				|| resolution.ApprovalTaxonomyRevisionId != mappingEvidence.ApprovalTaxonomyRevisionId)
+			{ throw new TaxonomyException(409, "Approved mapping evidence changed. Refresh before retrying."); }
+		}
 		PurchaseClassificationEntity assignment = await AppendAsync(db, actor, itemId, command.CategoryId, head.RevisionId,
-			current, command.OperationId, "manual", command.Reason, clock, ct);
+			current, command.OperationId, mappingEvidence == null ? "manual" : "approved_mapping", command.Reason, clock, ct);
 		db.ClassificationOperations.Add(new() { Actor = actor, OperationId = command.OperationId, RequestHash = hash, AssignmentId = assignment.Id });
 		await db.SaveChangesAsync(ct);
 		onChanged?.Invoke();

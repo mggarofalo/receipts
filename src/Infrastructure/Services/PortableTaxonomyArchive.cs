@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Taxonomy;
 using Infrastructure.Configurations;
+using Infrastructure.Entities.CategoryAssistance;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.Interfaces;
 using Microsoft.Data.Sqlite;
@@ -28,6 +29,12 @@ internal static partial class PortableTaxonomyArchive
 		List<LegacyMigrationItemEntity> MigrationItems)
 	{
 		internal List<SourceRevision> SourceRevisions { get; init; } = [];
+		internal bool IncludesReviewPreferences { get; init; }
+		internal List<CategoryAssistanceReviewPreferenceEntity> ReviewPreferences { get; init; } = [];
+		internal List<CategoryAssistanceReviewOperationEntity> ReviewOperations { get; init; } = [];
+		internal bool IncludesReviewDispositions { get; init; }
+		internal List<HistoricalGroupDispositionEntity> ReviewDispositions { get; init; } = [];
+		internal List<HistoricalDispositionOperationEntity> ReviewDispositionOperations { get; init; } = [];
 		internal bool IncludesHistorical { get; init; }
 		internal List<HistoricalOperationEntity> HistoricalOperations { get; init; } = [];
 		internal List<HistoricalOperationItemEntity> HistoricalItems { get; init; } = [];
@@ -36,7 +43,7 @@ internal static partial class PortableTaxonomyArchive
 		internal List<CategoryMappingHeadEntity> MappingHeads { get; init; } = [];
 	}
 
-	internal static async Task ExportAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken ct)
+	internal static async Task ExportAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken ct, bool candidate = false)
 	{
 		await using (var schema = sqlite.CreateCommand())
 		{
@@ -63,7 +70,7 @@ internal static partial class PortableTaxonomyArchive
 			{ await Write("taxonomy_archive", kind, JsonSerializer.Serialize(key(row), JsonOptions), row); }
 		}
 		await ExportMappingsAsync(source, sqlite, ct);
-		await ExportHistoricalAsync(source, sqlite, ct);
+		if (!candidate) { await ExportHistoricalAsync(source, sqlite, ct); }
 		await ExportSourceRevisionsAsync(source, sqlite, ct);
 		await Rows("identity", source.TaxonomyIdentities, r => r.Id);
 		await Rows("head", source.TaxonomyHeads, r => r.Id);
@@ -95,9 +102,35 @@ internal static partial class PortableTaxonomyArchive
 		await Deletions("adjustments", source.Adjustments, r => r.Id);
 		await Deletions("ynab_sync_records", source.YnabSyncRecords, r => r.Id);
 		await Deletions("accepted_duplicate_pairs", source.AcceptedDuplicatePairs, r => r.Id);
+		if (candidate)
+		{
+			var state = await ReadAsync(sqlite, ct);
+			state = state with
+			{
+				HistoricalOperations = await source.HistoricalOperations.AsNoTracking().ToListAsync(ct),
+				HistoricalItems = await source.HistoricalOperationItems.AsNoTracking().ToListAsync(ct),
+				IncludesReviewPreferences = true,
+				ReviewPreferences = await source.CategoryAssistanceReviewPreferences.AsNoTracking().ToListAsync(ct),
+				ReviewOperations = await source.CategoryAssistanceReviewOperations.AsNoTracking().ToListAsync(ct),
+				IncludesReviewDispositions = true,
+				ReviewDispositions = await source.HistoricalGroupDispositions.AsNoTracking().ToListAsync(ct),
+				ReviewDispositionOperations = await source.HistoricalDispositionOperations.AsNoTracking().ToListAsync(ct)
+			};
+			ValidateCandidate(state);
+			await WriteHistoricalCandidateAsync(sqlite, state, ct);
+			await WriteReviewDispositionsAsync(sqlite, state, ct);
+			await WriteReviewPreferencesAsync(sqlite, state, ct);
+		}
 	}
 
 	internal static async Task<State> ReadAsync(SqliteConnection sqlite, CancellationToken ct, int version = PortableBackupFormat.CurrentVersion)
+				=> await ReadCoreAsync(sqlite, ct, version, candidate: false);
+
+	// v14 capture and restore share this codec.
+	internal static Task<State> ReadCandidateAsync(SqliteConnection sqlite, CancellationToken ct)
+			=> ReadCoreAsync(sqlite, ct, PortableAutomaticHistoricalV14.Version, candidate: true);
+
+	private static async Task<State> ReadCoreAsync(SqliteConnection sqlite, CancellationToken ct, int version, bool candidate)
 	{
 		Dictionary<string, List<(string Id, string Payload)>> records = [];
 		await using (var command = sqlite.CreateCommand())
@@ -130,16 +163,27 @@ internal static partial class PortableTaxonomyArchive
 			Read<LegacyMigrationItemEntity>("migration_item"));
 		Require(records.Count == 0, "Unknown taxonomy archive record kind.");
 		if (version >= 11) { state = await ReadMappingsAsync(sqlite, state, ct); }
-		if (version >= 12) { state = await ReadHistoricalAsync(sqlite, state, ct); state = await ReadSourceRevisionsAsync(sqlite, state, ct); }
-		Validate(state);
+		if (version >= 12)
+		{
+			state = candidate ? await ReadHistoricalCandidateAsync(sqlite, state, ct) : await ReadHistoricalAsync(sqlite, state, ct);
+			state = await ReadSourceRevisionsAsync(sqlite, state, ct);
+		}
+		if (candidate) { state = await ReadReviewDispositionsAsync(sqlite, state, ct); state = await ReadReviewPreferencesAsync(sqlite, state, ct); }
+		Validate(state, candidate);
+		if (candidate) { await ValidateCandidateBusinessReferencesAsync(sqlite, state, ct); }
 		return state;
 	}
 
-	internal static void Validate(State state)
+	internal static void Validate(State state) => Validate(state, allowAutomatic: false);
+
+	internal static void ValidateCandidate(State state) => Validate(state, allowAutomatic: true);
+
+	private static void Validate(State state, bool allowAutomatic)
 	{
 		ValidateUniqueKeys(state);
 		ValidateMappings(state);
-		ValidateHistorical(state);
+		if (allowAutomatic) { ValidateHistoricalCandidate(state); ValidateReviewDispositions(state); ValidateReviewPreferences(state); }
+		else { ValidateHistorical(state); }
 		var revisions = state.Revisions.ToDictionary(r => r.Id);
 		var identities = state.Identities.Select(r => r.Id).ToHashSet();
 		Require(identities.Count == state.Identities.Count && !identities.Contains(Guid.Empty), "Invalid taxonomy identities.");

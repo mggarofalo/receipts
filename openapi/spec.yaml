@@ -126,6 +126,34 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/historical-reclassifications/activity:
+    get:
+      operationId: HistoricalReclassifications_Activity
+      security: [{BearerAuth: []}, {ApiKey: []}]
+      tags: [HistoricalReclassifications]
+      summary: List own automatic historical classification activity
+      parameters:
+        - name: offset
+          in: query
+          schema: {type: integer, format: int32, minimum: 0, default: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, format: int32, minimum: 1, maximum: 25, default: 25}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoricalOperationPage'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
   /api/historical-reclassifications:
     get:
       operationId: HistoricalReclassifications_List
@@ -498,11 +526,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '409':
-          description: Conflict
+          description: Initial automatic undo rejects a stale taxonomy revision before saving intent or row outcomes, with problem extension code stale-undo-taxonomy. Refresh taxonomy and retry only this preflight conflict. Resumptions retain their frozen revision; other conflicts do not carry this code.
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/category-assistance/discovery:
+    get:
+      tags: [CategoryAssistance]
+      summary: Read aggregate background discovery progress
+      description: Discovery captures local observations only. It does not classify purchases or create categories. Disable category assistance settings to stop further discovery. Provider readiness does not authorize automatic effects.
+      operationId: OrganizationDiscovery_Status
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      responses:
+        "200":
+          description: Current discovery context and aggregate counts, without receipt or source details
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationDiscoveryStatusResponse" }
+        "401": { description: Authentication required }
   /api/category-assistance/status:
     get:
       tags: [CategoryAssistance]
@@ -828,6 +870,73 @@ paths:
                   { schema: { $ref: "#/components/schemas/ProblemDetails" } },
               },
           }
+  /api/category-assistance/review-preferences:
+    get:
+      tags: [CategoryAssistance]
+      summary: List the current actor's saved review decisions
+      operationId: CategoryAssistance_SavedReviewPreferences
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        "200":
+          description: Saved review decisions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryAssistanceSavedReviewPage" }
+        "400":
+          description: Invalid pagination
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { description: Authentication required }
+        "403":
+          description: Active writer required
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+  /api/category-assistance/review-preferences/{attemptId}:
+    put:
+      tags: [CategoryAssistance]
+      summary: Change a saved review decision or remove its exclusions
+      description: Retained exclusions must be a subset of the existing saved exclusions. No provider attempt is required.
+      operationId: CategoryAssistance_UpdateSavedReviewPreference
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - { name: attemptId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryAssistanceReviewPreferenceRequest" }
+      responses:
+        "200":
+          description: Saved actor review state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryAssistanceReviewPreference" }
+        "400":
+          description: Invalid review preference
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { description: Authentication required }
+        "403":
+          description: Active writer required
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404":
+          description: Saved decision missing
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "409":
+          description: Revision, operation or exclusion conflict
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/category-assistance/suggestions/{attemptId}/review-preference:
     get:
       tags: [CategoryAssistance]
@@ -9203,6 +9312,9 @@ components:
       type: object
       required: [operationId, state, capturedAt, taxonomyRevisionId, reason, groups, progress]
       properties:
+        undoTaxonomyRevisionId:
+          type: [string, 'null']
+          format: uuid
         operationId:
           type: string
           format: uuid
@@ -9470,6 +9582,36 @@ components:
           type:
             - 'null'
             - string
+    OrganizationDiscoveryStatusResponse:
+      type: object
+      required: [discovery, capability, automaticClassificationAvailable]
+      properties:
+        discovery: { $ref: "#/components/schemas/OrganizationDiscoveryProgress" }
+        capability:
+          type: string
+          description: Suggestion provider capability; discovery remains local when unavailable.
+        automaticClassificationAvailable:
+          type: boolean
+          description: Always false in this discovery-only release.
+    OrganizationDiscoveryProgress:
+      type: object
+      required: [enabled, state, sourceGroups, observedItems, protectedItems, unavailableItems, invalidSourceItems, updatedAt]
+      properties:
+        enabled: { type: boolean }
+        state:
+          type: string
+          description: Disabled or awaiting_run returns zero counts. Scanning and watching report only the current settings, restore and taxonomy context.
+        sourceGroups:
+          type: integer
+          format: int64
+          description: Distinct exact sources currently attached to observed purchases.
+        observedItems: { type: integer, format: int64 }
+        protectedItems: { type: integer, format: int64 }
+        unavailableItems: { type: integer, format: int64 }
+        invalidSourceItems: { type: integer, format: int64 }
+        updatedAt:
+          type: [string, "null"]
+          format: date-time
     CategoryAssistanceStatusResponse:
       type: object
       required:
@@ -9600,6 +9742,25 @@ components:
         isCurrent: { type: boolean }
         createdAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
+    CategoryAssistanceSavedReviewPage:
+      type: object
+      required: [total, offset, limit, items]
+      properties:
+        total: { type: integer, format: int32 }
+        offset: { type: integer, format: int32 }
+        limit: { type: integer, format: int32 }
+        items: { type: array, items: { $ref: "#/components/schemas/CategoryAssistanceSavedReview" } }
+    CategoryAssistanceSavedReview:
+      type: object
+      required: [attemptId, location, description, itemCodeKey, state, revision, excludedItemIds]
+      properties:
+        attemptId: { type: string, format: uuid }
+        location: { type: string }
+        description: { type: string }
+        itemCodeKey: { type: string }
+        state: { type: string, enum: [active, later, left_as_is] }
+        revision: { type: string, format: uuid }
+        excludedItemIds: { type: array, maxItems: 1000, items: { type: string, format: uuid } }
     CategoryAssistanceReviewPreference:
       type: object
       required: [attemptId, state, revision, excludedItemIds]
