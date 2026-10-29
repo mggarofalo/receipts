@@ -38,11 +38,16 @@ ID with a changed request conflicts. The dispositions and their ledger are inclu
 the public v14 portable taxonomy archive. Format 14 import transfers current
 dispositions and their complete operation ledger under the restore write gate, rejecting
 divergent destination decisions. Public export captures v14 automatic history, saved preferences and private dispositions,
-including retry records. Public import accepts v14 and legacy v13 archives. The automatic background worker remains disabled. Neither is classification or verification evidence.
+including retry records. Public import accepts v14 and legacy v13 archives. The
+long-running API host runs deterministic approved-mapping reuse, with the automatic
+activity and conditional undo surface described above. Saved preferences and
+dispositions are not classification or verification evidence.
 
 The foundation originally defined contracts and pure policies; persistence and the
 authenticated operation API now implement the workflow described below. The service
-does not run Jev or change purchase assignments until a user applies a captured preview.
+does not run Jev. Manual cleanup changes purchase assignments only when a user applies
+a captured preview; the background worker independently reuses explicit category
+approvals. Jev automatic classification remains unimplemented.
 
 ## Explicit evidence and selection
 
