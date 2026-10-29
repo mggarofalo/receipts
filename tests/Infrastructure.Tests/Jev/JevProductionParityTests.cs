@@ -25,7 +25,7 @@ public class JevProductionParityTests
 			JsonSerializer.Serialize(actual.Decision, ProductionParity.JsonOptions));
 		Assert.Equal(reason, actual.Decision.Suggestion!.AbstentionReason);
 		Assert.Equal(category, actual.Decision.Suggestion.CategoryId);
-		Assert.Equal("classification-questions-v5", actual.QuestionPolicy);
+		Assert.Equal("classification-questions-v6", actual.QuestionPolicy);
 		Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(actual.RequestJson))), actual.QuestionSha256);
 		Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(actual.Decision, ProductionParity.JsonOptions))), actual.DecisionSha256);
 		Assert.Equal(JsonSerializer.Serialize(actual, ProductionParity.JsonOptions),

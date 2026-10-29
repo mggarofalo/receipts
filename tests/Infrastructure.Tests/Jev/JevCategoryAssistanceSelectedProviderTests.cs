@@ -146,6 +146,60 @@ public sealed class JevCategoryAssistanceSelectedProviderTests
 		Assert.Equal(1, failedHandler.Calls);
 	}
 
+	[Theory]
+	[InlineData(0.699, false)]
+	[InlineData(0.7, true)]
+	public async Task SelectedPathUsesExactPayloadAndSeparateSupport(double support, bool accepted)
+	{
+		JevOptions current = new() { ApiKey = "key" };
+		CategorySuggestion baseline = new("category", ["category"], null, 0.9, 1, 1,
+			new("jev", CategorySuggestionPolicy.Model, CategorySuggestionPolicy.Version, "revision", 100, 10));
+		var prepared = JevSelectedPathQuestions.Prepare(Request, baseline);
+		var (provider, handler, binding) = Create(() => current, async message =>
+		{
+			Assert.Equal(prepared.Payload, await message.Content!.ReadAsByteArrayAsync());
+			string body = System.Text.Json.JsonSerializer.Serialize(new
+			{
+				model = CategorySuggestionPolicy.Model,
+				answers = new Dictionary<string, object> { [prepared.QuestionId] = new { type = "noul", noul = support } },
+				usage = new { input_tokens = 3, output_tokens = 2 }
+			});
+			return Response(body);
+		});
+		binding.Setup(x => x.IsCurrentAsync(It.IsAny<CategoryAssistanceConnectionCoordinator.Configuration>(),
+			It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+		var result = await provider.VerifySelectedAsync(Request, baseline, Guid.NewGuid(), default);
+		Assert.Null(result.Failure);
+		Assert.Equal(accepted ? "category" : null, result.Suggestion!.CategoryId);
+		Assert.Equal(accepted ? null : "uncertain-selected-path", result.Suggestion.AbstentionReason);
+		Assert.Equal(0.9, result.Suggestion.FitProbability);
+		Assert.Equal(support, result.Suggestion.SelectedPathSupport);
+		Assert.Equal(103, result.Suggestion.Provenance.InputTokens);
+		Assert.Equal(12, result.Suggestion.Provenance.OutputTokens);
+		Assert.Equal(1, handler.Calls);
+	}
+
+	[Fact]
+	public async Task SelectedPathRejectsWrongAnswerAndRevokedBinding()
+	{
+		JevOptions current = new() { ApiKey = "key" };
+		CategorySuggestion baseline = new("category", ["category"], null, 0.9, 1, 1,
+			new("jev", CategorySuggestionPolicy.Model, CategorySuggestionPolicy.Version, "revision", 100, 10));
+		var (provider, handler, binding) = Create(() => current);
+		binding.Setup(x => x.IsCurrentAsync(It.IsAny<CategoryAssistanceConnectionCoordinator.Configuration>(),
+			It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+		var malformed = await provider.VerifySelectedAsync(Request, baseline, Guid.NewGuid(), default);
+		Assert.Equal(SuggestionFailure.InvalidResponse, malformed.Failure);
+		Assert.Null(malformed.Suggestion);
+		Assert.Equal(1, handler.Calls);
+		binding.Reset();
+		binding.Setup(x => x.IsCurrentAsync(It.IsAny<CategoryAssistanceConnectionCoordinator.Configuration>(),
+			It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+		var revoked = await provider.VerifySelectedAsync(Request, baseline, Guid.NewGuid(), default);
+		Assert.Equal(SuggestionFailure.Disabled, revoked.Failure);
+		Assert.Equal(1, handler.Calls);
+	}
+
 	private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler
 	{
 		public int Calls { get; private set; }

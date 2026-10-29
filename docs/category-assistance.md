@@ -10,6 +10,8 @@ Before downgrading the daily-limit migration, an Admin must lower any configured
 
 Trusted post-consent, no-choice save observations and explicit, bounded historical requests can enroll an attempt. Historical requests accept at most 25 selected groups with at most 100 purchases per group; they preserve an operation ID for recovery and never silently scan or submit all history. Exact normalized store, description and optional item code are compared alongside the source hash; deduplication also includes taxonomy, provider/model, question policy and deployment generations. The provider receives the description and taxonomy, not receipt payment or account details.
 
+A policy version is compiled into each process. When deploying a different question policy, stop all old API and worker processes before starting any new ones; overlapping versions can each treat their own policy as current. Unattempted observations may be processed by the new policy. An existing attempt is retained and is not resent solely because the policy changed. Obsolete attempts do not occupy pending capacity or provide current suggestions.
+
 Queued claims use bounded leases and deferral. Dispatch start atomically checks current consent, source and receipt/item revisions, assignment, mapping, taxonomy and connection state, then debits the deployment-wide UTC-day allowance. A dispatched attempt is never automatically resent after an uncertain outcome. Completed results remain suggestions and do not assign categories or approve mappings.
 
 ## Connection and restore fences

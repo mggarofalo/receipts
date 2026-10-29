@@ -85,6 +85,69 @@ public sealed partial class CategoryAssistanceHistoricalRequestStoreTests(Postgr
 	}
 
 	[Fact]
+	public async Task UnlinkedMarkerMatchingObsoleteAttemptDoesNotReserveCapacityOrResend()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var store = Store(fixture);
+		var first = new CategoryAssistanceHistoricalRequest(Guid.NewGuid(), seed.Taxonomy,
+			[new HistoricalGroupKey("Shop", " milk ", null), new HistoricalGroupKey("Shop", "milk", null)]);
+		await store.EnrollAsync(seed.Actor, first, default);
+		var dispatch = new CategoryAssistanceDispatchStore(new Factory(fixture), TimeProvider.System);
+		var oldWork = (await dispatch.ClaimQueuedAsync(default))!;
+		await using (var db = fixture.CreateDbContext())
+		{
+			var markers = await db.CategoryAssistanceObservations.Where(x => x.SaveId == first.OperationId).ToListAsync();
+			markers.Should().HaveCount(2).And.OnlyContain(x => x.AttemptId == oldWork.AttemptId);
+			markers.Single(x => x.ReceiptItemId == seed.Other).AttemptId = null;
+			var attempt = await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == oldWork.AttemptId);
+			attempt.QuestionPolicyVersion = "obsolete"; attempt.State = "suggested";
+			(await db.CategoryAssistanceSettings.SingleAsync()).PendingLimit = 1;
+			await db.SaveChangesAsync();
+		}
+		var next = new CategoryAssistanceHistoricalRequest(Guid.NewGuid(), seed.Taxonomy,
+			[new HistoricalGroupKey("Shop", "milk", null)]);
+		(await store.EnrollAsync(seed.Actor, next, default)).ItemCount.Should().Be(1);
+		var newWork = (await dispatch.ClaimQueuedAsync(default))!;
+		newWork.AttemptId.Should().NotBe(oldWork.AttemptId);
+		await using var verify = fixture.CreateDbContext();
+		(await verify.CategoryAssistanceObservations.SingleAsync(x => x.SaveId == first.OperationId && x.ReceiptItemId == seed.Other))
+			.AttemptId.Should().Be(oldWork.AttemptId);
+		(await verify.CategoryAssistanceAttempts.CountAsync()).Should().Be(2);
+	}
+
+	[Theory]
+	[InlineData("queued")]
+	[InlineData("dispatching")]
+	[InlineData("suggested")]
+	[InlineData("abstained")]
+	public async Task ObsoleteResultIsStaleAndDoesNotBlockNewHistoricalRequest(string oldState)
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture);
+		var store = Store(fixture);
+		var first = new CategoryAssistanceHistoricalRequest(Guid.NewGuid(), seed.Taxonomy,
+			[new HistoricalGroupKey("Shop", " milk ", null)]);
+		await store.EnrollAsync(seed.Actor, first, default);
+		var dispatch = new CategoryAssistanceDispatchStore(new Factory(fixture), TimeProvider.System);
+		var work = (await dispatch.ClaimQueuedAsync(default))!;
+		await using (var db = fixture.CreateDbContext())
+		{
+			var row = await db.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+			row.QuestionPolicyVersion = "obsolete"; row.State = oldState;
+			(await db.CategoryAssistanceSettings.SingleAsync()).PendingLimit = 1;
+			await db.SaveChangesAsync();
+		}
+		var progress = await store.GetAsync(seed.Actor, first.OperationId, default);
+		progress.State.Should().Be("failed");
+		progress.Groups.Single().States.Should().Equal("stale");
+		var second = new CategoryAssistanceHistoricalRequest(Guid.NewGuid(), seed.Taxonomy,
+			[new HistoricalGroupKey("Shop", "milk", null)]);
+		(await store.EnrollAsync(seed.Actor, second, default)).ItemCount.Should().Be(1);
+		(await dispatch.ClaimQueuedAsync(default)).Should().NotBeNull();
+	}
+
+	[Fact]
 	public async Task UnsupportedActiveTreePersistsScopedFailureWithoutDailyDebit()
 	{
 		await using var fixture = await server.CreateIsolatedAsync();
