@@ -5,7 +5,7 @@ approve production integration, or change the application's taxonomy. No live
 authentication, inference, real receipt input or credential inspection was used
 to construct this harness.
 
-The dependency-free Node 24 scripts follow the existing
+The dependency-free Node 26 scripts follow the existing
 [normalization corpus](../normalization-evaluation/README.md) conventions:
 invented fixtures, explicit splits, labels excluded from payloads, no retries,
 and failure/unattempted denominators. They do not reuse the ChatGPT runtime:
