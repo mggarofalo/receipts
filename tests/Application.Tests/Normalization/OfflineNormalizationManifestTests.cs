@@ -37,6 +37,34 @@ public class OfflineNormalizationManifestTests
 		apply.Should().Throw<InvalidDataException>();
 	}
 
+	[Theory]
+	[InlineData(6)]
+	[InlineData(8)]
+	[InlineData(9)]
+	[InlineData(10)]
+	[InlineData(11)]
+	[InlineData(12)]
+	[InlineData(13)]
+	[InlineData(14)]
+	public void Read_SupportedSourceFormat_PreservesReviewedAuthority(int sourceVersion)
+	{
+		var manifest = Reviewed() with { SourceFormatVersion = sourceVersion };
+		var result = OfflineNormalizationManifestPolicy.Read(JsonSerializer.Serialize(manifest), true, Now);
+		result.SourceFormatVersion.Should().Be(sourceVersion);
+		result.Review!.Decisions.Should().Equal(manifest.Review!.Decisions);
+	}
+
+	[Theory]
+	[InlineData(5)]
+	[InlineData(7)]
+	[InlineData(15)]
+	public void Read_UnsupportedSourceFormat_Rejects(int sourceVersion)
+	{
+		var manifest = Reviewed() with { SourceFormatVersion = sourceVersion };
+		Action read = () => OfflineNormalizationManifestPolicy.Read(JsonSerializer.Serialize(manifest), true, Now);
+		read.Should().Throw<InvalidDataException>().WithMessage("Unsupported manifest or source format.");
+	}
+
 	[Fact]
 	public void Read_CompleteIndependentReview_RetainsIndividualRationaleAndActor()
 	{

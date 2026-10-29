@@ -93,7 +93,7 @@ public sealed partial class ClassificationTests
 			});
 			await db.SaveChangesAsync();
 		}
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var failure = new BackupImportService(new FailAfterPreferenceFactory(destination), NullLogger<BackupImportService>.Instance);

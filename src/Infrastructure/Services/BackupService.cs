@@ -14,9 +14,9 @@ public class BackupService(
 	ILogger<BackupService> logger) : IBackupService
 {
 	public Task<string> ExportToSqliteAsync(CancellationToken cancellationToken = default)
-			=> ExportToSqliteCoreAsync(false, cancellationToken);
+			=> ExportToSqliteCoreAsync(true, cancellationToken);
 
-	// Internal test/evaluation seam; public export remains at the supported format.
+	// Compatibility alias for internal callers of the v14 codec.
 	internal Task<string> ExportCandidateToSqliteAsync(CancellationToken cancellationToken = default)
 			=> ExportToSqliteCoreAsync(true, cancellationToken);
 

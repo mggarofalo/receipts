@@ -126,7 +126,7 @@ internal static partial class PortableTaxonomyArchive
 	internal static async Task<State> ReadAsync(SqliteConnection sqlite, CancellationToken ct, int version = PortableBackupFormat.CurrentVersion)
 				=> await ReadCoreAsync(sqlite, ct, version, candidate: false);
 
-	// v14 restore uses the candidate codec; public export remains v13.
+	// v14 capture and restore share this codec.
 	internal static Task<State> ReadCandidateAsync(SqliteConnection sqlite, CancellationToken ct)
 			=> ReadCoreAsync(sqlite, ct, PortableAutomaticHistoricalV14.Version, candidate: true);
 

@@ -211,7 +211,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 		FluentActions.Invoking(() => PortableAutomaticHistoricalV14.ReadHeader(node.ToJsonString())).Should().Throw<InvalidDataException>();
 		var itemWire = new PortableAutomaticHistoricalV14.ItemWire(item, item.ApprovedMappingRevisionId);
 		PortableAutomaticHistoricalV14.ReadItem(JsonSerializer.Serialize(itemWire)).Item.ItemId.Should().Be(item.ItemId);
-		PortableBackupFormat.CurrentVersion.Should().Be(13);
+		PortableBackupFormat.CurrentVersion.Should().Be(14);
 		PortableBackupFormat.LatestImportVersion.Should().Be(14);
 		PortableBackupFormat.RequiredTablesFor(14).Should().Contain([
 			"historical_operation_archive", "source_revision_archive", "review_disposition_archive", "review_preference_archive"]);

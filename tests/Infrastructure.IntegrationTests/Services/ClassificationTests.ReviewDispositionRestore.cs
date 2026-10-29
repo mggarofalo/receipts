@@ -29,7 +29,7 @@ public sealed partial class ClassificationTests
 		await service.SetDispositionAsync("other-actor", otherActor);
 		await service.SetDispositionAsync("unknown-actor", otherFirst);
 		await service.SetDispositionAsync("unknown-actor", otherReopened);
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
@@ -100,7 +100,7 @@ public sealed partial class ClassificationTests
 		var request = new HistoricalDispositionRequest(group, HistoricalGroupDisposition.Later, 0, Guid.NewGuid());
 		var sourceService = new HistoricalReclassificationService(new Factory(source), TimeProvider.System, Options.Create(new ClassificationOptions()));
 		await sourceService.SetDispositionAsync("actor", request);
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var restoreGate = new HistoricalRaceGate(true, writeGateOnly: true);

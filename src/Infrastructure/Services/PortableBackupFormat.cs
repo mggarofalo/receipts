@@ -2,8 +2,8 @@ namespace Infrastructure.Services;
 
 internal static class PortableBackupFormat
 {
-	// Export stays at v13 while public restore accepts the complete v14 archive.
-	public const int CurrentVersion = 13;
+	// Public capture and restore use the complete v14 archive.
+	public const int CurrentVersion = PortableAutomaticHistoricalV14.Version;
 	public const int LatestImportVersion = PortableAutomaticHistoricalV14.Version;
 
 	// v5+ is a complete portable snapshot. Legacy partial-file compatibility is handled

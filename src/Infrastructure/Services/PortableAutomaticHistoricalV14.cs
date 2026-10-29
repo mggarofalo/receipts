@@ -9,7 +9,7 @@ using Infrastructure.Entities.Taxonomy;
 
 namespace Infrastructure.Services;
 
-// v14 restore codec. Public export remains v13 while capture rollout is pending.
+// v14 automatic history codec.
 internal static class PortableAutomaticHistoricalV14
 {
 	internal const int Version = 14;

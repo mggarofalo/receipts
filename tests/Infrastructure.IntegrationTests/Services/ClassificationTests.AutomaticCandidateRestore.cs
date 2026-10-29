@@ -32,7 +32,7 @@ public sealed partial class ClassificationTests
 
 		var sourceHistory = await Service().HistoryAsync(captured.Item, null, 10);
 		var exporter = new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance);
-		string path = await exporter.ExportCandidateToSqliteAsync();
+		string path = await exporter.ExportToSqliteAsync();
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
@@ -84,7 +84,7 @@ public sealed partial class ClassificationTests
 		var progress = await original.ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		progress.State.Should().Be(HistoricalOperationState.Applying);
 		progress.Applied.Should().Be(1); progress.Pending.Should().Be(1);
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
@@ -113,7 +113,7 @@ public sealed partial class ClassificationTests
 		await using var destination = await fixture.CreateIsolatedAsync();
 		var subject = new ClassificationTests(destination);
 		var captured = await subject.CaptureExecutableAsync();
-		string path = await new BackupService(new Factory(destination), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(destination), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var failing = new BackupImportService(new FailAfterAbandonFactory(destination), NullLogger<BackupImportService>.Instance);
@@ -166,7 +166,7 @@ public sealed partial class ClassificationTests
 		var progress = await original.ApprovedExecutor().UndoChunkAsync(original.CurrentRestoreGeneration(), Actor, captured.Request.OperationId, undo, 1);
 		progress.State.Should().Be(HistoricalOperationState.Undoing);
 		Guid oldGeneration = restored.CurrentRestoreGeneration();
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var failing = new BackupImportService(new FailCandidateRestoreFactory(destination), NullLogger<BackupImportService>.Instance);
@@ -218,7 +218,7 @@ public sealed partial class ClassificationTests
 		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Frozen restore intent");
 		Guid generation = subject.CurrentRestoreGeneration();
 		(await subject.ApprovedExecutor().UndoChunkAsync(generation, Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
-		string path = await new BackupService(new Factory(isolated), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(isolated), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var restoreGate = new HistoricalRaceGate(true, writeGateOnly: true);
@@ -263,7 +263,7 @@ public sealed partial class ClassificationTests
 		var undo = new HistoricalUndoCommand(captured.Request.TaxonomyRevisionId, "Frozen restore intent");
 		Guid generation = original.CurrentRestoreGeneration();
 		(await original.ApprovedExecutor().UndoChunkAsync(generation, Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
@@ -299,7 +299,7 @@ public sealed partial class ClassificationTests
 		var original = new ClassificationTests(source);
 		var captured = await original.CaptureExecutableAsync();
 		(await original.ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Applied.Should().Be(1);
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
@@ -328,7 +328,7 @@ public sealed partial class ClassificationTests
 		var completed = await original.CaptureExecutableAsync();
 		await original.ApprovedExecutor().ApplyChunkAsync(completed.Request.ExpectedRestoreGeneration, Actor, completed.Request.OperationId, 1);
 		var pending = await new ClassificationTests(destination).CaptureExecutableAsync();
-		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportCandidateToSqliteAsync();
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
@@ -344,14 +344,14 @@ public sealed partial class ClassificationTests
 	}
 
 	[Fact]
-	public async Task CandidateExport_UsesOneSnapshotWhenAutomaticHistoryChangesDuringCapture()
+	public async Task PublicExport_UsesOneSnapshotWhenAutomaticHistoryChangesDuringCapture()
 	{
 		await using var source = await fixture.CreateIsolatedAsync();
 		var original = new ClassificationTests(source);
 		var captured = await original.CaptureExecutableAsync();
 		var gate = new CandidateSnapshotGate();
 		var exporter = new BackupService(new CandidateSnapshotFactory(source, gate), NullLogger<BackupService>.Instance);
-		Task<string> exporting = exporter.ExportCandidateToSqliteAsync();
+		Task<string> exporting = exporter.ExportToSqliteAsync();
 		string? path = null;
 		try
 		{
@@ -372,6 +372,43 @@ public sealed partial class ClassificationTests
 			if (path == null) { path = await exporting; }
 			File.Delete(path);
 		}
+	}
+
+	[Theory]
+	[InlineData(13)]
+	[InlineData(14)]
+	public async Task PublicExport_LargeManualHistoryRestoresInCurrentAndLegacyFormats(int version)
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		await using var destination = await fixture.CreateIsolatedAsync();
+		var original = new ClassificationTests(source);
+		var seed = await original.HistoricalSeedAsync();
+		var request = (await original.HistoricalRequest(seed.Item, seed.Revision, seed.Root)) with { Reason = new string('x', 128 * 1024 + 1) };
+		await original.Historical().SavePreviewAsync(request);
+		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+		try
+		{
+			await using (var sqlite = new SqliteConnection($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using var command = sqlite.CreateCommand();
+				command.CommandText = "UPDATE backup_metadata SET value=$version WHERE key='export_version'";
+				command.Parameters.AddWithValue("$version", version.ToString());
+				await command.ExecuteNonQueryAsync();
+				if (version == 13)
+				{
+					command.CommandText = "DROP TABLE review_disposition_archive; DROP TABLE review_preference_archive";
+					await command.ExecuteNonQueryAsync();
+				}
+			}
+			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
+			await using var input = File.OpenRead(path);
+			await importer.ImportFromSqliteAsync(input, default);
+			await using var db = destination.CreateDbContext();
+			(await db.HistoricalOperations.SingleAsync(x => x.Id == request.OperationId)).Reason.Should().Be(request.Reason);
+			(await db.HistoricalOperationItems.SingleAsync(x => x.OperationId == request.OperationId)).ItemId.Should().Be(seed.Item);
+		}
+		finally { File.Delete(path); }
 	}
 
 	private sealed class CandidateSnapshotGate : DbCommandInterceptor

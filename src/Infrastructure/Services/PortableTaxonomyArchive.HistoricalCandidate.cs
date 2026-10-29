@@ -8,15 +8,14 @@ internal static partial class PortableTaxonomyArchive
 {
 	private const int HistoricalCandidatePayloadLimit = 128 * 1024;
 
-	// Isolated candidate codec: callers must not expose this as public backup v14
-	// until restore fencing, atomicity and round-trip gates have been verified.
+	// v14 codec; manual payloads retain the unbounded text accepted by v13.
 	internal static async Task WriteHistoricalCandidateAsync(SqliteConnection sqlite, State state, CancellationToken ct)
 	{
 		ValidateHistoricalCandidate(state);
 		var headers = state.HistoricalOperations.ToDictionary(h => h.Id);
 		async Task Write(string kind, string id, string payload)
 		{
-			Require(payload.Length <= HistoricalCandidatePayloadLimit, "Historical candidate record exceeds its bounded payload size.");
+			Require(!kind.StartsWith("automatic_", StringComparison.Ordinal) || payload.Length <= HistoricalCandidatePayloadLimit, "Historical candidate record exceeds its bounded payload size.");
 			await using var command = sqlite.CreateCommand();
 			command.CommandText = "INSERT INTO historical_operation_archive(kind,id,payload) VALUES($kind,$id,$payload)";
 			command.Parameters.AddWithValue("$kind", kind);
@@ -99,7 +98,7 @@ internal static partial class PortableTaxonomyArchive
 		command.CommandText = """
                         SELECT CASE WHEN length(CAST(kind AS BLOB)) <= $bytes THEN kind END,
                                CASE WHEN length(CAST(id AS BLOB)) <= $bytes THEN id END,
-                               CASE WHEN length(CAST(payload AS BLOB)) <= $bytes THEN payload END
+                               CASE WHEN kind IN ('operation','item') OR length(CAST(payload AS BLOB)) <= $bytes THEN payload END
                         FROM historical_operation_archive ORDER BY kind,id
                         """;
 		command.Parameters.AddWithValue("$bytes", HistoricalCandidatePayloadLimit * 3);
@@ -110,7 +109,7 @@ internal static partial class PortableTaxonomyArchive
 					"Historical candidate record exceeds its bounded payload size or has null fields.");
 			string kind = reader.GetString(0), key = reader.GetString(1), payload = reader.GetString(2);
 			Require(kind.Length <= HistoricalCandidatePayloadLimit && key.Length <= HistoricalCandidatePayloadLimit
-					&& payload.Length <= HistoricalCandidatePayloadLimit, "Historical candidate record exceeds its bounded payload size.");
+					&& !payload.Contains('\0') && (!kind.StartsWith("automatic_", StringComparison.Ordinal) || payload.Length <= HistoricalCandidatePayloadLimit), "Historical candidate record exceeds its bounded payload size.");
 			if (kind is "operation" or "automatic_operation")
 			{
 				var header = kind == "operation" ? DeserializeStrict<HistoricalOperationEntity>(payload)
