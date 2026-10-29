@@ -44,7 +44,7 @@ public sealed partial class ClassificationTests
 		Guid[] ids = [request.OperationId, Guid.NewGuid(), Guid.NewGuid()];
 		await using var db = fixture.CreateDbContext();
 		string[] migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		await db.GetService<IMigrator>().MigrateAsync("20261028232650_AddHistoricalApprovedMappingProvenance");
+		await db.GetService<IMigrator>().MigrateAsync("20261029014910_AddHistoricalApprovedMappingProvenance");
 		for (int i = 0; i < ids.Length; i++)
 		{
 			string state = new[] { "Preview", "Completed", "Undone" }[i];
@@ -80,7 +80,7 @@ public sealed partial class ClassificationTests
 		await Historical().SavePreviewAsync(request);
 		await using var db = fixture.CreateDbContext();
 		string[] migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		await db.GetService<IMigrator>().MigrateAsync("20261028105726_AddOrganizationDiscovery");
+		await db.GetService<IMigrator>().MigrateAsync("20261029014900_AddOrganizationDiscovery");
 		await db.GetService<IMigrator>().MigrateAsync(migrations[^1]);
 		var header = await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == request.OperationId);
 		var item = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == request.OperationId);
@@ -203,7 +203,7 @@ public sealed partial class ClassificationTests
 		await using var migrator = fixture.CreateDbContext();
 		await migrator.Database.OpenConnectionAsync();
 		int pid = ((NpgsqlConnection)migrator.Database.GetDbConnection()).ProcessID;
-		Task downgrade = migrator.GetService<IMigrator>().MigrateAsync("20261028232650_AddHistoricalApprovedMappingProvenance");
+		Task downgrade = migrator.GetService<IMigrator>().MigrateAsync("20261029014910_AddHistoricalApprovedMappingProvenance");
 		try
 		{
 			await using var observer = new NpgsqlConnection(fixture.ConnectionString);
@@ -222,7 +222,7 @@ public sealed partial class ClassificationTests
 		var exception = await Assert.ThrowsAsync<PostgresException>(() => downgrade);
 		exception.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
 		exception.MessageText.Should().Contain("Historical capture mapping evidence is retained");
-		(await migrator.Database.GetAppliedMigrationsAsync()).Should().Contain("20261029002117_AddHistoricalCaptureMappingIdentity");
+		(await migrator.Database.GetAppliedMigrationsAsync()).Should().Contain("20261029014920_AddHistoricalCaptureMappingIdentity");
 	}
 
 }

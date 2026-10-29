@@ -195,13 +195,13 @@ public sealed partial class OrganizationDiscoveryTests(PostgresFixture server) :
 	[Fact]
 	public async Task MigrationDownAndUpRemoveAndReinstallAllInboxTriggersWithoutChangingReceiptFacts()
 	{
-		var fixture = await server.CreateIsolatedAsync("20261028105726_AddOrganizationDiscovery");
+		var fixture = await server.CreateIsolatedAsync("20261029014900_AddOrganizationDiscovery");
 		try
 		{
 			await using var db = fixture.CreateDbContext();
 			db.Database.HasPendingModelChanges().Should().BeFalse();
 			string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-			applied[^1].Should().Be("20261028105726_AddOrganizationDiscovery");
+			applied[^1].Should().Be("20261029014900_AddOrganizationDiscovery");
 			var migrator = db.GetService<IMigrator>();
 			await migrator.MigrateAsync(applied[^2]);
 			(await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_indexes WHERE indexname IN ('IX_Organization_ItemRawSource','IX_Organization_ItemNormalizedSource')").SingleAsync()).Should().Be(0);

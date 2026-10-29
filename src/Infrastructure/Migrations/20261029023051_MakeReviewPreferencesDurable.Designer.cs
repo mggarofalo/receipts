@@ -295,6 +295,15 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("DispatchToken")
+                        .HasColumnType("uuid");
+
+                    b.Property<long?>("FirstStageInputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("FirstStageOutputTokens")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("ItemCodeKey")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -353,6 +362,15 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("ResultJson")
                         .HasColumnType("text");
+
+                    b.Property<DateOnly?>("SecondDebitUtcDay")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("SecondSendStartedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<DateTimeOffset?>("SecondStageDecidedAt")
+                        .HasColumnType("timestamptz");
 
                     b.Property<Guid>("SettingsRevision")
                         .HasColumnType("uuid");
