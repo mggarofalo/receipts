@@ -186,8 +186,8 @@ public sealed class PiNormalizationRunner(IOptions<PiNormalizationRunnerOptions>
 	}
 
 	private static bool IsLockContention(IOException exception)
-		// Windows sharing/lock violations; Unix FileStream advisory lock reports EAGAIN.
-		=> (exception.HResult & 0xffff) is 32 or 33 || (!OperatingSystem.IsWindows() && (exception.HResult & 0xffff) == 11);
+		// Windows sharing/lock violations; Unix FileStream advisory lock reports EAGAIN/EWOULDBLOCK (11 on Linux, 35 on macOS).
+		=> (exception.HResult & 0xffff) is 32 or 33 || (!OperatingSystem.IsWindows() && (exception.HResult & 0xffff) is 11 or 35);
 
 	private static ProcessStartInfo CreateStartInfo(PiNormalizationRunnerOptions settings, string command, string home, string work)
 	{

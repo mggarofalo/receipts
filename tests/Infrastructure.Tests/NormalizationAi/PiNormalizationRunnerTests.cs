@@ -23,7 +23,7 @@ public sealed class PiNormalizationRunnerTests : IDisposable
                 const request = JSON.parse(input);
                 console.log(JSON.stringify({type:'result',text:JSON.stringify({
                   request, secret: process.env.RECEIPTS_RUNNER_TEST_SECRET ?? null,
-                  cwd:process.cwd(),home:process.env.HOME,authHome:process.env.RECEIPTS_CHATGPT_HOME
+                  cwd:process.cwd(),home:process.getBuiltinModule('node:fs').realpathSync(process.env.HOME),authHome:process.env.RECEIPTS_CHATGPT_HOME
                 }),usage:{input:4,output:2,cacheRead:0,cacheWrite:0}}));
                 """);
 			var result = await runner.InferAsync(Request(), CancellationToken.None);
