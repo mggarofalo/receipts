@@ -68,3 +68,37 @@ this is not a live client, runtime attestation, or evidence of model quality.
 
 The focused synthetic test `python -m unittest test_paired_cohort` builds the C#
 runner from the local package cache and uses invented inputs and answers.
+
+## Recorded batched paired cohorts
+
+`BatchedPairedCohort` in `batched_paired_cohort.py` is a separate recorded-only
+scheduler. It uses the actual C# `prepare-batched`, `validate-batched`, and
+`replay-batched` commands. Construct it with an `OfflineCoordinator`, dotnet
+host, locally built paired runner DLL, ordered explicit `{'id', 'input'}`
+cases, and explicit `aggregate_call_limit` and `prior_calls` integers. The
+manifest binds those call limits and the complete ledger policy. It binds the input, initial plans and local build identities in a private
+manifest. Preserve that manifest, response evidence, vector files and ledger
+together; this detects local changes, not build provenance, runtime attestation,
+rollback, concurrent external modification or hardware failure.
+
+Responses are recorded bytes keyed per case by `(arm, phase, index)`; the
+candidate phases are `shortlist`, `verification`, and `coverage`. After all
+shortlist responses, the actual C# planner derives the complete ordered vector.
+The scheduler flushes a case-specific vector before any dynamic reservation,
+checks every payload and the full remaining call and monetary allowance, and
+validates each retained prefix. It validates complete aggregation before marking
+the final dynamic response successful. On restart it regenerates and compares
+the complete vector, reparses retained prefixes, and never resends a reserved
+unknown attempt. Other cases can be run independently. A process-wide lock
+serializes these batched cohort executions; callers must prevent other code
+from using the same ledger concurrently. The ledger's `max_calls` must not exceed `aggregate_call_limit - prior_calls`;
+its monetary carry must be at least the full fixed reservation for each prior
+call, including unknown outcomes. The caller must conservatively include any
+other earlier spending in the carry; neither figure is inferred from another
+ledger. Every existing attempt remains charged.
+
+The C# planner retains its 30-request and 128-path bounds and may abstain or
+reject a vector that does not fit; no alternatives are dropped. Byte limits do
+not establish token fit. This scheduler has no live transport or CLI and does
+not establish live readiness. Focused tests use invented 309-category inputs
+and recorded synthetic replies only.
