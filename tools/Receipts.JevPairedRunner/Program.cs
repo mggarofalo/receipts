@@ -11,7 +11,7 @@ namespace Receipts.JevPairedRunner
 	{
 		public static async Task<int> RunAsync(string[] args)
 		{
-            if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate" or "baseline-result" or "prepare-batched" or "replay-batched" or "validate-batched" or "prepare-purchase-experiment" or "validate-purchase-experiment" or "prepare-selected-path" or "validate-selected-path"))
+			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate" or "baseline-result" or "prepare-batched" or "replay-batched" or "validate-batched" or "prepare-purchase-experiment" or "validate-purchase-experiment" or "prepare-selected-path" or "validate-selected-path"))
 			{
 				Console.Error.WriteLine("Usage: <offline-command> <absolute-input.json> <absolute-replies.json> <absolute-output.json>");
 				return 2;
@@ -38,17 +38,17 @@ namespace Receipts.JevPairedRunner
 					experimentOutput.Flush(flushToDisk: true);
 					return 0;
 				}
-                if (args[0] is "prepare-selected-path" or "validate-selected-path")
-                {
-                    PairedInput selectedInput = ReadExperiment<PairedInput>(args[1]) ?? throw new JsonException();
-                    SelectedPathReply selectedReply = ReadExperiment<SelectedPathReply>(args[2]) ?? throw new JsonException();
-                    object selectedResult = await SelectedPathExchange.ExecuteAsync(args[0], selectedInput, selectedReply);
-                    using FileStream selectedOutput = new(args[3], FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                    await JsonSerializer.SerializeAsync(selectedOutput, selectedResult, CandidateParity.JsonOptions);
-                    selectedOutput.Flush(flushToDisk: true);
-                    return 0;
-                }
-                PairedInput input = Read<PairedInput>(args[1]);
+				if (args[0] is "prepare-selected-path" or "validate-selected-path")
+				{
+					PairedInput selectedInput = ReadExperiment<PairedInput>(args[1]) ?? throw new JsonException();
+					SelectedPathReply selectedReply = ReadExperiment<SelectedPathReply>(args[2]) ?? throw new JsonException();
+					object selectedResult = await SelectedPathExchange.ExecuteAsync(args[0], selectedInput, selectedReply);
+					using FileStream selectedOutput = new(args[3], FileMode.CreateNew, FileAccess.Write, FileShare.None);
+					await JsonSerializer.SerializeAsync(selectedOutput, selectedResult, CandidateParity.JsonOptions);
+					selectedOutput.Flush(flushToDisk: true);
+					return 0;
+				}
+				PairedInput input = Read<PairedInput>(args[1]);
 				if (args[0].EndsWith("-batched", StringComparison.Ordinal))
 				{
 					BatchedReplayReplies batchedReplies = Read<BatchedReplayReplies>(args[2]);
@@ -162,7 +162,7 @@ namespace Receipts.JevPairedRunner
 			return JsonSerializer.Deserialize<T>(bytes, CandidateParity.JsonOptions);
 		}
 
-		private static void RejectDuplicateMembers(JsonElement element)
+		internal static void RejectDuplicateMembers(JsonElement element)
 		{
 			if (element.ValueKind == JsonValueKind.Object)
 			{
