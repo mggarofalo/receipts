@@ -2767,6 +2767,9 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text")
                         .UseCollation("C");
 
+                    b.Property<Guid?>("ApprovedMappingRevisionId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("CapturedAt")
                         .HasColumnType("timestamptz");
 
@@ -2802,6 +2805,8 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ApprovedMappingRevisionId");
 
                     b.HasIndex("TaxonomyRevisionId");
 
@@ -3625,6 +3630,11 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", b =>
                 {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.CategoryMappingRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApprovedMappingRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
                         .WithMany()
                         .HasForeignKey("TaxonomyRevisionId")

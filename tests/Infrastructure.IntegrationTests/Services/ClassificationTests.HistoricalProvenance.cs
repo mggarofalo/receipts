@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Application.Normalization;
 using Application.Taxonomy;
@@ -19,6 +20,57 @@ public sealed partial class ClassificationTests
 	{
 		await using var isolated = await fixture.CreateIsolatedAsync();
 		await new ClassificationTests(isolated).HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidenceCore();
+	}
+
+	[Fact]
+	public async Task MigratedLegacyAutomaticCapturesRejectReplayAndUndoInEveryState()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).MigratedLegacyAutomaticCapturesCore();
+	}
+
+	private async Task MigratedLegacyAutomaticCapturesCore()
+	{
+		var seed = await HistoricalSeedAsync();
+		var manual = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
+		await Historical().SavePreviewAsync(manual);
+		var group = manual.Groups[0].Group;
+		var source = new NormalizationSourceKey(group.Store, group.RawDescription, group.ItemCode);
+		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
+			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
+		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, []);
+		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
+		{ request.Actor, request.TaxonomyRevisionId, request.MappingRevisionId, request.Group, ExcludedItemIds = Array.Empty<Guid>() })));
+		Guid[] ids = [request.OperationId, Guid.NewGuid(), Guid.NewGuid()];
+		await using var db = fixture.CreateDbContext();
+		string[] migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+		await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+		for (int i = 0; i < ids.Length; i++)
+		{
+			string state = new[] { "Preview", "Completed", "Undone" }[i];
+			Guid? undoRevision = state == "Undone" ? seed.Revision : null;
+			string? undoReason = state == "Undone" ? "Undo" : null;
+			await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO taxonomy."HistoricalOperations"
+                    ("Id", "Kind", "Actor", "RequestHash", "SelectionJson", "TaxonomyRevisionId", "CapturedAt", "Reason", "State", "UndoTaxonomyRevisionId", "UndoReason")
+                SELECT {ids[i]}, 'ApprovedMappingV1', "Actor", {hash}, "SelectionJson", "TaxonomyRevisionId", "CapturedAt", "Reason", {state}, {undoRevision}, {undoReason}
+                FROM taxonomy."HistoricalOperations" WHERE "Id" = {manual.OperationId}
+                """);
+		}
+		await db.GetService<IMigrator>().MigrateAsync(migrations[^1]);
+		var capture = new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System);
+		(await Assert.ThrowsAsync<TaxonomyException>(() => capture.CaptureAsync(request))).Status.Should().Be(409);
+		foreach (Guid id in ids)
+		{
+			(await Assert.ThrowsAsync<TaxonomyException>(() => ApprovedExecutor().UndoChunkAsync(
+				Actor, id, new(seed.Revision, "Undo"), 1))).Status.Should().Be(409);
+		}
+		var stored = await db.HistoricalOperations.AsNoTracking().Where(x => ids.Contains(x.Id)).ToListAsync();
+		stored.Should().OnlyContain(x => x.ApprovedMappingRevisionId == null);
+		stored.Single(x => x.Id == ids[0]).State.Should().Be(HistoricalOperationState.Preview);
+		stored.Single(x => x.Id == ids[1]).State.Should().Be(HistoricalOperationState.Completed);
+		stored.Single(x => x.Id == ids[2]).State.Should().Be(HistoricalOperationState.Undone);
+		(await Historical().ApplyChunkAsync(Actor, manual.OperationId, 1)).Applied.Should().Be(1);
 	}
 
 	private async Task HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidenceCore()
@@ -59,6 +111,7 @@ public sealed partial class ClassificationTests
 			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approved"));
 		manual.Id = Guid.NewGuid();
 		manual.Kind = HistoricalOperationKind.ApprovedMappingV1;
+		manual.ApprovedMappingRevisionId = mapping.Id;
 		db.HistoricalOperations.Add(manual);
 		await db.SaveChangesAsync();
 		item.OperationId = manual.Id;
@@ -109,6 +162,9 @@ public sealed partial class ClassificationTests
 				shapes["item"].Should().BeEquivalentTo(["OperationId", "ItemId", "ReceiptId", "Store", "RawDescription", "ItemCode", "ItemRevision", "ReceiptRevision", "ExpectedAssignmentId", "PreviousCategoryId", "TargetCategoryId", "ApplyOperationId", "UndoOperationId", "State", "AppliedAssignmentId", "Reason", "UndoState", "UndoAssignmentId", "UndoReason"]);
 			}
 			await AcceptanceImport(path);
+			await AcceptanceSql(path, $"UPDATE historical_operation_archive SET payload = json_set(payload, '$.ApprovedMappingRevisionId', '{Guid.NewGuid()}') WHERE kind = 'operation'");
+			await Assert.ThrowsAsync<InvalidOperationException>(() => AcceptanceImport(path));
+			await AcceptanceSql(path, "UPDATE historical_operation_archive SET payload = json_remove(payload, '$.ApprovedMappingRevisionId') WHERE kind = 'operation'");
 			await AcceptanceSql(path, "UPDATE historical_operation_archive SET payload = json_set(payload, '$.Kind', 1) WHERE kind = 'operation'");
 			await Assert.ThrowsAsync<InvalidOperationException>(() => AcceptanceImport(path));
 		}
@@ -126,11 +182,16 @@ public sealed partial class ClassificationTests
 		var seed = await HistoricalSeedAsync();
 		var request = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
 		await Historical().SavePreviewAsync(request);
+		var group = request.Groups[0].Group;
+		var source = new NormalizationSourceKey(group.Store, group.RawDescription, group.ItemCode);
+		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
+			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
 		await using var writer = fixture.CreateDbContext();
 		await using var transaction = await writer.Database.BeginTransactionAsync();
 		var row = await writer.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == request.OperationId);
 		row.Id = Guid.NewGuid();
 		row.Kind = HistoricalOperationKind.ApprovedMappingV1;
+		row.ApprovedMappingRevisionId = mapping.Id;
 		writer.HistoricalOperations.Add(row);
 		await writer.SaveChangesAsync();
 		await using var migrator = fixture.CreateDbContext();
@@ -155,7 +216,7 @@ public sealed partial class ClassificationTests
 		finally { await transaction.CommitAsync(); }
 		var exception = await Assert.ThrowsAsync<PostgresException>(() => downgrade);
 		exception.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
-		exception.MessageText.Should().Contain("Automatic historical provenance is retained");
+		exception.MessageText.Should().Contain("Historical capture mapping evidence is retained");
 		(await migrator.Database.GetAppliedMigrationsAsync()).Should().Contain(applied[^1]);
 	}
 

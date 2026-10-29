@@ -55,6 +55,15 @@ public sealed partial class PortableTaxonomyArchiveTests
 	}
 
 	[Fact]
+	public void Historical_RejectsAutomaticProvenanceOnManualHeader()
+	{
+		var state = HistoricalState();
+		state.HistoricalOperations[0].ApprovedMappingRevisionId = Guid.NewGuid();
+		FluentActions.Invoking(() => PortableTaxonomyArchive.Validate(state))
+			.Should().Throw<InvalidDataException>().WithMessage("*headers cannot carry automatic provenance*");
+	}
+
+	[Fact]
 	public void Historical_DestinationRejectsChangedProgressAndPreservesOlderFormatOmission()
 	{
 		var existing = HistoricalState();

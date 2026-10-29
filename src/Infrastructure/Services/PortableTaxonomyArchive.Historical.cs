@@ -112,6 +112,7 @@ internal static partial class PortableTaxonomyArchive
 		foreach (var h in s.HistoricalOperations)
 		{
 			Require(h.Kind == HistoricalOperationKind.ManualV1, "Automatic historical operations cannot be restored yet.");
+			Require(h.ApprovedMappingRevisionId == null, "Manual historical headers cannot carry automatic provenance.");
 			Require(h.Id != Guid.Empty && Text(h.Actor) && Text(h.Reason) && Hash(h.RequestHash)
 				&& Utc(h.CapturedAt) && Enum.IsDefined(h.State)
 				&& s.Revisions.Any(r => r.Id == h.TaxonomyRevisionId && r.RecordedAt <= h.CapturedAt), "Invalid historical header.");

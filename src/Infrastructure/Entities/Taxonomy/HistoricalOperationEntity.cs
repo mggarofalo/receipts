@@ -8,6 +8,7 @@ public sealed class HistoricalOperationEntity
 {
 	public Guid Id { get; set; }
 	public HistoricalOperationKind Kind { get; set; } = HistoricalOperationKind.ManualV1;
+	public Guid? ApprovedMappingRevisionId { get; set; }
 	public string Actor { get; set; } = string.Empty;
 	public string RequestHash { get; set; } = string.Empty;
 	public string SelectionJson { get; set; } = string.Empty;

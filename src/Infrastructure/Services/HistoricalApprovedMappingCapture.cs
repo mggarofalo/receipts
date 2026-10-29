@@ -36,7 +36,7 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
 		var existing = await db.HistoricalOperations.SingleOrDefaultAsync(x => x.Id == request.OperationId, ct);
 		if (existing != null)
 		{
-			if (existing.Kind != HistoricalOperationKind.ApprovedMappingV1 || existing.Actor != request.Actor || existing.RequestHash != hash)
+			if (existing.Kind != HistoricalOperationKind.ApprovedMappingV1 || existing.ApprovedMappingRevisionId != request.MappingRevisionId || existing.Actor != request.Actor || existing.RequestHash != hash)
 			{ throw new TaxonomyException(409, "Operation ID was already used with a different request."); }
 			return await db.HistoricalOperationItems.CountAsync(x => x.OperationId == existing.Id, ct);
 		}
@@ -61,6 +61,7 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
 		{
 			Id = request.OperationId,
 			Kind = HistoricalOperationKind.ApprovedMappingV1,
+			ApprovedMappingRevisionId = request.MappingRevisionId,
 			Actor = request.Actor,
 			TaxonomyRevisionId = head.RevisionId,
 			Reason = "Approved exact-source mapping capture.",

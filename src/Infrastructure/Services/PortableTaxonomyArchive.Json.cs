@@ -39,7 +39,7 @@ internal static partial class PortableTaxonomyArchive
 		{
 			bool optional = type == typeof(PurchaseClassificationEntity)
 				&& name is "LegacyCategory" or "LegacySubcategory" or "LegacyResolution"
-					|| type == typeof(HistoricalOperationEntity) && name == "Kind"
+					|| type == typeof(HistoricalOperationEntity) && name is "Kind" or "ApprovedMappingRevisionId"
 					|| type == typeof(HistoricalOperationItemEntity) && name == "ApprovedMappingRevisionId";
 			Require(optional || seen.Contains(name), "Missing JSON field: " + name);
 		}

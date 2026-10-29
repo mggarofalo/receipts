@@ -30,7 +30,7 @@ internal sealed class HistoricalApprovedMappingExecutor(
 			$"SELECT * FROM taxonomy.\"HistoricalOperations\" WHERE \"Id\" = {id} FOR UPDATE")
 			.SingleOrDefaultAsync(x => x.Actor == actor, ct)
 			?? throw new TaxonomyException(404, "Historical operation does not exist.");
-		if (operation.Kind != HistoricalOperationKind.ApprovedMappingV1)
+		if (operation.Kind != HistoricalOperationKind.ApprovedMappingV1 || operation.ApprovedMappingRevisionId is null)
 		{ throw new TaxonomyException(409, "Operation is not an approved mapping capture."); }
 		if (operation.State is HistoricalOperationState.Completed or HistoricalOperationState.Cancelled or HistoricalOperationState.Undoing or HistoricalOperationState.Undone)
 		{ return await ProgressAsync(db, operation, ct); }
@@ -130,7 +130,7 @@ internal sealed class HistoricalApprovedMappingExecutor(
 	private static bool MatchesCapture(HistoricalOperationEntity operation, HistoricalOperationItemEntity row, CaptureScope? scope)
 	{
 		if (scope?.Group == null || scope.ExcludedItemIds == null || row.ApprovedMappingRevisionId is not Guid mapping ||
-			mapping == Guid.Empty || row.TargetCategoryId != scope.TargetCategoryId || scope.ExcludedItemIds.Contains(row.ItemId) ||
+			mapping == Guid.Empty || mapping != operation.ApprovedMappingRevisionId || row.TargetCategoryId != scope.TargetCategoryId || scope.ExcludedItemIds.Contains(row.ItemId) ||
 			scope.Group != new HistoricalGroupKey(row.Store, row.RawDescription, row.ItemCode))
 		{ return false; }
 		// Recreate the exact capture request digest, binding mapping, taxonomy, actor, source and exclusions.

@@ -255,6 +255,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
 		if (operation.Kind != kind)
 		{ throw new TaxonomyException(409, "Historical operation kind does not match the execution path."); }
+		if (kind == HistoricalOperationKind.ApprovedMappingV1 && operation.ApprovedMappingRevisionId is null)
+		{ throw new TaxonomyException(409, "Automatic historical capture lacks mapping identity."); }
 		bool reverting = undo != null;
 		if (reverting && operation.UndoTaxonomyRevisionId != null &&
 			(operation.UndoTaxonomyRevisionId != undo!.TaxonomyRevisionId || operation.UndoReason != undo.Reason))

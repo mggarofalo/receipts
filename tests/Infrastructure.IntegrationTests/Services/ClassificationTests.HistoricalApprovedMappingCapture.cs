@@ -40,6 +40,12 @@ public sealed partial class ClassificationTests
 		var capture = new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System);
 		var request = new ApprovedMappingCaptureRequest(Guid.NewGuid(), Actor, seed.Revision, mapping.Id, group, [items[1].Id]);
 		(await capture.CaptureAsync(request)).Should().Be(1);
+		var emptyRequest = request with { OperationId = Guid.NewGuid(), ExcludedItemIds = [items[0].Id, items[1].Id] };
+		(await capture.CaptureAsync(emptyRequest)).Should().Be(0);
+		var emptyHeader = await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == emptyRequest.OperationId);
+		emptyHeader.ApprovedMappingRevisionId.Should().Be(mapping.Id);
+		(await db.HistoricalOperationItems.AnyAsync(x => x.OperationId == emptyRequest.OperationId)).Should().BeFalse();
+		await RejectHistoricalSql(db, "UPDATE taxonomy.\"HistoricalOperations\" SET \"ApprovedMappingRevisionId\" = NULL WHERE \"Id\" = {0}", emptyRequest.OperationId, "capture mapping is immutable");
 		var deferred = await Historical().SetDispositionAsync(Actor,
 			new(group, HistoricalGroupDisposition.Later, 0, Guid.NewGuid()));
 		// A later review decision must not change the result of an already committed capture.

@@ -16,6 +16,7 @@ public sealed class HistoricalOperationConfiguration : IEntityTypeConfiguration<
 		b.Property(x => x.Kind).HasConversion<string>().HasDefaultValue(HistoricalOperationKind.ManualV1);
 		b.Property(x => x.Actor).UseCollation("C");
 		b.Property(x => x.SelectionJson).HasColumnType("jsonb");
+		b.HasOne<CategoryMappingRevisionEntity>().WithMany().HasForeignKey(x => x.ApprovedMappingRevisionId).OnDelete(DeleteBehavior.Restrict);
 		b.HasOne<TaxonomyRevisionEntity>().WithMany().HasForeignKey(x => x.TaxonomyRevisionId).OnDelete(DeleteBehavior.Restrict);
 		b.HasOne<TaxonomyRevisionEntity>().WithMany().HasForeignKey(x => x.UndoTaxonomyRevisionId).OnDelete(DeleteBehavior.Restrict);
 	}
