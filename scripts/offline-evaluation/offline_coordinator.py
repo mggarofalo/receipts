@@ -40,13 +40,15 @@ class OfflineCoordinator:
         if not self.root.is_dir() or any((p / '.git').exists() for p in (self.root, *self.root.parents)):
             raise LedgerError('private output directory outside checkout required')
 
-    def execute(self, stage_id, payload, transport, parse):
+    def execute(self, stage_id, payload, transport, parse, *, pre_reserve=None):
         with owner():
-            return self._execute(stage_id, payload, transport, parse)
+            return self._execute(stage_id, payload, transport, parse, pre_reserve)
 
-    def _execute(self, stage_id, payload, transport, parse):
+    def _execute(self, stage_id, payload, transport, parse, pre_reserve=None):
         if not _valid_stage_id(stage_id) or type(payload) is not bytes or not callable(parse):
             raise LedgerError('valid stage, request bytes and parser required')
+        if pre_reserve is not None and not callable(pre_reserve):
+            raise LedgerError('invalid pre-reservation guard')
         history = self.ledger.stage_history()
         if any(row['kind'] == 'stage' or (row['kind'] == 'attempt' and 'stage_id' not in row) for row in history):
             raise LedgerError('legacy stage events or unnamed reservations cannot be coordinated')
@@ -62,6 +64,8 @@ class OfflineCoordinator:
                 raise UnresolvedStage('an earlier stage in this case is unresolved')
             if type(transport) not in (RecordedTransport, CohortLiveTransport):
                 raise LedgerError('supported transport required for a new stage')
+            if pre_reserve is not None:
+                pre_reserve()
             attempt_id = self.ledger.reserve_attempt(payload, stage_id=stage_id)
             attempt = {'id': attempt_id, 'stage_id': stage_id, 'payload_sha256': _hash(payload), 'payload_bytes': len(payload)}
             response = transport.exchange(payload)

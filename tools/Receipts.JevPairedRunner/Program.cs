@@ -11,7 +11,7 @@ namespace Receipts.JevPairedRunner
 	{
 		public static async Task<int> RunAsync(string[] args)
 		{
-			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate" or "prepare-batched" or "replay-batched" or "validate-batched" or "prepare-purchase-experiment" or "validate-purchase-experiment"))
+			if (args.Length != 4 || args[0] is not ("prepare" or "replay" or "validate" or "baseline-result" or "prepare-batched" or "replay-batched" or "validate-batched" or "prepare-purchase-experiment" or "validate-purchase-experiment"))
 			{
 				Console.Error.WriteLine("Usage: <offline-command> <absolute-input.json> <absolute-replies.json> <absolute-output.json>");
 				return 2;
@@ -77,7 +77,20 @@ namespace Receipts.JevPairedRunner
 				ReplayReplies replies = Read<ReplayReplies>(args[2]);
 				PairedReplayPlan plan = PairedReplay.Prepare(input);
 				object result;
-				if (args[0] == "validate")
+				if (args[0] == "baseline-result")
+				{
+					if (replies.Shortlist is null || replies.Shortlist.Count != 0 || replies.Verification is not null || string.IsNullOrEmpty(replies.Production))
+					{
+						throw new ArgumentException();
+					}
+					var baseline = await plan.ParseProductionAsync(replies.Production);
+					if (baseline.Failure is not null)
+					{
+						throw new ArgumentException();
+					}
+					result = new { production = baseline, maximumNetworkCalls = 0 };
+				}
+				else if (args[0] == "validate")
 				{
 					await plan.ValidateAsync(replies);
 					result = new { validated = true, maximumNetworkCalls = 0 };
