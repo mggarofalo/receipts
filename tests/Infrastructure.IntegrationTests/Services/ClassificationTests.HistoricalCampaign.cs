@@ -3,6 +3,7 @@ using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
+using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
 using SampleData.Entities;
 
@@ -10,6 +11,23 @@ namespace Infrastructure.IntegrationTests.Services;
 
 public sealed partial class ClassificationTests
 {
+	[Fact]
+	public async Task HistoricalDispositionWaitsForRestoreWriteGate()
+	{
+		var group = new HistoricalGroupKey("gate test", Guid.NewGuid().ToString(), null);
+		await using var db = fixture.CreateDbContext();
+		await using var transaction = await db.Database.BeginTransactionAsync();
+		await NormalizationWriteGuard.AcquireWriteGateAsync(db, default);
+		using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+		Func<Task> write = () => Historical().SetDispositionAsync(Actor,
+				new(group, HistoricalGroupDisposition.Later, 0, Guid.NewGuid()), cancellation.Token);
+		await write.Should().ThrowAsync<OperationCanceledException>();
+		await transaction.CommitAsync();
+		var saved = await Historical().SetDispositionAsync(Actor,
+				new(group, HistoricalGroupDisposition.Later, 0, Guid.NewGuid()));
+		saved.Version.Should().Be(1);
+	}
+
 	[Fact]
 	public async Task HistoricalDispositionOlderReplayKeepsOriginalResultAndLatestState()
 	{

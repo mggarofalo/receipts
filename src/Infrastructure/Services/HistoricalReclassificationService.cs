@@ -41,6 +41,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		string hash = DispositionSourceHash(request.Group);
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
+		// Restore and historical execution take the same gate before inspecting review state.
+		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		// Operation ID precedes source in the lock order, including when the ID is reused across sources.
 		await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"historical-disposition-operation:" + request.OperationId.ToString("D")}, 0))", ct);
 		HistoricalDispositionOperationEntity? previous = await db.HistoricalDispositionOperations.AsNoTracking()
@@ -58,7 +60,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 					previous.Disposition, previous.ResultVersion, previous.OperationId,
 					previous.ResultUpdatedAt);
 		}
-		// Serialize first insert and updates for this actor/source without taking the classification write gate.
+		// Serialize first insert and updates for this actor/source after taking the write gate.
 		await LockDispositionSourceAsync(db, actor, hash, ct);
 		HistoricalGroupDispositionEntity? row = await db.HistoricalGroupDispositions
 				.SingleOrDefaultAsync(x => x.Actor == actor && x.SourceHash == hash, ct);
