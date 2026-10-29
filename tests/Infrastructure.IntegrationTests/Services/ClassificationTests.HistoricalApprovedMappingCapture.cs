@@ -1,8 +1,10 @@
+using System.Text.Json;
 using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Taxonomy;
 using Infrastructure.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SampleData.Entities;
 
@@ -72,7 +74,29 @@ public sealed partial class ClassificationTests
 		(await Assert.ThrowsAsync<TaxonomyException>(() => Historical().ReadItemsAsync(Actor, request.OperationId, 0, 10))).Status.Should().Be(404);
 		(await Assert.ThrowsAsync<TaxonomyException>(() => Historical().CancelAsync(Actor, request.OperationId))).Status.Should().Be(409);
 		(await Assert.ThrowsAsync<TaxonomyException>(() => Historical().ApplyChunkAsync(Actor, request.OperationId, 1))).Status.Should().Be(409);
-		await Assert.ThrowsAsync<InvalidDataException>(() => AcceptanceExport());
+		string backup = await AcceptanceExport();
+		try
+		{
+			await using var sqlite = new SqliteConnection($"Data Source={backup};Pooling=False");
+			await sqlite.OpenAsync();
+			await using var command = sqlite.CreateCommand();
+			command.CommandText = "SELECT payload FROM historical_operation_archive WHERE kind = 'automatic_operation'";
+			await using var reader = await command.ExecuteReaderAsync();
+			var exported = new Dictionary<Guid, Guid>();
+			while (await reader.ReadAsync())
+			{
+				using var json = JsonDocument.Parse(reader.GetString(0));
+				var header = json.RootElement.GetProperty("Header");
+				exported.Add(header.GetProperty("Id").GetGuid(),
+						header.GetProperty("ApprovedMappingRevisionId").GetGuid());
+			}
+			exported.Should().BeEquivalentTo(new Dictionary<Guid, Guid>
+			{
+				[request.OperationId] = mapping.Id,
+				[emptyRequest.OperationId] = mapping.Id
+			});
+		}
+		finally { File.Delete(backup); }
 		await mappings.ChangeAsync(Actor, new(source, NormalizationCatalogPolicy.Hash(source), mapping.Id,
 			seed.Revision, null, Guid.NewGuid(), "Revoke"));
 		(await Assert.ThrowsAsync<TaxonomyException>(() => capture.CaptureAsync(request with { OperationId = Guid.NewGuid() }))).Status.Should().Be(409);

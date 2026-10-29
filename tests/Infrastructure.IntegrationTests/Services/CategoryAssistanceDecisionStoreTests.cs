@@ -640,7 +640,6 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 			new(Guid.NewGuid(), seed.Taxonomy, [seed.Item]), CancellationToken.None);
 		await using var db = fixture.CreateDbContext();
 		var applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		await db.GetService<IMigrator>().MigrateAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
 		const string migration = "20261026154337_AddCategoryAssistanceDecisions";
 		var index = Array.IndexOf(applied, migration);
 		index.Should().BeGreaterThan(0);
@@ -648,6 +647,8 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 			.SingleAsync(x => x.Id == seed.Attempt);
 		try
 		{
+			// Capture with the current model before removing columns introduced later.
+			await db.GetService<IMigrator>().MigrateAsync("20261027110503_RaiseCategoryAssistanceDailyLimit");
 			Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
 			var refusal = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
 			refusal.SqlState.Should().Be(PostgresErrorCodes.RaiseException);
