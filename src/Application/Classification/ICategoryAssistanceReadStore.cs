@@ -9,6 +9,7 @@ public sealed record CategoryAssistanceSuggestionRead(Guid AttemptId, Normalizat
 		DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
 	double? FitProbability, double? CategoryProbability)
 {
+	public double? SelectedPathSupport { get; init; }
 	public string ReviewState { get; init; } = "active";
 	public Guid ReviewRevision { get; init; }
 	public int ExcludedItemCount { get; init; }

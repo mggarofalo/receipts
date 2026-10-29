@@ -254,7 +254,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 	}
 
 	[Fact]
-	public async Task WorkerSendsOneBoundedRequestFromDurableConsentAndPersistsSuggestion()
+	public async Task WorkerSendsTwoBoundedRequestsFromDurableConsentAndPersistsSuggestion()
 	{
 		// Every test runs against an isolated database.
 		var seed = await SeedAsync("worker acceptance " + Guid.NewGuid());
@@ -292,17 +292,20 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			handler.Calls.Should().Be(0);
 			options.ApiKey = "jev-test-key";
 			(await worker.RunOnceAsync()).Should().BeTrue();
-			handler.Calls.Should().Be(1);
+			handler.Calls.Should().Be(2);
 			(await worker.RunOnceAsync()).Should().BeFalse();
-			handler.Calls.Should().Be(1);
+			handler.Calls.Should().Be(2);
 			await using (var verify = fixture.CreateDbContext())
 			{
 				var attempt = await verify.CategoryAssistanceAttempts.AsNoTracking()
 						.SingleAsync(x => x.ItemId == seed.ItemId);
 				attempt.State.Should().Be("suggested");
 				attempt.ResultJson.Should().NotBeNull();
+				var completion = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(attempt.ResultJson!);
+				completion!.Suggestion!.SelectedPathSupport.Should().Be(0.9);
+				completion.Suggestion.Provenance.InputTokens.Should().Be(3);
 				(await verify.CategoryAssistanceDailyUsage.Where(x => x.UtcDay == DateOnly.FromDateTime(DateTime.UtcNow))
-						.Select(x => x.DispatchAttempts).SingleAsync()).Should().Be(1);
+						.Select(x => x.DispatchAttempts).SingleAsync()).Should().Be(2);
 			}
 
 			Guid revokedItem = Guid.NewGuid();
@@ -333,12 +336,66 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			options.Enabled = true;
 			options.ApiKey = null;
 			(await worker.RunOnceAsync()).Should().BeFalse();
-			handler.Calls.Should().Be(1);
+			handler.Calls.Should().Be(2);
 		}
 		finally { await DisableAsync(seed.Actor); }
 	}
 
-	private sealed class CountingSuggestionHandler(Guid categoryId) : HttpMessageHandler
+	[Theory]
+	[InlineData("second-fails", 100, 2, "failed")]
+	[InlineData("daily-cap", 1, 1, "failed")]
+	[InlineData("revoked", 100, 1, "stale")]
+	public async Task ComposedWorkerNeverPublishesBaselineWhenSecondStageFails(string scenario, int limit, int calls, string state)
+	{
+		var seed = await SeedAsync("second-stage " + Guid.NewGuid(), limit);
+		var handler = new CountingSuggestionHandler(seed.CategoryId, failSecond: scenario == "second-fails",
+			afterFirst: scenario == "revoked" ? () => Connection().InvalidateAsync() : null);
+		var options = new JevOptions { Enabled = true, ApiKey = "jev-test-key" };
+		var monitor = new Mock<IOptionsMonitor<JevOptions>>();
+		monitor.SetupGet(x => x.CurrentValue).Returns(options);
+		var coordinator = Connection();
+		ServiceCollection registrations = new();
+		registrations.AddSingleton<ICategoryAssistanceSettingsStore>(Settings());
+		registrations.AddSingleton<ICategoryAssistanceConnectionReconciler>(coordinator);
+		registrations.AddSingleton<ICategoryAssistanceConnectionBinding>(coordinator);
+		registrations.AddSingleton<ICategoryAssistanceDispatchStore>(Dispatch());
+		registrations.AddSingleton<IOptionsMonitor<JevOptions>>(monitor.Object);
+		registrations.AddSingleton(new JevSuggestionConcurrency());
+		registrations.AddSingleton(new HttpClient(handler));
+		registrations.AddSingleton<JevSuggestionProvider>();
+		registrations.AddSingleton<JevCategoryAssistanceSelectedProvider>();
+		registrations.AddSingleton<ICategoryAssistanceSelectedProvider>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+		registrations.AddSingleton<ICategoryAssistanceCapabilitySource>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
+		registrations.AddSingleton<TimeProvider>(TimeProvider.System);
+		registrations.AddScoped<CategoryAssistanceDispatcher>();
+		using ServiceProvider services = registrations.BuildServiceProvider();
+		var worker = new CategoryAssistanceWorker(services.GetRequiredService<IServiceScopeFactory>(), monitor.Object,
+			NullLogger<CategoryAssistanceWorker>.Instance);
+		(await worker.RunOnceAsync()).Should().BeTrue();
+		handler.Calls.Should().Be(calls);
+		await using var db = fixture.CreateDbContext();
+		var row = await db.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.ItemId == seed.ItemId);
+		row.State.Should().Be(state);
+		row.FirstStageInputTokens.Should().Be(1);
+		row.FirstStageOutputTokens.Should().Be(1);
+		row.SecondSendStartedAt.HasValue.Should().Be(calls == 2);
+		if (state == "failed")
+		{
+			row.ResultJson.Should().NotBeNull();
+			var completion = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(row.ResultJson!);
+			completion.Should().NotBeNull();
+			completion!.Outcome.Should().Be(CategoryAssistanceAttemptOutcome.Failed);
+			completion.Suggestion.Should().BeNull();
+		}
+		else
+		{
+			row.ResultJson.Should().BeNull();
+		}
+
+		(await db.CategoryAssistanceDailyUsage.SingleAsync()).DispatchAttempts.Should().Be(calls);
+	}
+
+	private sealed class CountingSuggestionHandler(Guid categoryId, bool failSecond = false, Func<Task>? afterFirst = null) : HttpMessageHandler
 	{
 		public int Calls { get; private set; }
 		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -349,6 +406,22 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			string id = categoryId.ToString("D");
 			using var requestBody = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
 			var questions = requestBody.RootElement.GetProperty("questions");
+			if (Calls == 2)
+			{
+				if (failSecond)
+				{
+					return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+				}
+
+				string selectedId = questions.EnumerateObject().Single().Name;
+				string selectedBody = JsonSerializer.Serialize(new
+				{
+					model = "jev-1.14.0",
+					answers = new Dictionary<string, object> { [selectedId] = new { type = "noul", noul = 0.9 } },
+					usage = new { input_tokens = 2, output_tokens = 2 }
+				});
+				return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(selectedBody, Encoding.UTF8, "application/json") };
+			}
 			var answers = new Dictionary<string, object>();
 			foreach (var question in questions.EnumerateObject())
 			{
@@ -376,6 +449,11 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 				answers,
 				usage = new { input_tokens = 1, output_tokens = 1 }
 			});
+			if (afterFirst is not null)
+			{
+				await afterFirst();
+			}
+
 			return new HttpResponseMessage(HttpStatusCode.OK)
 			{ Content = new StringContent(body, Encoding.UTF8, "application/json") };
 		}

@@ -3991,6 +3991,8 @@ export interface components {
             fitProbability: number | null;
             /** Format: double */
             categoryProbability: number | null;
+            /** Format: double */
+            selectedPathSupport: number | null;
             /** @enum {string} */
             probabilityScope: "global_choice" | "local_choice";
             state: string;

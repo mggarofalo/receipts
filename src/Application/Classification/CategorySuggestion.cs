@@ -10,7 +10,7 @@ public sealed record CategoryHierarchyJudgment(string Model, string TaxonomyRevi
 public sealed record SuggestionProvenance(string Provider, string Model, string QuestionPolicy, string TaxonomyRevision, long InputTokens, long OutputTokens);
 public sealed record CategorySuggestion(string? CategoryId, IReadOnlyList<string> Path, string? AbstentionReason,
 		double FitProbability, double CategoryProbability, double Confidence, SuggestionProvenance Provenance,
-		string ProbabilityScope = "global_choice");
+		string ProbabilityScope = "global_choice", double? SelectedPathSupport = null);
 public enum SuggestionFailure { Disabled, MissingCredential, InvalidInput, PayloadTooLarge, Busy, Authentication, RateLimited, Timeout, Unavailable, InvalidResponse }
 public sealed record CategorySuggestionResult(CategorySuggestion? Suggestion, SuggestionFailure? Failure)
 {
@@ -26,7 +26,7 @@ public interface ICategorySuggestionProvider
 
 public static class CategorySuggestionPolicy
 {
-	public const string Version = "classification-questions-v5";
+	public const string Version = "classification-questions-v6";
 	public const string Model = "jev-1.14.0";
 	public const int MaximumPayloadBytes = 65536;
 

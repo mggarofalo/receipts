@@ -209,8 +209,8 @@ function AssistanceSettings({
           Opt in to send pending store descriptions and catalog candidates to
           your ChatGPT connection after saving. At most one automatic request
           per exact source; uncertain requests require an explicit retry. All
-          suggestions need your review. The daily limit bounds new source
-          requests, not token usage.
+          suggestions need your review. The daily limit bounds provider
+          requests, including checks of a selected category, not token usage.
         </p>
         <label className="flex gap-2">
           <input

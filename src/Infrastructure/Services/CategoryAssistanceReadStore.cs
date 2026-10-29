@@ -123,6 +123,7 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 								row.CreatedAt, row.CompletedAt,
 				suggestion?.FitProbability, suggestion?.CategoryProbability)
 			{
+				SelectedPathSupport = suggestion?.SelectedPathSupport,
 				ReviewState = preference?.State ?? "active",
 				ReviewRevision = preference?.Revision ?? Guid.Empty,
 				ExcludedItemCount = excluded.Length,

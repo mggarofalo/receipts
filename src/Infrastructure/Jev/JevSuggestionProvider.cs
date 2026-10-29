@@ -18,6 +18,103 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 		Func<string, CancellationToken, Task<bool>> isCurrent, CancellationToken cancellationToken)
 				=> SuggestCoreAsync(request, isCurrent, requireLegacyGate: false, cancellationToken);
 
+	internal async Task<CategorySuggestionResult> VerifySelectedBoundAsync(CategorySuggestionRequest request,
+		CategorySuggestion baseline, Func<string, CancellationToken, Task<bool>> isCurrent, CancellationToken ct)
+	{
+		ct.ThrowIfCancellationRequested();
+		JevOptions current = options.CurrentValue;
+		string? key = current.ApiKey;
+		if (!current.Enabled || string.IsNullOrWhiteSpace(key))
+		{
+			return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
+		}
+
+		JevSelectedPathQuestions.Prepared prepared;
+		try { prepared = JevSelectedPathQuestions.Prepare(request, baseline); }
+		catch (ArgumentException) { return CategorySuggestionResult.Failed(SuggestionFailure.InvalidInput); }
+		byte[] payload = prepared.Payload;
+		if (payload.Length > CategorySuggestionPolicy.MaximumPayloadBytes)
+		{
+			return CategorySuggestionResult.Failed(SuggestionFailure.PayloadTooLarge);
+		}
+
+		if (!await concurrency.Gate.WaitAsync(0, ct))
+		{
+			return CategorySuggestionResult.Failed(SuggestionFailure.Busy);
+		}
+
+		try
+		{
+			using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+			timeout.CancelAfter(TimeSpan.FromSeconds(10));
+			using HttpRequestMessage message = new(HttpMethod.Post, "https://api.typesafe.ai/v1/systemone");
+			message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+			message.Content = new ByteArrayContent(payload);
+			message.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+			if (!await isCurrent(key, timeout.Token))
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
+			}
+
+			JevOptions beforeSend = options.CurrentValue;
+			ct.ThrowIfCancellationRequested();
+			if (!beforeSend.Enabled || beforeSend.ApiKey != key)
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
+			}
+
+			using HttpResponseMessage response = await client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+			if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.Authentication);
+			}
+
+			if (response.StatusCode == HttpStatusCode.TooManyRequests)
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.RateLimited);
+			}
+
+			if (!response.IsSuccessStatusCode)
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.Unavailable);
+			}
+
+			await response.Content.LoadIntoBufferAsync(1048576, timeout.Token);
+			var answer = prepared.ParseResponse(await response.Content.ReadAsByteArrayAsync(timeout.Token));
+			if (answer is null || answer.InputTokens > 9007199254740991 - baseline.Provenance.InputTokens ||
+				answer.OutputTokens > 9007199254740991 - baseline.Provenance.OutputTokens)
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
+			}
+
+			ct.ThrowIfCancellationRequested();
+			JevOptions latest = options.CurrentValue;
+			if (!latest.Enabled || latest.ApiKey != key || !await isCurrent(key, timeout.Token))
+			{
+				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
+			}
+
+			ct.ThrowIfCancellationRequested();
+			var provenance = baseline.Provenance with
+			{
+				InputTokens = baseline.Provenance.InputTokens + answer.InputTokens,
+				OutputTokens = baseline.Provenance.OutputTokens + answer.OutputTokens
+			};
+			return new(baseline with
+			{
+				CategoryId = answer.Probability >= 0.7 ? baseline.CategoryId : null,
+				Path = answer.Probability >= 0.7 ? baseline.Path : [],
+				AbstentionReason = answer.Probability >= 0.7 ? null : "uncertain-selected-path",
+				SelectedPathSupport = answer.Probability,
+				Provenance = provenance
+			}, null);
+		}
+		catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return CategorySuggestionResult.Failed(SuggestionFailure.Timeout); }
+		catch (HttpRequestException) { return CategorySuggestionResult.Failed(SuggestionFailure.Unavailable); }
+		catch (IOException) { return CategorySuggestionResult.Failed(SuggestionFailure.Unavailable); }
+		finally { concurrency.Gate.Release(); }
+	}
+
 	private async Task<CategorySuggestionResult> SuggestCoreAsync(CategorySuggestionRequest request,
 				Func<string, CancellationToken, Task<bool>>? isCurrent, bool requireLegacyGate,
 				CancellationToken cancellationToken)

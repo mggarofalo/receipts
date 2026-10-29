@@ -59,6 +59,22 @@ public sealed class JevCategoryAssistanceSelectedProvider(
 		}, ct);
 	}
 
+	public Task<CategorySuggestionResult> VerifySelectedAsync(CategorySuggestionRequest request, CategorySuggestion baseline,
+		Guid connectionGeneration, CancellationToken ct)
+	{
+		if (connectionGeneration == Guid.Empty)
+		{
+			return Task.FromResult(CategorySuggestionResult.Failed(SuggestionFailure.Disabled));
+		}
+
+		return provider.VerifySelectedBoundAsync(request, baseline, async (key, token) =>
+		{
+			JevOptions current = options.CurrentValue;
+			return Available(current) && current.ApiKey == key &&
+				await connection.IsCurrentAsync(ConfigurationFor(key), connectionGeneration, token);
+		}, ct);
+	}
+
 	public static CategoryAssistanceConnectionCoordinator.Configuration ConfigurationFor(string key) =>
 		new("jev", CategorySuggestionPolicy.Model, key, Server, TransportOptions);
 

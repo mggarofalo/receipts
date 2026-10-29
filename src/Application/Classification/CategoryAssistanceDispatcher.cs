@@ -98,6 +98,9 @@ public interface ICategoryAssistanceSelectedProvider
 	/// <summary>Send with exactly the captured connection generation, or fail closed if it changed.</summary>
 	Task<CategorySuggestionResult> SuggestAsync(CategorySuggestionRequest request,
 		Guid connectionGeneration, CancellationToken ct);
+	/// <summary>Send one previously authorized selected-path check using the captured connection.</summary>
+	Task<CategorySuggestionResult> VerifySelectedAsync(CategorySuggestionRequest request, CategorySuggestion baseline,
+		Guid connectionGeneration, CancellationToken ct);
 }
 
 /// <summary>Runs at most one claimed source attempt; scheduling and persistence live outside Application.</summary>
@@ -154,7 +157,36 @@ public sealed class CategoryAssistanceDispatcher(
 			ct.ThrowIfCancellationRequested();
 			CategorySuggestionResult result = await provider.SuggestAsync(claim.Work.Request,
 				claim.Work.Fence.ConnectionGeneration, ct);
-			completion = ValidateResult(claim.Work, result);
+			completion = ValidateResult(claim.Work, result, requireSelectedSupport: false);
+			if (completion.Outcome == CategoryAssistanceAttemptOutcome.Suggested)
+			{
+				var baseline = completion.Suggestion!;
+				bool authorized = await store.TryStartSecondDispatchAsync(claim, capability,
+						baseline.Provenance.InputTokens, baseline.Provenance.OutputTokens, ct);
+				if (!authorized)
+				{
+					completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Disabled);
+				}
+				else
+				{
+					ct.ThrowIfCancellationRequested();
+					result = await provider.VerifySelectedAsync(claim.Work.Request, baseline,
+							claim.Work.Fence.ConnectionGeneration, ct);
+					completion = ValidateResult(claim.Work, result, requireSelectedSupport: true);
+					if (completion.Suggestion is { } verified &&
+							(verified.FitProbability != baseline.FitProbability ||
+							 verified.CategoryProbability != baseline.CategoryProbability ||
+							 verified.Confidence != baseline.Confidence ||
+							 verified.ProbabilityScope != baseline.ProbabilityScope ||
+							 verified.Provenance.InputTokens < baseline.Provenance.InputTokens ||
+							 verified.Provenance.OutputTokens < baseline.Provenance.OutputTokens ||
+							 (verified.CategoryId is not null && (verified.CategoryId != baseline.CategoryId ||
+									!verified.Path.SequenceEqual(baseline.Path)))))
+					{
+						completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
+					}
+				}
+			}
 		}
 		catch (OperationCanceledException) when (ct.IsCancellationRequested)
 		{
@@ -196,7 +228,7 @@ public sealed class CategoryAssistanceDispatcher(
 		&& CategorySuggestionPolicy.IsValid(work.Request);
 
 	private static CategoryAssistanceCompletion ValidateResult(CategoryAssistanceQueuedWork work,
-		CategorySuggestionResult result)
+		CategorySuggestionResult result, bool requireSelectedSupport)
 	{
 		if (result is null || (result.Suggestion is null) == (result.Failure is null))
 		{
@@ -217,7 +249,9 @@ public sealed class CategoryAssistanceDispatcher(
 			|| suggestion.Provenance.OutputTokens is < 0 or > 9007199254740991
 			|| suggestion.Path is null || work.Request.Categories is null
 			|| !Probability(suggestion.FitProbability) || !Probability(suggestion.CategoryProbability)
-			|| !Probability(suggestion.Confidence))
+			|| !Probability(suggestion.Confidence)
+			|| (suggestion.SelectedPathSupport is double support && !Probability(support))
+			|| (!requireSelectedSupport && suggestion.SelectedPathSupport is not null))
 		{
 			return new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
 		}
@@ -227,12 +261,15 @@ public sealed class CategoryAssistanceDispatcher(
 			return suggestion.Path.Count == 0
 				&& (suggestion.AbstentionReason == "no-fit" && suggestion.FitProbability <= 0.3
 					|| suggestion.AbstentionReason == "uncertain-fit"
-						&& suggestion.FitProbability is > 0.3 and < 0.7)
+						&& suggestion.FitProbability is > 0.3 and < 0.7
+					|| requireSelectedSupport && suggestion.AbstentionReason == "uncertain-selected-path"
+						&& suggestion.FitProbability >= 0.7 && suggestion.SelectedPathSupport is >= 0 and < 0.7)
 				? new(CategoryAssistanceAttemptOutcome.Abstained, suggestion)
 				: new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
 		}
 
 		if (suggestion.FitProbability < 0.7 || suggestion.AbstentionReason is not null
+			|| (requireSelectedSupport && suggestion.SelectedPathSupport is not >= 0.7)
 			|| !work.Request.Categories.Any(x => x.Id == suggestion.CategoryId)
 			|| !suggestion.Path.SequenceEqual(CategorySuggestionPolicy.PathFor(work.Request, suggestion.CategoryId)))
 		{
