@@ -24,6 +24,9 @@ internal static partial class PortableTaxonomyArchive
 			await db.ClassificationOperations.AsNoTracking().ToListAsync(ct), await db.LegacyMigrations.AsNoTracking().ToListAsync(ct),
 			await db.LegacyMigrationCrosswalks.AsNoTracking().ToListAsync(ct), await db.LegacyMigrationItems.AsNoTracking().ToListAsync(ct))
 		{
+			IncludesReviewPreferences = candidate,
+			ReviewPreferences = candidate ? await db.CategoryAssistanceReviewPreferences.AsNoTracking().ToListAsync(ct) : [],
+			ReviewOperations = candidate ? await db.CategoryAssistanceReviewOperations.AsNoTracking().ToListAsync(ct) : [],
 			IncludesReviewDispositions = candidate,
 			ReviewDispositions = candidate ? await db.HistoricalGroupDispositions.AsNoTracking().ToListAsync(ct) : [],
 			ReviewDispositionOperations = candidate ? await db.HistoricalDispositionOperations.AsNoTracking().ToListAsync(ct) : [],
@@ -35,6 +38,19 @@ internal static partial class PortableTaxonomyArchive
 			MappingHeads = await db.CategoryMappingHeads.AsNoTracking().ToListAsync(ct)
 		};
 		ValidateDestination(existing, incoming, candidate);
+		if (candidate && incoming.IncludesReviewPreferences)
+		{
+			var ids = incoming.ReviewPreferences.Select(x => x.AttemptId).Distinct().ToArray();
+			var attempts = await db.CategoryAssistanceAttempts.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+			foreach (var row in incoming.ReviewPreferences)
+			{
+				if (attempts.TryGetValue(row.AttemptId, out var attempt))
+				{
+					Require(attempt.Location == row.Location && attempt.Description == row.Description && attempt.ItemCodeKey == row.ItemCodeKey,
+						"Review preference source conflicts with destination attempt.");
+				}
+			}
+		}
 		await PreflightSourceRevisionsAsync(db, incoming, ct);
 	}
 
@@ -48,6 +64,7 @@ internal static partial class PortableTaxonomyArchive
 		{
 			ValidateCandidate(existing); ValidateCandidate(incoming);
 			ValidateReviewDispositionDestination(existing, incoming);
+			ValidateReviewPreferenceDestination(existing, incoming);
 			// Compare deterministic post-restore state to permit exact snapshot replay.
 			AbandonPendingAutomatic(existing);
 			AbandonPendingAutomatic(incoming);

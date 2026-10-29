@@ -67,6 +67,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 		foreach (var row in state.MappingHeads) { await Write("category_mapping_archive", "head", row, row.SourceFingerprint); }
 		await PortableTaxonomyArchive.WriteHistoricalCandidateAsync(sqlite, state, CancellationToken.None);
 		await PortableTaxonomyArchive.WriteReviewDispositionsAsync(sqlite, state, CancellationToken.None);
+		await PortableTaxonomyArchive.WriteReviewPreferencesAsync(sqlite, state, CancellationToken.None);
 		command.Parameters.Clear();
 		command.CommandText = """
 			INSERT INTO receipts VALUES($receipt,$store);
