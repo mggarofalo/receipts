@@ -842,6 +842,73 @@ paths:
                   { schema: { $ref: "#/components/schemas/ProblemDetails" } },
               },
           }
+  /api/category-assistance/review-preferences:
+    get:
+      tags: [CategoryAssistance]
+      summary: List the current actor's saved review decisions
+      operationId: CategoryAssistance_SavedReviewPreferences
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+      responses:
+        "200":
+          description: Saved review decisions
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryAssistanceSavedReviewPage" }
+        "400":
+          description: Invalid pagination
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { description: Authentication required }
+        "403":
+          description: Active writer required
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+  /api/category-assistance/review-preferences/{attemptId}:
+    put:
+      tags: [CategoryAssistance]
+      summary: Change a saved review decision or remove its exclusions
+      description: Retained exclusions must be a subset of the existing saved exclusions. No provider attempt is required.
+      operationId: CategoryAssistance_UpdateSavedReviewPreference
+      security: [{ BearerAuth: [] }, { ApiKey: [] }]
+      parameters:
+        - { name: attemptId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CategoryAssistanceReviewPreferenceRequest" }
+      responses:
+        "200":
+          description: Saved actor review state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CategoryAssistanceReviewPreference" }
+        "400":
+          description: Invalid review preference
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "401": { description: Authentication required }
+        "403":
+          description: Active writer required
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "404":
+          description: Saved decision missing
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
+        "409":
+          description: Revision, operation or exclusion conflict
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/ProblemDetails" }
   /api/category-assistance/suggestions/{attemptId}/review-preference:
     get:
       tags: [CategoryAssistance]
@@ -9642,6 +9709,25 @@ components:
         isCurrent: { type: boolean }
         createdAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
+    CategoryAssistanceSavedReviewPage:
+      type: object
+      required: [total, offset, limit, items]
+      properties:
+        total: { type: integer, format: int32 }
+        offset: { type: integer, format: int32 }
+        limit: { type: integer, format: int32 }
+        items: { type: array, items: { $ref: "#/components/schemas/CategoryAssistanceSavedReview" } }
+    CategoryAssistanceSavedReview:
+      type: object
+      required: [attemptId, location, description, itemCodeKey, state, revision, excludedItemIds]
+      properties:
+        attemptId: { type: string, format: uuid }
+        location: { type: string }
+        description: { type: string }
+        itemCodeKey: { type: string }
+        state: { type: string, enum: [active, later, left_as_is] }
+        revision: { type: string, format: uuid }
+        excludedItemIds: { type: array, maxItems: 1000, items: { type: string, format: uuid } }
     CategoryAssistanceReviewPreference:
       type: object
       required: [attemptId, state, revision, excludedItemIds]
