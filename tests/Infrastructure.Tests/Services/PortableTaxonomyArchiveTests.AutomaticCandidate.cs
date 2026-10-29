@@ -200,7 +200,7 @@ public sealed partial class PortableTaxonomyArchiveTests
 	}
 
 	[Fact]
-	public void AutomaticCandidate_WireRequiresProvenanceAndDoesNotEnablePublicV14()
+	public void AutomaticCandidate_WireRequiresProvenanceWhilePublicExportRemainsV13()
 	{
 		var (_, header, item) = AutomaticState();
 		var wire = new PortableAutomaticHistoricalV14.HeaderWire(header, header.Kind, header.ApprovedMappingRevisionId);
@@ -212,6 +212,8 @@ public sealed partial class PortableTaxonomyArchiveTests
 		var itemWire = new PortableAutomaticHistoricalV14.ItemWire(item, item.ApprovedMappingRevisionId);
 		PortableAutomaticHistoricalV14.ReadItem(JsonSerializer.Serialize(itemWire)).Item.ItemId.Should().Be(item.ItemId);
 		PortableBackupFormat.CurrentVersion.Should().Be(13);
-		FluentActions.Invoking(() => PortableBackupFormat.RequiredTablesFor(14)).Should().Throw<InvalidOperationException>();
+		PortableBackupFormat.LatestImportVersion.Should().Be(14);
+		PortableBackupFormat.RequiredTablesFor(14).Should().Contain([
+			"historical_operation_archive", "source_revision_archive", "review_disposition_archive", "review_preference_archive"]);
 	}
 }

@@ -99,7 +99,7 @@ public sealed partial class ClassificationTests
 			var failure = new BackupImportService(new FailAfterPreferenceFactory(destination), NullLogger<BackupImportService>.Instance);
 			await using (var input = File.OpenRead(path))
 			{
-				Func<Task> import = () => failure.ImportCandidateFromSqliteAsync(input, default);
+				Func<Task> import = () => failure.ImportFromSqliteAsync(input, default);
 				await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected after preference insert");
 			}
 			await using (var db = destination.CreateDbContext())
@@ -112,7 +112,7 @@ public sealed partial class ClassificationTests
 			for (int n = 0; n < 2; n++)
 			{
 				await using var input = File.OpenRead(path);
-				await importer.ImportCandidateFromSqliteAsync(input, default);
+				await importer.ImportFromSqliteAsync(input, default);
 			}
 			var store = new CategoryAssistanceReviewPreferenceStore(new Factory(destination), TimeProvider.System);
 			var replayRequest = new CategoryAssistanceReviewPreferenceRequest(operations[0].OperationId, Guid.Empty, "later", [purgedItem]);
@@ -137,7 +137,7 @@ public sealed partial class ClassificationTests
 			}
 			await using (var stale = File.OpenRead(path))
 			{
-				Func<Task> restore = () => importer.ImportCandidateFromSqliteAsync(stale, default);
+				Func<Task> restore = () => importer.ImportFromSqliteAsync(stale, default);
 				await restore.Should().ThrowAsync<InvalidOperationException>();
 			}
 			await using (var db = destination.CreateDbContext())

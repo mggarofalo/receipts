@@ -15,7 +15,7 @@ namespace Infrastructure.IntegrationTests.Services;
 public sealed partial class ClassificationTests
 {
 	[Fact]
-	public async Task CandidateRestore_RoundTripsUndoneAutomaticHistoryWhilePublicImportRejectsV14()
+	public async Task PublicV14Restore_RoundTripsUndoneAutomaticHistoryAndRollsBack()
 	{
 		await using var source = await fixture.CreateIsolatedAsync();
 		await using var destination = await fixture.CreateIsolatedAsync();
@@ -36,15 +36,10 @@ public sealed partial class ClassificationTests
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
-			await using (var publicInput = File.OpenRead(path))
-			{
-				Func<Task> publicImport = () => importer.ImportFromSqliteAsync(publicInput, default);
-				await publicImport.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unsupported backup export_version '14'*");
-			}
 			var failingImporter = new BackupImportService(new FailCandidateRestoreFactory(destination), NullLogger<BackupImportService>.Instance);
 			await using (var failingInput = File.OpenRead(path))
 			{
-				Func<Task> fail = () => failingImporter.ImportCandidateFromSqliteAsync(failingInput, default);
+				Func<Task> fail = () => failingImporter.ImportFromSqliteAsync(failingInput, default);
 				await fail.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected late restore failure");
 			}
 			await using (var afterFailure = destination.CreateDbContext())
@@ -55,7 +50,7 @@ public sealed partial class ClassificationTests
 			}
 			await using (var input = File.OpenRead(path))
 			{
-				await importer.ImportCandidateFromSqliteAsync(input, default);
+				await importer.ImportFromSqliteAsync(input, default);
 			}
 			var restored = new ClassificationTests(destination);
 			var history = await restored.Service().HistoryAsync(captured.Item, null, 10);
@@ -71,7 +66,7 @@ public sealed partial class ClassificationTests
 					new ClassificationCommand(captured.Category, captured.Request.TaxonomyRevisionId, history.Items.First().Id, Guid.NewGuid(), "Later choice"));
 			await using (var staleInput = File.OpenRead(path))
 			{
-				Func<Task> stale = () => importer.ImportCandidateFromSqliteAsync(staleInput, default);
+				Func<Task> stale = () => importer.ImportFromSqliteAsync(staleInput, default);
 				await stale.Should().ThrowAsync<InvalidOperationException>();
 			}
 			(await restored.Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Id.Should().Be(later.Id);
@@ -96,7 +91,7 @@ public sealed partial class ClassificationTests
 			for (int attempt = 0; attempt < 2; attempt++)
 			{
 				await using var input = File.OpenRead(path);
-				await importer.ImportCandidateFromSqliteAsync(input, default);
+				await importer.ImportFromSqliteAsync(input, default);
 			}
 			var restored = new ClassificationTests(destination);
 			var stopped = await restored.ApprovedExecutor().ApplyChunkAsync(restored.CurrentRestoreGeneration(), Actor, captured.Request.OperationId, 1);
@@ -124,7 +119,7 @@ public sealed partial class ClassificationTests
 			var failing = new BackupImportService(new FailAfterAbandonFactory(destination), NullLogger<BackupImportService>.Instance);
 			await using (var input = File.OpenRead(path))
 			{
-				Func<Task> import = () => failing.ImportCandidateFromSqliteAsync(input, default);
+				Func<Task> import = () => failing.ImportFromSqliteAsync(input, default);
 				await import.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected after abandonment");
 			}
 			await using (var db = destination.CreateDbContext())
@@ -132,7 +127,7 @@ public sealed partial class ClassificationTests
 				(await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == captured.Request.OperationId)).State.Should().Be(HistoricalOperationState.Preview);
 			}
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
-			await using (var input = File.OpenRead(path)) { await importer.ImportCandidateFromSqliteAsync(input, default); }
+			await using (var input = File.OpenRead(path)) { await importer.ImportFromSqliteAsync(input, default); }
 			var stopped = await subject.ApprovedExecutor().ApplyChunkAsync(subject.CurrentRestoreGeneration(), Actor, captured.Request.OperationId, 1);
 			stopped.State.Should().Be(HistoricalOperationState.Cancelled);
 			stopped.Applied.Should().Be(0); stopped.Pending.Should().Be(1);
@@ -176,13 +171,13 @@ public sealed partial class ClassificationTests
 		{
 			var failing = new BackupImportService(new FailCandidateRestoreFactory(destination), NullLogger<BackupImportService>.Instance);
 			await using (var input = File.OpenRead(path))
-			{ await Assert.ThrowsAsync<InvalidOperationException>(() => failing.ImportCandidateFromSqliteAsync(input, default)); }
+			{ await Assert.ThrowsAsync<InvalidOperationException>(() => failing.ImportFromSqliteAsync(input, default)); }
 			restored.CurrentRestoreGeneration().Should().Be(oldGeneration);
 			await using (var db = destination.CreateDbContext())
 			{ (await db.HistoricalOperations.AnyAsync(x => x.Id == captured.Request.OperationId)).Should().BeFalse(); }
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
 			for (int attempt = 0; attempt < 2; attempt++)
-			{ await using var input = File.OpenRead(path); await importer.ImportCandidateFromSqliteAsync(input, default); }
+			{ await using var input = File.OpenRead(path); await importer.ImportFromSqliteAsync(input, default); }
 			restored.CurrentRestoreGeneration().Should().NotBe(oldGeneration);
 			(await Assert.ThrowsAsync<TaxonomyException>(() => restored.ApprovedExecutor().UndoChunkAsync(oldGeneration, Actor, captured.Request.OperationId, undo, 1))).Status.Should().Be(409);
 			await using (var db = destination.CreateDbContext())
@@ -232,7 +227,7 @@ public sealed partial class ClassificationTests
 			var executor = new HistoricalApprovedMappingExecutor(new HistoricalRaceFactory(isolated, undoGate), TimeProvider.System,
 				Microsoft.Extensions.Options.Options.Create(new ClassificationOptions { WritesEnabled = true }));
 			await using var input = File.OpenRead(path);
-			Task restoring = importer.ImportCandidateFromSqliteAsync(input, default);
+			Task restoring = importer.ImportFromSqliteAsync(input, default);
 			Task<HistoricalProgress>? waiting = null;
 			try
 			{
@@ -272,7 +267,7 @@ public sealed partial class ClassificationTests
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
-			await using (var input = File.OpenRead(path)) { await importer.ImportCandidateFromSqliteAsync(input, default); }
+			await using (var input = File.OpenRead(path)) { await importer.ImportFromSqliteAsync(input, default); }
 			await using (var adminDb = destination.CreateDbContext())
 			{
 				adminDb.Users.Add(new Infrastructure.Entities.ApplicationUser { Id = Actor, UserName = Actor });
@@ -308,7 +303,7 @@ public sealed partial class ClassificationTests
 		try
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
-			await using (var input = File.OpenRead(path)) { await importer.ImportCandidateFromSqliteAsync(input, default); }
+			await using (var input = File.OpenRead(path)) { await importer.ImportFromSqliteAsync(input, default); }
 			var restored = new ClassificationTests(destination);
 			var applied = (await restored.Service().HistoryAsync(captured.Item, null, 1)).Items.Single();
 			applied.Source.Should().Be("approved_mapping");
@@ -338,7 +333,7 @@ public sealed partial class ClassificationTests
 		{
 			var importer = new BackupImportService(new Factory(destination), NullLogger<BackupImportService>.Instance);
 			await using var input = File.OpenRead(path);
-			Func<Task> import = () => importer.ImportCandidateFromSqliteAsync(input, default);
+			Func<Task> import = () => importer.ImportFromSqliteAsync(input, default);
 			await import.Should().ThrowAsync<InvalidOperationException>();
 			await using var db = destination.CreateDbContext();
 			(await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == pending.Request.OperationId)).State.Should().Be(HistoricalOperationState.Preview);

@@ -36,7 +36,7 @@ public sealed partial class ClassificationTests
 			var failing = new BackupImportService(new FailAfterDispositionFactory(destination), NullLogger<BackupImportService>.Instance);
 			await using (var input = File.OpenRead(path))
 			{
-				Func<Task> fail = () => failing.ImportCandidateFromSqliteAsync(input, default);
+				Func<Task> fail = () => failing.ImportFromSqliteAsync(input, default);
 				await fail.Should().ThrowAsync<InvalidOperationException>().WithMessage("Injected after disposition insert");
 			}
 			await using (var db = destination.CreateDbContext())
@@ -47,7 +47,7 @@ public sealed partial class ClassificationTests
 			for (int i = 0; i < 2; i++)
 			{
 				await using var input = File.OpenRead(path);
-				await importer.ImportCandidateFromSqliteAsync(input, default);
+				await importer.ImportFromSqliteAsync(input, default);
 			}
 			var restored = new HistoricalReclassificationService(new Factory(destination), TimeProvider.System, Options.Create(new ClassificationOptions()));
 			(await restored.SetDispositionAsync("unknown-actor", first)).Version.Should().Be(1);
@@ -66,7 +66,7 @@ public sealed partial class ClassificationTests
 			}
 			await using (var stale = File.OpenRead(path))
 			{
-				Func<Task> conflict = () => importer.ImportCandidateFromSqliteAsync(stale, default);
+				Func<Task> conflict = () => importer.ImportFromSqliteAsync(stale, default);
 				await conflict.Should().ThrowAsync<InvalidOperationException>();
 			}
 			await using var after = destination.CreateDbContext();
@@ -108,7 +108,7 @@ public sealed partial class ClassificationTests
 			var importer = new BackupImportService(new HistoricalRaceFactory(destination, restoreGate), NullLogger<BackupImportService>.Instance);
 			var writer = new HistoricalReclassificationService(new HistoricalRaceFactory(destination, writerGate), TimeProvider.System, Options.Create(new ClassificationOptions()));
 			await using var input = File.OpenRead(path);
-			Task restoring = importer.ImportCandidateFromSqliteAsync(input, default);
+			Task restoring = importer.ImportFromSqliteAsync(input, default);
 			Task<HistoricalDispositionRecord>? writing = null;
 			try
 			{

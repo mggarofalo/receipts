@@ -9,7 +9,7 @@ using Infrastructure.Entities.Taxonomy;
 
 namespace Infrastructure.Services;
 
-// Candidate format only. Public backup remains v13 until capture and restore are complete.
+// v14 restore codec. Public export remains v13 while capture rollout is pending.
 internal static class PortableAutomaticHistoricalV14
 {
 	internal const int Version = 14;

@@ -11,7 +11,7 @@ internal static partial class PortableTaxonomyArchive
 	internal static async Task PreflightDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
 				=> await PreflightDestinationCoreAsync(db, incoming, ct, candidate: false);
 
-	// Candidate validation is not wired to public import or restore.
+	// The v14 importer validates automatic history and saved review decisions together.
 	internal static Task PreflightCandidateDestinationAsync(ApplicationDbContext db, State incoming, CancellationToken ct)
 			=> PreflightDestinationCoreAsync(db, incoming, ct, candidate: true);
 

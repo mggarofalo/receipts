@@ -27,10 +27,10 @@ operation ledger entry with its exact source, requested state, expected version,
 original response in the same transaction as the current disposition. An older
 operation ID therefore replays its original result after later updates; reusing the
 ID with a changed request conflicts. The dispositions and their ledger are outside
-the public portable taxonomy archive. The internal v14 candidate transfers current
+the public portable taxonomy archive. Format 14 import transfers current
 dispositions and their complete operation ledger under the restore write gate, rejecting
-divergent destination decisions. Public v14 remains disabled pending the full review
-protection roundtrip. Neither is classification or verification evidence.
+divergent destination decisions. Public import accepts the internal candidate exporter's v14 archives; public export remains v13 pending capture rollout and the full review
+protection roundtrip. The automatic background worker remains disabled. Neither is classification or verification evidence.
 
 The foundation originally defined contracts and pure policies; persistence and the
 authenticated operation API now implement the workflow described below. The service
