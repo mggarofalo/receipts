@@ -69,10 +69,15 @@ internal static partial class PortableTaxonomyArchive
 			AbandonPendingAutomatic(existing);
 			AbandonPendingAutomatic(incoming);
 		}
-		else { Validate(existing); Validate(incoming); }
+		else
+		{
+			// The source format constrains incoming evidence; the destination may
+			// retain valid automatic history written by the current application.
+			ValidateCandidate(existing); Validate(incoming);
+			AbandonPendingAutomatic(existing);
+		}
 		ValidateMappingDestination(existing, incoming);
-		if (candidate) { ValidateHistoricalCandidateDestination(existing, incoming); }
-		else { ValidateHistoricalDestination(existing, incoming); }
+		ValidateHistoricalCandidateDestination(existing, incoming);
 		// A destination is a strict prefix of the archive, including all immutable rows.
 		// Reject stale backups even when their head happens to share a revision ID.
 		Require(existing.Revisions.Count <= incoming.Revisions.Count, "Restore would rewind taxonomy head.");
@@ -109,7 +114,7 @@ internal static partial class PortableTaxonomyArchive
 		{ operation.State = HistoricalOperationState.Cancelled; }
 	}
 
-	// Only after candidate preflight, under the restore write gate and transaction.
+	// Only after destination preflight, under the restore write gate and transaction.
 	internal static async Task AbandonDestinationAutomaticAsync(ApplicationDbContext db, CancellationToken ct)
 	{
 		var operations = await db.HistoricalOperations.Where(h =>

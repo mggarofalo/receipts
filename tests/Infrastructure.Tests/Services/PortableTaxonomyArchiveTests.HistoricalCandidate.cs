@@ -8,7 +8,7 @@ namespace Infrastructure.Tests.Services;
 public sealed partial class PortableTaxonomyArchiveTests
 {
 	[Fact]
-	public void CandidateDestination_LegacyOmissionRetainsMappingEvidenceForAutomaticHistory()
+	public void LegacyDestination_OmissionRetainsMappingEvidenceForAutomaticHistory()
 	{
 		var (basis, header, item) = AutomaticState();
 		CompleteWithoutEffect(header, item);
@@ -16,13 +16,23 @@ public sealed partial class PortableTaxonomyArchiveTests
 		// v10 has neither mapping nor historical tables; restoration retains both.
 		var legacy = basis with { IncludesMappings = false, MappingRevisions = [], MappingHeads = [], IncludesHistorical = false };
 		PortableTaxonomyArchive.ValidateCandidateDestination(existing, legacy);
-		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateDestination(existing, legacy))
-				.Should().Throw<InvalidDataException>().WithMessage("*cannot be restored yet*");
+		PortableTaxonomyArchive.ValidateDestination(existing, legacy);
+
+		// v13 carries mappings and manual history; omitted automatic history is retained.
+		var v13 = basis with { IncludesHistorical = true };
+		PortableTaxonomyArchive.ValidateDestination(existing, v13);
 
 		// A format that does contain mappings must still preserve all existing evidence.
 		var missingMappings = legacy with { IncludesMappings = true };
 		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateCandidateDestination(existing, missingMappings))
 				.Should().Throw<InvalidDataException>();
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateDestination(existing, missingMappings))
+						.Should().Throw<InvalidDataException>();
+
+		// Retaining automatic evidence still requires its complete mapping chain.
+		var inconsistentV13 = v13 with { MappingRevisions = [], MappingHeads = [] };
+		FluentActions.Invoking(() => PortableTaxonomyArchive.ValidateDestination(existing, inconsistentV13))
+						.Should().Throw<InvalidDataException>();
 	}
 
 	[Fact]
