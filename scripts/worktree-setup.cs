@@ -5,8 +5,8 @@ using System.Diagnostics;
 string repoRoot = GetRepoRoot();
 bool checkOnly = args.Length > 0 && args[0] == "--check";
 // Same major line, at or above the floor. CI and Docker pin the exact versions.
-Version minimumNodeVersion = new(24, 21, 0);
-Version minimumNpmVersion = new(11, 19, 0);
+Version minimumNodeVersion = new(26, 13, 0);
+Version minimumNpmVersion = new(11, 20, 0);
 
 string? installedNodeVersion = await GetCommandOutputAsync("node", ["--version"], repoRoot);
 if (!IsCompatible(installedNodeVersion?.TrimStart('v'), minimumNodeVersion))

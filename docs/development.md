@@ -9,7 +9,7 @@ Local development uses **.NET Aspire** to orchestrate all services — API, Post
 | [.NET 10 SDK](https://dot.net) | 10.0+ | Build and run the API |
 | [Aspire CLI](https://aspire.dev/get-started/install-cli/) | Any | Orchestrate local dev stack from CLI |
 | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Any | PostgreSQL container (Aspire manages it) |
-| [Node.js](https://nodejs.org) | 24.x (≥ 24.21.0) | React client and OpenAPI tooling; range in `package.json`, exact 24.21.0 in CI and Docker |
+| [Node.js](https://nodejs.org) | 26.x LTS (≥ 26.13.0) | React client and OpenAPI tooling; range in `package.json`, exact 26.13.0 in CI and Docker |
 | [VS Code](https://code.visualstudio.com) | Any | Recommended IDE |
 | [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit) | Any | VS Code C# support |
 
@@ -22,7 +22,7 @@ Local development uses **.NET Aspire** to orchestrate all services — API, Post
 git clone https://github.com/mggarofalo/Receipts.git
 cd Receipts
 
-# Use any Node 24.x at or above 24.21.0 (e.g. `nvm use`, or Homebrew's node@24)
+# Use any Node 26.x at or above 26.13.0 (e.g. `nvm use`, or Homebrew's node)
 node --version
 
 # Install Aspire CLI (if not already installed)
@@ -145,8 +145,8 @@ If the variables are absent, the seeder logs a warning and seeds only roles (no 
 
 ## Build and Test
 
-These are the supported clean-checkout verification lanes. Use a Node 24.x runtime
-at or above 24.21.0, run `dotnet restore Receipts.slnx` and `npm ci`, then use the
+These are the supported clean-checkout verification lanes. Use a Node 26.x runtime
+at or above 26.13.0, run `dotnet restore Receipts.slnx` and `npm ci`, then use the
 commands below. The PostgreSQL lane requires Docker; the model lane provisions and
 verifies the pinned ONNX artifact before running real inference tests.
 

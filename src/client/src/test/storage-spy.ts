@@ -1,4 +1,4 @@
-type StorageMethod = "getItem" | "setItem";
+type StorageMethod = "getItem" | "setItem" | "removeItem";
 
 export function findStorageMethodOwner(
   storage: Storage,

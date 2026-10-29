@@ -16,7 +16,7 @@ RUN tar -xzf /tmp/gosu.tar.gz --strip-components=1 && \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -mod=readonly -trimpath -buildvcs=false -o /out/gosu .
 
 # Stage 1: Build React SPA
-FROM node:24.21.0-alpine AS client-build
+FROM node:26.13.0-alpine AS client-build
 WORKDIR /app/client
 
 # Copy only files needed for npm install first (layer caching)
@@ -46,7 +46,7 @@ ENV VITE_SENTRY_ENVIRONMENT=${VITE_SENTRY_ENVIRONMENT}
 RUN npm run build
 
 # Tool-free ChatGPT provider. Use a glibc Node binary for the Ubuntu runtime.
-FROM node:24.21.0-bookworm-slim AS chatgpt-runner
+FROM node:26.13.0-bookworm-slim AS chatgpt-runner
 WORKDIR /runner
 COPY runner/package.json runner/package-lock.json runner/repair-shrinkwrap.mjs ./
 RUN npm ci --ignore-scripts --omit=dev --no-audit --no-fund && node repair-shrinkwrap.mjs
