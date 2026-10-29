@@ -223,6 +223,12 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	public Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
 		RunChunkAsync(actor, id, command, limit, ct);
 
+	internal Task<HistoricalProgress> UndoApprovedMappingChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default)
+	{
+		ArgumentNullException.ThrowIfNull(command);
+		return RunChunkAsync(actor, id, command, limit, ct, HistoricalOperationKind.ApprovedMappingV1);
+	}
+
 	public async Task<HistoricalProgress> CancelAsync(string actor, Guid id, CancellationToken ct = default)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
@@ -237,7 +243,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		return await ProgressAsync(db, operation, ct);
 	}
 
-	private async Task<HistoricalProgress> RunChunkAsync(string actor, Guid id, HistoricalUndoCommand? undo, int limit, CancellationToken ct)
+	private async Task<HistoricalProgress> RunChunkAsync(string actor, Guid id, HistoricalUndoCommand? undo, int limit, CancellationToken ct,
+			HistoricalOperationKind kind = HistoricalOperationKind.ManualV1)
 	{
 		ValidateLimit(limit);
 		if (undo != null && (undo.TaxonomyRevisionId == Guid.Empty || string.IsNullOrWhiteSpace(undo.Reason) || undo.Reason.Contains('\0')))
@@ -246,8 +253,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
-		if (operation.Kind != HistoricalOperationKind.ManualV1)
-		{ throw new TaxonomyException(409, "Automatic historical operations cannot be run by the manual service."); }
+		if (operation.Kind != kind)
+		{ throw new TaxonomyException(409, "Historical operation kind does not match the execution path."); }
 		bool reverting = undo != null;
 		if (reverting && operation.UndoTaxonomyRevisionId != null &&
 			(operation.UndoTaxonomyRevisionId != undo!.TaxonomyRevisionId || operation.UndoReason != undo.Reason))

@@ -10,10 +10,15 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
-// Internal execution seam only. Activation, undo/suppression and portable export are not enabled.
+// Internal execution seam only. Activation and portable export are not enabled.
 internal sealed class HistoricalApprovedMappingExecutor(
 	IDbContextFactory<ApplicationDbContext> factory, TimeProvider clock, IOptions<ClassificationOptions> options)
 {
+	// The manual correction is durable intent: subsequent automatic mapping execution
+	// treats both a manual category and an explicit manual null as protected.
+	internal Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
+			new HistoricalReclassificationService(factory, clock, options).UndoApprovedMappingChunkAsync(actor, id, command, limit, ct);
+
 	internal async Task<HistoricalProgress> ApplyChunkAsync(string actor, Guid id, int limit, CancellationToken ct = default)
 	{
 		if (limit is < 1 or > HistoricalReclassificationPolicy.MaximumChunkSize)
@@ -27,7 +32,7 @@ internal sealed class HistoricalApprovedMappingExecutor(
 			?? throw new TaxonomyException(404, "Historical operation does not exist.");
 		if (operation.Kind != HistoricalOperationKind.ApprovedMappingV1)
 		{ throw new TaxonomyException(409, "Operation is not an approved mapping capture."); }
-		if (operation.State is HistoricalOperationState.Completed or HistoricalOperationState.Cancelled)
+		if (operation.State is HistoricalOperationState.Completed or HistoricalOperationState.Cancelled or HistoricalOperationState.Undoing or HistoricalOperationState.Undone)
 		{ return await ProgressAsync(db, operation, ct); }
 		operation.State = HistoricalReclassificationPolicy.BeginApply(operation.State);
 		var rows = await db.HistoricalOperationItems.Where(x => x.OperationId == id && x.State == HistoricalItemState.Pending)
@@ -160,6 +165,7 @@ internal sealed class HistoricalApprovedMappingExecutor(
 		var rows = await db.HistoricalOperationItems.AsNoTracking().Where(x => x.OperationId == operation.Id).ToListAsync(ct);
 		return new(operation.Id, operation.State, rows.Count, rows.Count(x => x.State == HistoricalItemState.Applied),
 			rows.Count(x => x.State == HistoricalItemState.Conflicted), rows.Count(x => x.State == HistoricalItemState.Skipped),
-			rows.Count(x => x.State == HistoricalItemState.Pending), 0, 0, 0);
+						rows.Count(x => x.State == HistoricalItemState.Pending), rows.Count(x => x.UndoState == HistoricalItemState.Applied),
+						rows.Count(x => x.UndoState == HistoricalItemState.Conflicted), rows.Count(x => x.UndoState == HistoricalItemState.Skipped));
 	}
 }
