@@ -65,6 +65,9 @@ public sealed partial class ClassificationTests
 		db.CategoryAssistanceReviewPreferences.Add(new()
 		{
 			AttemptId = attempt.Id,
+			Location = attempt.Location,
+			Description = attempt.Description,
+			ItemCodeKey = attempt.ItemCodeKey,
 			Actor = Actor,
 			State = "active",
 			ExcludedItemIdsJson = System.Text.Json.JsonSerializer.Serialize(firstRows.Skip(1).Select(x => x.ItemId).ToArray()),

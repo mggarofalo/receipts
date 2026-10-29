@@ -130,6 +130,38 @@ public sealed partial class ClassificationTests
 		(await pending).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 	}
+	[Theory]
+	[InlineData("later")]
+	[InlineData("left_as_is")]
+	public async Task DetachedDeferredPreferenceProtectsSourceAcrossActors(string state)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).DetachedDeferredPreferenceCore(state);
+	}
+
+	private async Task DetachedDeferredPreferenceCore(string state)
+	{
+		var captured = await CaptureExecutableAsync();
+		var group = captured.Request.Group;
+		var source = NormalizationCatalogPolicy.Normalize(new(group.Store, group.RawDescription, group.ItemCode));
+		await using (var db = fixture.CreateDbContext())
+		{
+			db.CategoryAssistanceReviewPreferences.Add(new()
+			{
+				AttemptId = Guid.NewGuid(),
+				Actor = "other-actor",
+				Location = source.Location,
+				Description = source.Description,
+				ItemCodeKey = source.ItemCode ?? "",
+				State = state,
+				Revision = Guid.NewGuid()
+			});
+			await db.SaveChangesAsync();
+		}
+		(await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Skipped.Should().Be(1);
+		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
+	}
+
 	[Fact]
 	public async Task ApprovedExecutorHonorsCurrentExclusionsAndRollsBackWhenWritesDisabled()
 	{
@@ -156,12 +188,16 @@ public sealed partial class ClassificationTests
 			db.CategoryAssistanceReviewPreferences.Add(new()
 			{
 				AttemptId = attempt.Id,
-				Actor = Actor,
+				Location = attempt.Location,
+				Description = attempt.Description,
+				ItemCodeKey = attempt.ItemCodeKey,
+				Actor = "other-actor",
 				State = "active",
 				ExcludedItemIdsJson = System.Text.Json.JsonSerializer.Serialize(new[] { first.Item }),
 				Revision = Guid.NewGuid()
 			});
 			await db.SaveChangesAsync();
+			await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM category_assistance.\"Attempts\" WHERE \"Id\" = {attempt.Id}");
 		}
 		(await ApprovedExecutor().ApplyChunkAsync(first.Request.ExpectedRestoreGeneration, Actor, first.Request.OperationId, 1)).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(first.Item, null, 10)).Items.Should().ContainSingle();
@@ -238,6 +274,9 @@ public sealed partial class ClassificationTests
 			db.CategoryAssistanceReviewPreferences.Add(new()
 			{
 				AttemptId = attempt.Id,
+				Location = attempt.Location,
+				Description = attempt.Description,
+				ItemCodeKey = attempt.ItemCodeKey,
 				Actor = Actor,
 				State = "active",
 				ExcludedItemIdsJson = payload,

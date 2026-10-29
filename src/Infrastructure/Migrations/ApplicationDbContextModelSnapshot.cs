@@ -591,8 +591,6 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Actor", "OperationId");
 
-                    b.HasIndex("AttemptId");
-
                     b.ToTable("ReviewOperations", "category_assistance");
                 });
 
@@ -605,9 +603,27 @@ namespace Infrastructure.Migrations
                     b.Property<Guid>("AttemptId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
                     b.Property<string>("ExcludedItemIdsJson")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<string>("ItemCodeKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("text")
+                        .UseCollation("C");
 
                     b.Property<Guid>("Revision")
                         .IsConcurrencyToken()
@@ -619,8 +635,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Actor", "AttemptId");
-
-                    b.HasIndex("AttemptId");
 
                     b.ToTable("ReviewPreferences", "category_assistance", t =>
                         {
@@ -3401,24 +3415,6 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("AttemptId")
                         .OnDelete(DeleteBehavior.Restrict);
-                });
-
-            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewOperationEntity", b =>
-                {
-                    b.HasOne("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", null)
-                        .WithMany()
-                        .HasForeignKey("AttemptId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceReviewPreferenceEntity", b =>
-                {
-                    b.HasOne("Infrastructure.Entities.CategoryAssistance.CategoryAssistanceAttemptEntity", null)
-                        .WithMany()
-                        .HasForeignKey("AttemptId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Core.AcceptedDuplicatePairEntity", b =>

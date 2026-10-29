@@ -89,6 +89,9 @@ public sealed partial class OrganizationDiscoveryTests
 				db.CategoryAssistanceReviewPreferences.Add(new CategoryAssistanceReviewPreferenceEntity
 				{
 					AttemptId = attempt.Id,
+					Location = attempt.Location,
+					Description = attempt.Description,
+					ItemCodeKey = attempt.ItemCodeKey,
 					Actor = "synthetic",
 					State = n == 8 ? "left_as_is" : "active",
 					ExcludedItemIdsJson = n == 9 ? $"[\"{items[n].Id}\"]" : "[]",

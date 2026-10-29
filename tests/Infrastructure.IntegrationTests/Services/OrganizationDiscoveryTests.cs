@@ -209,6 +209,8 @@ public sealed partial class OrganizationDiscoveryTests(PostgresFixture server) :
 			await migrator.MigrateAsync(applied[^1]);
 			(await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_indexes WHERE indexname IN ('IX_Organization_ItemRawSource','IX_Organization_ItemNormalizedSource')").SingleAsync()).Should().Be(2);
 			(await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_trigger WHERE tgname LIKE 'organization_%'").SingleAsync()).Should().Be(5);
+			// Run current discovery against the current schema.
+			await migrator.MigrateAsync();
 			var item = Item(Guid.NewGuid(), Guid.NewGuid()); await Seed(fixture, item);
 			(await db.OrganizationDirtyItems.Select(x => x.ItemId).SingleAsync()).Should().Be(item.Id);
 			Guid run = await Start(fixture);

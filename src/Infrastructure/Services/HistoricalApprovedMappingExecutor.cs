@@ -75,10 +75,13 @@ internal sealed class HistoricalApprovedMappingExecutor(
 			var source = NormalizationCatalogPolicy.Normalize(new(row.Store, row.RawDescription, row.ItemCode));
 			string fingerprint = NormalizationCatalogPolicy.Hash(source);
 			var resolution = await CategoryMappingService.ResolveInTransactionAsync(db, source, fingerprint, head.RevisionId, null, ct);
-			var preferences = await (from preference in db.CategoryAssistanceReviewPreferences.AsNoTracking()
-									 join attempt in db.CategoryAssistanceAttempts.AsNoTracking() on preference.AttemptId equals attempt.Id
-									 where attempt.Location == source.Location && attempt.Description == source.Description && attempt.ItemCodeKey == (source.ItemCode ?? "")
-									 select preference).ToListAsync(ct);
+			var preferences = await db.CategoryAssistanceReviewPreferences.FromSqlInterpolated($"""
+                SELECT * FROM category_assistance."ReviewPreferences"
+                WHERE md5("Location" || chr(31) || "Description" || chr(31) || "ItemCodeKey") =
+                    md5({source.Location} || chr(31) || {source.Description} || chr(31) || {source.ItemCode ?? ""})
+                  AND "Location" = {source.Location} AND "Description" = {source.Description}
+                  AND "ItemCodeKey" = {source.ItemCode ?? ""}
+                """).AsNoTracking().ToListAsync(ct);
 			bool protectedByPreference = preferences.Any(p => ProtectsItem(p, row.ItemId));
 			bool eligibleAssignment = assignment == null || (assignment.CategoryId == null &&
 				(assignment.Source == "legacy_import" || (assignment.Source == "legacy_write" && assignment.LegacyResolution == "unresolved_path")));

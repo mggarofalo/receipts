@@ -10,6 +10,56 @@ namespace Infrastructure.IntegrationTests.Services;
 
 public sealed partial class OrganizationDiscoveryTests
 {
+	[Fact]
+	public async Task DetachedPreferenceInvalidatesBothSourcesAndRechecksHashCollisions()
+	{
+		var fixture = await server.CreateIsolatedAsync();
+		try
+		{
+			Guid receipt = Guid.NewGuid();
+			var first = Item(receipt, Guid.NewGuid(), "First");
+			var second = Item(receipt, Guid.NewGuid(), "Second");
+			second.ReceiptItemCode = "";
+			var collision = Item(receipt, Guid.NewGuid(), "A\u001fB");
+			await Seed(fixture, first, second, collision);
+			Guid run = await Start(fixture); await Drain(fixture, run);
+			await using var db = fixture.CreateDbContext();
+			var preference = new CategoryAssistanceReviewPreferenceEntity
+			{
+				Actor = "other-actor",
+				AttemptId = Guid.NewGuid(),
+				Location = "Test store",
+				Description = first.Description,
+				ItemCodeKey = "",
+				State = "left_as_is",
+				Revision = Guid.NewGuid()
+			};
+			db.CategoryAssistanceReviewPreferences.Add(preference);
+			db.CategoryAssistanceReviewPreferences.Add(new CategoryAssistanceReviewPreferenceEntity
+			{
+				Actor = "other-actor",
+				AttemptId = Guid.NewGuid(),
+				Location = "Test store\u001fA",
+				Description = "B",
+				ItemCodeKey = "",
+				State = "later",
+				Revision = Guid.NewGuid()
+			});
+			await db.SaveChangesAsync(); await Drain(fixture, run);
+			(await db.OrganizationItems.AsNoTracking().SingleAsync(x => x.ItemId == first.Id)).State.Should().Be("protected");
+			(await db.OrganizationItems.AsNoTracking().SingleAsync(x => x.ItemId == collision.Id)).State.Should().Be("observed");
+			preference.Description = second.Description;
+			await db.SaveChangesAsync(); await Drain(fixture, run);
+			(await db.OrganizationItems.AsNoTracking().SingleAsync(x => x.ItemId == first.Id)).State.Should().Be("observed");
+			(await db.OrganizationItems.AsNoTracking().SingleAsync(x => x.ItemId == second.Id)).State.Should().Be("protected");
+			db.CategoryAssistanceReviewPreferences.Remove(preference);
+			await db.SaveChangesAsync(); await Drain(fixture, run);
+			(await db.OrganizationItems.AsNoTracking().SingleAsync(x => x.ItemId == second.Id)).State.Should().Be("observed");
+			(await db.CategoryAssistanceAttempts.CountAsync()).Should().Be(0);
+		}
+		finally { await fixture.DisposeAsync(); }
+	}
+
 	private sealed class PauseSave : SaveChangesInterceptor
 	{
 		public TaskCompletionSource Arrived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -80,7 +130,7 @@ public sealed partial class OrganizationDiscoveryTests
 			db.HistoricalGroupDispositions.Add(new HistoricalGroupDispositionEntity { Id = Guid.NewGuid(), Actor = "synthetic", Store = "Test store", RawDescription = items[2].Description, SourceHash = "synthetic", Disposition = HistoricalGroupDisposition.LeaveAsIs, Version = 1, OperationId = Guid.NewGuid(), UpdatedAt = DateTimeOffset.UtcNow });
 			var attempt = new CategoryAssistanceAttemptEntity { Id = Guid.NewGuid(), RequestId = Guid.NewGuid(), SourceHash = "synthetic", Location = "Test store", Description = items[3].Description, RequestScope = Guid.NewGuid(), State = "dismissed" };
 			db.CategoryAssistanceAttempts.Add(attempt);
-			db.CategoryAssistanceReviewPreferences.Add(new CategoryAssistanceReviewPreferenceEntity { AttemptId = attempt.Id, Actor = "synthetic", State = "left_as_is", Revision = Guid.NewGuid() });
+			db.CategoryAssistanceReviewPreferences.Add(new CategoryAssistanceReviewPreferenceEntity { AttemptId = attempt.Id, Location = attempt.Location, Description = attempt.Description, ItemCodeKey = attempt.ItemCodeKey, Actor = "synthetic", State = "left_as_is", Revision = Guid.NewGuid() });
 			await db.SaveChangesAsync();
 			await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"ReceiptItems\" SET \"DeletedAt\" = now() WHERE \"Id\" = {items[4].Id}");
 			var before = await db.ReceiptItems.IgnoreQueryFilters().AsNoTracking().OrderBy(x => x.Id).ToListAsync();

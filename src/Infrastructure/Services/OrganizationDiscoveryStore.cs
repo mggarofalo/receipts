@@ -246,18 +246,21 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 	string.IsNullOrWhiteSpace(x.Category) && string.IsNullOrWhiteSpace(x.Subcategory)).ToDictionary(x => x.Id);
 		Guid[] candidateIds = candidatesById.Keys.ToArray();
 		// Two correlated existence checks produce a bounded set of IDs in one round trip.
-		HashSet<Guid> suppressed = (await (from item in db.ReceiptItems.IgnoreQueryFilters().AsNoTracking()
-										   join receipt in db.Receipts.IgnoreQueryFilters().AsNoTracking() on item.ReceiptId equals receipt.Id
-										   where candidateIds.Contains(item.Id) &&
-											   (db.HistoricalGroupDispositions.Any(d => d.Store == receipt.Location && d.RawDescription == item.Description &&
-												   d.ItemCode == item.ReceiptItemCode && d.Disposition != null) ||
-												(from preference in db.CategoryAssistanceReviewPreferences
-												 join attempt in db.CategoryAssistanceAttempts on preference.AttemptId equals attempt.Id
-												 where attempt.Location == receipt.Location.Trim() && attempt.Description == item.Description.Trim() &&
-												   attempt.ItemCodeKey == (item.ReceiptItemCode == null ? "" : item.ReceiptItemCode.Trim()) &&
-												   (preference.State != "active" || preference.ExcludedItemIdsJson != "[]")
-												 select preference.AttemptId).Any())
-										   select item.Id).ToListAsync(ct)).ToHashSet();
+		HashSet<Guid> suppressed = (await db.Database.SqlQuery<Guid>($"""
+            SELECT item."Id" AS "Value" FROM receipts."ReceiptItems" item
+            JOIN receipts."Receipts" receipt ON item."ReceiptId" = receipt."Id"
+            WHERE item."Id" = ANY({candidateIds}) AND (
+                EXISTS (SELECT 1 FROM taxonomy."HistoricalGroupDispositions" d
+                    WHERE d."Store" = receipt."Location" AND d."RawDescription" = item."Description"
+                      AND d."ItemCode" IS NOT DISTINCT FROM item."ReceiptItemCode" AND d."Disposition" IS NOT NULL)
+                OR EXISTS (SELECT 1 FROM category_assistance."ReviewPreferences" p
+                    WHERE md5(p."Location" || chr(31) || p."Description" || chr(31) || p."ItemCodeKey") =
+                          md5(btrim(receipt."Location") || chr(31) || btrim(item."Description") || chr(31) || coalesce(btrim(item."ReceiptItemCode"), ''))
+                      AND p."Location" = btrim(receipt."Location") COLLATE "C"
+                      AND p."Description" = btrim(item."Description") COLLATE "C"
+                      AND p."ItemCodeKey" = coalesce(btrim(item."ReceiptItemCode"), '') COLLATE "C"
+                      AND (p."State" <> 'active' OR p."ExcludedItemIdsJson" <> '[]')))
+            """).ToListAsync(ct)).ToHashSet();
 		Dictionary<Guid, (NormalizationSourceKey Key, string Hash)> sourceKeys = [];
 		foreach (var fact in candidatesById.Values.Where(x => !suppressed.Contains(x.Id)))
 		{

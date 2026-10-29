@@ -78,7 +78,14 @@ public sealed class CategoryAssistanceReviewPreferenceStore(
 		}
 		if (row == null)
 		{
-			row = new CategoryAssistanceReviewPreferenceEntity { Actor = actor, AttemptId = attemptId };
+			row = new CategoryAssistanceReviewPreferenceEntity
+			{
+				Actor = actor,
+				AttemptId = attemptId,
+				Location = attempt.Location,
+				Description = attempt.Description,
+				ItemCodeKey = attempt.ItemCodeKey
+			};
 			db.CategoryAssistanceReviewPreferences.Add(row);
 		}
 		row.State = request.State;

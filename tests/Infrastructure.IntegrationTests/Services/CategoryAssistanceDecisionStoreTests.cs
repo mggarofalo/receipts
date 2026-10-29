@@ -217,6 +217,12 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 			"later", [seed.Item]);
 		var later = await preferences.UpdateAsync(seed.Actor, seed.Attempt, laterRequest, CancellationToken.None);
 		later.State.Should().Be("later");
+		await using (var verifySource = fixture.CreateDbContext())
+		{
+			var attempt = await verifySource.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == seed.Attempt);
+			var preference = await verifySource.CategoryAssistanceReviewPreferences.AsNoTracking().SingleAsync(x => x.Actor == seed.Actor && x.AttemptId == seed.Attempt);
+			(preference.Location, preference.Description, preference.ItemCodeKey).Should().Be((attempt.Location, attempt.Description, attempt.ItemCodeKey));
+		}
 		(await preferences.GetAsync(other, seed.Attempt, CancellationToken.None)).State.Should().Be("active");
 		(await read.ListSuggestionsAsync(seed.Actor, "active", 0, 100, CancellationToken.None)).Items
 			.Should().NotContain(x => x.AttemptId == seed.Attempt);
