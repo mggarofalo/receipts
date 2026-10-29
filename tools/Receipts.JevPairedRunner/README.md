@@ -41,3 +41,22 @@ and do not make a category decision. They are not a campaign controller: a futur
 controller must bind exact input, payload and executable/dependency hashes, enforce
 shared reservations, ordering and terminal failure, and revalidate on restart.
 No live experiment is authorized by these commands.
+# Selected-path diagnostic exchange
+
+`prepare-selected-path` and `validate-selected-path` use the same private-file
+interface as the other offline commands. The input is the original label-free
+`PairedInput`; the reply object has `production`, `bindingSha256`, and `response`.
+For preparation supply the exact retained production response and null for the
+other two fields. A production abstention returns no follow-up payload. For an
+answered production result, retain the exported binding and payload; validate
+with the same production response, binding, and the raw follow-up response.
+The question ID binds the original input and exact production response, and the
+validator requires the binding and response to match the reconstructed question.
+
+This controlled comparison is preregistered to use the purchase description
+alone: the selected-path state sets `store` and `productCode` to null even if
+the original input contains them. The full selected path is supplied as category
+definitions. The production global-fit probability remains outside model state.
+These commands use the production parser and make no network calls; they neither
+classify labels nor authorize an assignment.
+
