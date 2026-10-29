@@ -91,3 +91,28 @@ mapping history and heads are preserved. Offline inspection includes mapping row
 in factual digests, and offline normalization preserves format 11 and all approval
 evidence unchanged. Release enablement still requires the entry-flow requirements
 above; API approval is always an explicit Admin operation, independent of purchase acceptance.
+
+## Background reuse of approved mappings (RECEIPTS-1078)
+
+`ApprovedMappingBackgroundWorker` implements bounded deterministic reuse for historical
+purchases. Hosted registration is intentionally withheld until the activity and undo
+surface is integrated. There is no new setting or consent toggle, and this worker
+never resolves a suggestion provider. Existing classification-write configuration and
+migration readiness still apply.
+
+Each pass advances at most one 100-purchase frozen sweep page. A rotating scan of
+current mapping heads revisits sources to find later purchases, including item IDs
+below a previous sweep cursor. A restart resumes an unfinished page from persisted
+operation scope and its original restore generation. Restore invalidates local sweep
+checkpoints; imported pending operations do not acquire new execution authority.
+Revoked mappings, changed taxonomy semantics and saved review choices are rechecked
+by the existing capture/executor transactions. Manual classifications and clears are
+preserved. Committed background changes publish a silent receipt-item invalidation.
+
+Operations belong to the mapping approver and appear in that actor's existing
+historical operation list. The public undo route now dispatches approved-mapping
+operations through conditional undo, capturing the restore generation at request time.
+Undo writes a manual correction, including an explicit null, so subsequent mapping
+scans cannot immediately reapply it. New automatic capture is not a user preview
+requiring acceptance; its frozen evidence exists to make execution and correction
+recoverable. Worker activation must be paired with accessible operation history/undo.
