@@ -96,4 +96,68 @@ public class ReceiptMapperTests
 		// Assert
 		Assert.Equal((double)15.7531m, actual.TaxAmount);
 	}
+
+	[Fact]
+	public void ToDomain_FromCreateRequest_MapsPaidFromEnvelopeAndOccasion()
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid(), occasionId = Guid.NewGuid();
+		CreateReceiptRequest request = new()
+		{
+			Location = "Store",
+			Date = new DateOnly(2025, 3, 15),
+			TaxAmount = 0,
+			PaidFromEnvelopeId = envelopeId,
+			OccasionId = occasionId,
+		};
+
+		// Act
+		Receipt actual = _mapper.ToDomain(request);
+
+		// Assert
+		Assert.Equal(envelopeId, actual.PaidFromEnvelopeId);
+		Assert.Equal(occasionId, actual.OccasionId);
+	}
+
+	[Fact]
+	public void ToDomain_FromUpdateRequest_MapsPaidFromEnvelopeAndOccasion()
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid(), occasionId = Guid.NewGuid();
+		UpdateReceiptRequest request = new()
+		{
+			Id = Guid.NewGuid(),
+			Location = "Store",
+			Date = new DateOnly(2025, 3, 15),
+			TaxAmount = 0,
+			PaidFromEnvelopeId = envelopeId,
+			OccasionId = occasionId,
+		};
+
+		// Act
+		Receipt actual = _mapper.ToDomain(request);
+
+		// Assert
+		Assert.Equal(envelopeId, actual.PaidFromEnvelopeId);
+		Assert.Equal(occasionId, actual.OccasionId);
+	}
+
+	[Fact]
+	public void ToResponse_ExposesPaidFromEnvelopeAndOccasion()
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid(), occasionId = Guid.NewGuid();
+		Receipt receipt = new(Guid.NewGuid(), "Store", new DateOnly(2025, 4, 10), new Money(0m))
+		{
+			PaidFromEnvelopeId = envelopeId,
+			OccasionId = occasionId,
+		};
+
+		// Act
+		ReceiptResponse actual = _mapper.ToResponse(receipt);
+
+		// Assert
+		Assert.Equal(envelopeId, actual.PaidFromEnvelopeId);
+		Assert.Equal(occasionId, actual.OccasionId);
+	}
 }

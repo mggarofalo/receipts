@@ -22,6 +22,7 @@ public class DatabaseMigratorService(
 		try
 		{
 			await dbContext.Database.MigrateAsync();
+			await RunEnvelopeBackfillAsync(dbContext);
 		}
 		finally
 		{
@@ -29,6 +30,23 @@ public class DatabaseMigratorService(
 			{
 				connection.Notice -= LogMigrationNotice;
 			}
+		}
+	}
+
+	// The envelope data step runs once, after the schema exists, in its own transaction.
+	private async Task RunEnvelopeBackfillAsync(ApplicationDbContext dbContext)
+	{
+		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = dbContext.Database.IsRelational()
+			? await dbContext.Database.BeginTransactionAsync() : null;
+		EnvelopeBackfillResult? result = await EnvelopeBackfill.RunIfPendingAsync(dbContext, TimeProvider.System, CancellationToken.None);
+		if (transaction is not null)
+		{
+			await transaction.CommitAsync();
+		}
+		if (result is not null)
+		{
+			logger.LogInformation("Envelope backfill: {Items} historical items, {Resolved} with an envelope, {Envelopes} envelopes, {Defaults} item-type defaults.",
+				result.Items, result.ItemsWithEnvelope, result.Envelopes, result.Defaults);
 		}
 	}
 

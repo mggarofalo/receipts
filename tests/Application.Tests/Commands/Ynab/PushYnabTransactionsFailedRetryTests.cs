@@ -16,7 +16,8 @@ public class PushYnabTransactionsFailedRetryTests
 	private readonly Mock<IReceiptItemService> _receiptItemServiceMock = new();
 	private readonly Mock<IAdjustmentService> _adjustmentServiceMock = new();
 	private readonly Mock<ITransactionService> _transactionServiceMock = new();
-	private readonly Mock<IYnabCategoryMappingService> _categoryMappingServiceMock = new();
+	private readonly Mock<IYnabEnvelopeMappingService> _envelopeMappingServiceMock = new();
+	private readonly Mock<IEnvelopeService> _envelopeServiceMock = new();
 	private readonly Mock<IYnabAccountMappingService> _accountMappingServiceMock = new();
 	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionServiceMock = new();
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock = new();
@@ -34,12 +35,15 @@ public class PushYnabTransactionsFailedRetryTests
 	public PushYnabTransactionsFailedRetryTests()
 	{
 		_syncRecordServiceMock.SetupPushOperationDefaults();
+		_envelopeServiceMock.Setup(s => s.GetAllAsync(null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([YnabRecordedCategoryFixture.GroceriesEnvelope]);
 		_handler = new PushYnabTransactionsCommandHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
 			_adjustmentServiceMock.Object,
 			_transactionServiceMock.Object,
-			_categoryMappingServiceMock.Object,
+			_envelopeMappingServiceMock.Object,
+			_envelopeServiceMock.Object,
 			_accountMappingServiceMock.Object,
 			_budgetSelectionServiceMock.Object,
 			_syncRecordServiceMock.Object,
@@ -74,9 +78,9 @@ public class PushYnabTransactionsFailedRetryTests
 		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(_receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([new TransactionAccount { Transaction = tx, Account = account }]);
 
-		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
+		_envelopeMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
-								YnabRecordedCategoryFixture.Mapped(new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)),
+								YnabRecordedCategoryFixture.Mapped("ynab-cat-1", "Groceries", "Food", _budgetId),
 			]);
 
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))

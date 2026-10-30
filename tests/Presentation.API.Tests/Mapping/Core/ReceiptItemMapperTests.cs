@@ -363,4 +363,90 @@ public class ReceiptItemMapperTests
 		Assert.Null(actual.NormalizedDescriptionName);
 		Assert.Null(actual.NormalizedDescriptionMatchScore);
 	}
+
+	[Fact]
+	public void ToDomain_FromCreateRequest_EnvelopeIdIsOverrideIntentAndOccasionPassesThrough()
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid(), occasionId = Guid.NewGuid();
+		CreateReceiptItemRequest request = new()
+		{
+			Description = "Cake",
+			Quantity = 1,
+			UnitPrice = 10,
+			Category = "Groceries",
+			EnvelopeId = envelopeId,
+			OccasionId = occasionId,
+		};
+
+		// Act
+		ReceiptItem actual = _mapper.ToDomain(request);
+
+		// Assert
+		Assert.Equal(envelopeId, actual.EnvelopeOverrideId);
+		Assert.Null(actual.EnvelopeId);
+		Assert.Equal(occasionId, actual.OccasionId);
+	}
+
+	[Fact]
+	public void ToDomain_FromUpdateRequest_EnvelopeIdIsOverrideIntentAndOccasionPassesThrough()
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid(), occasionId = Guid.NewGuid();
+		UpdateReceiptItemRequest request = new()
+		{
+			Id = Guid.NewGuid(),
+			Description = "Cake",
+			Quantity = 1,
+			UnitPrice = 10,
+			Category = "Groceries",
+			EnvelopeId = envelopeId,
+			OccasionId = occasionId,
+		};
+
+		// Act
+		ReceiptItem actual = _mapper.ToDomain(request);
+
+		// Assert
+		Assert.Equal(envelopeId, actual.EnvelopeOverrideId);
+		Assert.Null(actual.EnvelopeId);
+		Assert.Equal(occasionId, actual.OccasionId);
+	}
+
+	[Fact]
+	public void ToDomain_NoEnvelopeChosen_RequestsNoOverride()
+	{
+		// Act
+		ReceiptItem actual = _mapper.ToDomain(new CreateReceiptItemRequest { Description = "Cake", Quantity = 1, UnitPrice = 10, Category = "Groceries" });
+
+		// Assert
+		Assert.Null(actual.EnvelopeOverrideId);
+		Assert.Null(actual.OccasionId);
+	}
+
+	[Theory]
+	[InlineData(Domain.Envelopes.EnvelopeSource.Default, EnvelopeSource.Default)]
+	[InlineData(Domain.Envelopes.EnvelopeSource.Receipt, EnvelopeSource.Receipt)]
+	[InlineData(Domain.Envelopes.EnvelopeSource.Item, EnvelopeSource.Item)]
+	[InlineData(Domain.Envelopes.EnvelopeSource.Historical, EnvelopeSource.Historical)]
+	public void ToResponse_ExposesRecordedEnvelopeSourceAndOccasion(Domain.Envelopes.EnvelopeSource source, EnvelopeSource expected)
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid(), occasionId = Guid.NewGuid();
+		ReceiptItem item = new(Guid.NewGuid(), null, "Cake", 1, new Money(10m), new Money(10m), "Groceries", null)
+		{
+			EnvelopeId = envelopeId,
+			EnvelopeSource = source,
+			OccasionId = occasionId,
+			EnvelopeOverrideId = Guid.NewGuid(),
+		};
+
+		// Act
+		ReceiptItemResponse actual = _mapper.ToResponse(item);
+
+		// Assert
+		Assert.Equal(envelopeId, actual.EnvelopeId);
+		Assert.Equal(expected, actual.EnvelopeSource);
+		Assert.Equal(occasionId, actual.OccasionId);
+	}
 }

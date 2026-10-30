@@ -22,6 +22,7 @@ public static class ProgramService
 			.AddSingleton<API.Mapping.Core.AccountMapper>()
 			.AddSingleton<API.Mapping.Core.CardMapper>()
 			.AddSingleton<API.Mapping.Core.CategoryMapper>()
+			.AddSingleton<API.Mapping.Core.EnvelopeMapper>()
 			.AddSingleton<API.Mapping.Core.SubcategoryMapper>()
 			.AddSingleton<API.Mapping.Core.ReceiptMapper>()
 			.AddSingleton<API.Mapping.Core.ReceiptItemMapper>()

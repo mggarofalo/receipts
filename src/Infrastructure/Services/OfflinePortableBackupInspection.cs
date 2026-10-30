@@ -44,8 +44,8 @@ public sealed class OfflinePortableBackupInspection : IOfflinePortableBackupInsp
 		await using (SqliteCommand command = sqlite.CreateCommand())
 		{
 			command.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
-			if (!int.TryParse(Convert.ToString(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture), out version) || version is not (6 or 8 or 9 or 10 or 11 or 12 or 13 or 14))
-			{ throw new InvalidDataException("Inspection supports portable backup formats 6, 8, 9, 10, 11, 12, 13 and 14."); }
+			if (!int.TryParse(Convert.ToString(await command.ExecuteScalarAsync(cancellationToken), CultureInfo.InvariantCulture), out version) || version is not (6 or 8 or 9 or 10 or 11 or 12 or 13 or 14 or 15))
+			{ throw new InvalidDataException("Inspection supports portable backup formats 6, 8, 9, 10, 11, 12, 13, 14 and 15."); }
 		}
 		if (version >= 8 && !tables.Contains("normalization_catalog")) { throw new InvalidDataException("Format 8 requires normalization evidence."); }
 		if (version >= 10)

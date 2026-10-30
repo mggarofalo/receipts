@@ -40,6 +40,11 @@ public class ReceiptItemEntity : ISoftDeletable, IOwnedBy<ReceiptEntity>
 	public string? Subcategory { get; set; }
 	public Guid? NormalizedDescriptionId { get; set; }
 	public double? NormalizedDescriptionMatchScore { get; set; }
+	public Guid? EnvelopeId { get; set; }
+	public Domain.Envelopes.EnvelopeSource EnvelopeSource { get; set; }
+	[NotMapped]
+	public Guid? EnvelopeOverrideId { get; set; }
+	public Guid? OccasionId { get; set; }
 	public virtual NormalizedDescriptionEntity? NormalizedDescription { get; set; }
 	public virtual ReceiptEntity? Receipt { get; set; }
 	public DateTimeOffset? DeletedAt { get; set; }

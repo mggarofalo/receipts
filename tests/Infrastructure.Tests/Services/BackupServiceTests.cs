@@ -61,7 +61,7 @@ public class BackupServiceTests : IDisposable
 		await using SqliteCommand versionCmd = conn.CreateCommand();
 		versionCmd.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
 		string? version = (string?)await versionCmd.ExecuteScalarAsync();
-		version.Should().Be("14");
+		version.Should().Be("15");
 	}
 
 	[Fact]

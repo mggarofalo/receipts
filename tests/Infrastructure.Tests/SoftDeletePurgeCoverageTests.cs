@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Envelopes;
 using Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,7 +31,9 @@ public class SoftDeletePurgeCoverageTests
 		nameof(AcceptedDuplicatePairEntity),
 		nameof(AdjustmentEntity),
 		nameof(CategoryEntity),
+		nameof(EnvelopeEntity),
 		nameof(ItemTemplateEntity),
+		nameof(OccasionEntity),
 		nameof(ReceiptEntity),
 		nameof(ReceiptItemEntity),
 		nameof(SubcategoryEntity),

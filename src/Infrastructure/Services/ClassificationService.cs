@@ -137,6 +137,8 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		db.Classifications.Add(assignment);
 		if (current == null) { db.CurrentClassifications.Add(new() { ReceiptItemId = itemId, AssignmentId = assignment.Id }); }
 		else { current.AssignmentId = assignment.Id; }
+		// Every classification write appends here, so this is where envelopes follow the item type.
+		await ItemEnvelopeWriter.AfterItemTypeChangeAsync(db, itemId, categoryId, revisionId, ct);
 		return assignment;
 	}
 

@@ -20,7 +20,8 @@ public partial class ReceiptMapper
 			source.Location,
 			source.Date,
 			new Money((decimal)source.TaxAmount, Currency.USD)
-		);
+		)
+		{ PaidFromEnvelopeId = source.PaidFromEnvelopeId, OccasionId = source.OccasionId };
 	}
 
 	public Receipt ToDomain(UpdateReceiptRequest source)
@@ -30,7 +31,8 @@ public partial class ReceiptMapper
 			source.Location,
 			source.Date,
 			new Money((decimal)source.TaxAmount, Currency.USD)
-		);
+		)
+		{ PaidFromEnvelopeId = source.PaidFromEnvelopeId, OccasionId = source.OccasionId };
 	}
 
 	private double MapDecimalToDouble(decimal value) => (double)value;

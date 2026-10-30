@@ -41,7 +41,7 @@ public sealed class PortableMappingRestoreTests(PostgresFixture source) : IClass
 		var renewed = await service.ChangeAsync(actor, command with { ExpectedMappingRevisionId = revoked.Id, OperationId = Guid.NewGuid() });
 		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		var inspection = await new OfflinePortableBackupInspection().InspectAsync(path);
-		inspection.FormatVersion.Should().Be(14);
+		inspection.FormatVersion.Should().Be(15);
 		var target = new PostgresFixture(); await target.InitializeAsync();
 		try
 		{

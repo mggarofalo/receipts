@@ -96,56 +96,44 @@ public class YnabMapperTests
 	}
 
 	[Fact]
-	public void ToCategoryMappingResponse_MapsAllFields()
+	public void ToEnvelopeMappingResponse_MapsAllFields()
 	{
 		// Arrange
 		Guid id = Guid.NewGuid();
-		DateTimeOffset now = DateTimeOffset.UtcNow;
-		YnabCategoryMappingDto dto = new(id, "Groceries", "cat-1", "Groceries", "Needs", "budget-1", now, now);
+		Guid envelopeId = Guid.NewGuid();
+		DateTimeOffset created = DateTimeOffset.UtcNow.AddDays(-1);
+		DateTimeOffset updated = DateTimeOffset.UtcNow;
+		YnabEnvelopeMappingDto dto = new(id, envelopeId, "Groceries", "cat-1", "Groceries YNAB", "Needs", "budget-1", created, updated);
 
 		// Act
-		YnabCategoryMappingResponse result = _mapper.ToCategoryMappingResponse(dto);
+		YnabEnvelopeMappingResponse result = _mapper.ToEnvelopeMappingResponse(dto);
 
 		// Assert
 		Assert.Equal(id, result.Id);
-		Assert.Equal("Groceries", result.ReceiptsCategory);
+		Assert.Equal(envelopeId, result.EnvelopeId);
+		Assert.Equal("Groceries", result.EnvelopeName);
 		Assert.Equal("cat-1", result.YnabCategoryId);
-		Assert.Equal("Groceries", result.YnabCategoryName);
+		Assert.Equal("Groceries YNAB", result.YnabCategoryName);
 		Assert.Equal("Needs", result.YnabCategoryGroupName);
 		Assert.Equal("budget-1", result.YnabBudgetId);
-		Assert.Equal(now, result.CreatedAt);
-		Assert.Equal(now, result.UpdatedAt);
+		Assert.Equal(created, result.CreatedAt);
+		Assert.Equal(updated, result.UpdatedAt);
 	}
 
 	[Fact]
-	public void ToCategoryMappingListResponse_MapsAllMappings()
+	public void ToEnvelopeMappingListResponse_MapsAllMappingsInOrder()
 	{
 		// Arrange
-		List<YnabCategoryMappingDto> mappings =
+		List<YnabEnvelopeMappingDto> mappings =
 		[
-			new(Guid.NewGuid(), "Groceries", "cat-1", "Groceries", "Needs", "budget-1", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
-			new(Guid.NewGuid(), "Electronics", "cat-2", "Technology", "Wants", "budget-1", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+			new(Guid.NewGuid(), Guid.NewGuid(), "Groceries", "cat-1", "Groceries", "Needs", "budget-1", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
+			new(Guid.NewGuid(), Guid.NewGuid(), "Electronics", "cat-2", "Technology", "Wants", "budget-1", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 		];
 
 		// Act
-		YnabCategoryMappingListResponse result = _mapper.ToCategoryMappingListResponse(mappings);
+		YnabEnvelopeMappingListResponse result = _mapper.ToEnvelopeMappingListResponse(mappings);
 
 		// Assert
-		Assert.Equal(2, result.Data.Count);
-		Assert.Equal("Groceries", result.Data.ElementAt(0).ReceiptsCategory);
-		Assert.Equal("Electronics", result.Data.ElementAt(1).ReceiptsCategory);
-	}
-
-	[Fact]
-	public void ToCategoryMappingListResponse_MapsEmptyList()
-	{
-		// Arrange
-		List<YnabCategoryMappingDto> mappings = [];
-
-		// Act
-		YnabCategoryMappingListResponse result = _mapper.ToCategoryMappingListResponse(mappings);
-
-		// Assert
-		Assert.Empty(result.Data);
+		Assert.Equal(["Groceries", "Electronics"], result.Data.Select(m => m.EnvelopeName));
 	}
 }

@@ -23,7 +23,9 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 	IReceiptItemService receiptItemService,
 	IAdjustmentService adjustmentService,
 	ITransactionService transactionService,
-	IYnabCategoryMappingService categoryMappingService,
+	IYnabEnvelopeMappingService envelopeMappingService,
+	IEnvelopeService envelopeService,
+	IItemTypeEnvelopeDefaultService envelopeDefaultService,
 	IYnabAccountMappingService accountMappingService,
 	IYnabBudgetSelectionService budgetSelectionService,
 		ITaxonomyService taxonomyService,
@@ -81,8 +83,10 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 			return Unavailable("No YNAB budget selected.", request.CategoryView);
 		}
 
-		// Category mapping check — surface unmapped list as structured data
-		List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
+		// Envelope mapping check — surface unmapped list as structured data
+		List<YnabEnvelopeMappingDto> allMappings = await envelopeMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
+		Dictionary<Guid, string> envelopeNames = (await envelopeService.GetAllAsync(null, cancellationToken))
+			.ToDictionary(envelope => envelope.Id, envelope => envelope.Name);
 		TaxonomyRevision? currentRevision = null;
 		if (request.CategoryView == YnabComparisonCategoryView.CurrentHierarchy)
 		{
@@ -92,15 +96,17 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 				return Unavailable("Current taxonomy is unavailable.", request.CategoryView);
 			}
 		}
+		Dictionary<Guid, Guid> defaults = currentRevision is null ? [] : (await envelopeDefaultService.GetAllAsync(cancellationToken))
+			.ToDictionary(row => row.CategoryId, row => row.EnvelopeId);
 		(Dictionary<string, string> categoryToYnabId, List<string> unmapped) =
 			currentRevision is null
-				? YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings)
-				: YnabReceiptMappingResolver.ResolveCurrent(items, budgetId, allMappings, currentRevision);
+				? YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings, envelopeNames)
+				: YnabReceiptMappingResolver.ResolveCurrent(items, budgetId, allMappings, envelopeNames, currentRevision, defaults);
 		if (unmapped.Count > 0)
 		{
 			return new ReceiptYnabSplitComparisonResult(
 				CanComputeExpected: false,
-				ExpectedUnavailableReason: "Unmapped categories found.",
+				ExpectedUnavailableReason: "Unmapped envelopes found.",
 				UnmappedCategories: unmapped,
 				TransactionComparisons: [])
 			{

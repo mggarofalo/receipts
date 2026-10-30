@@ -33,6 +33,9 @@ public class ReceiptEntityConfiguration : IEntityTypeConfiguration<ReceiptEntity
 		builder.HasIndex(e => e.Date)
 			.HasFilter("\"DeletedAt\" IS NULL");
 
+		builder.HasOne<Entities.Envelopes.EnvelopeEntity>().WithMany().HasForeignKey(e => e.PaidFromEnvelopeId).OnDelete(DeleteBehavior.Restrict);
+		builder.HasOne<Entities.Envelopes.OccasionEntity>().WithMany().HasForeignKey(e => e.OccasionId).OnDelete(DeleteBehavior.Restrict);
+
 		builder.HasQueryFilter(e => e.DeletedAt == null);
 	}
 }

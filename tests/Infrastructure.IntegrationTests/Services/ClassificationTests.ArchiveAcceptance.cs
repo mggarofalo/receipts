@@ -31,12 +31,14 @@ public sealed partial class ClassificationTests
 	}
 
 	// Complete source, classification, historical and source-restore audit rows.
+	// Budget attribution columns are excluded: a downgrade may legitimately roll back the
+	// envelope migration (dropping them) before the protected migration's guard refuses.
 	private static async Task<string> AcceptanceDatabaseFacts(ApplicationDbContext db)
 	{
 		return await db.Database.SqlQueryRaw<string>("""
             SELECT coalesce(jsonb_agg(fact ORDER BY fact)::text, '[]') AS "Value" FROM (
-              SELECT 'items:' || to_jsonb(t)::text AS fact FROM receipts."ReceiptItems" t
-              UNION ALL SELECT 'receipts:' || to_jsonb(t)::text FROM receipts."Receipts" t
+              SELECT 'items:' || (to_jsonb(t) - 'EnvelopeId' - 'EnvelopeSource' - 'OccasionId')::text AS fact FROM receipts."ReceiptItems" t
+              UNION ALL SELECT 'receipts:' || (to_jsonb(t) - 'PaidFromEnvelopeId' - 'OccasionId')::text FROM receipts."Receipts" t
               UNION ALL SELECT 'assignments:' || to_jsonb(t)::text FROM taxonomy."Assignments" t
               UNION ALL SELECT 'pointers:' || to_jsonb(t)::text FROM taxonomy."CurrentAssignments" t
               UNION ALL SELECT 'operations:' || to_jsonb(t)::text FROM taxonomy."HistoricalOperations" t
@@ -111,7 +113,7 @@ public sealed partial class ClassificationTests
 			byte[] original = await File.ReadAllBytesAsync(source);
 			var inspection = new OfflinePortableBackupInspection();
 			var baseline = await inspection.InspectAsync(source);
-			baseline.FormatVersion.Should().Be(14);
+			baseline.FormatVersion.Should().Be(15);
 			baseline.RowCounts["historical_operation_archive"].Should().BeGreaterThan(0);
 			var merge = new OfflineConsolidationDecision(Guid.NewGuid(), loser, survivor);
 			var name = new OfflineCanonicalDecision(Guid.NewGuid(), survivor, "Survivor " + survivor, null);
@@ -124,7 +126,7 @@ public sealed partial class ClassificationTests
 			await service.ApplyAsync(source, manifestPath, output);
 			await service.VerifyAsync(source, manifestPath, output);
 			var transformed = await inspection.InspectAsync(output);
-			transformed.FormatVersion.Should().Be(14);
+			transformed.FormatVersion.Should().Be(15);
 			inspection.VerifyBaseline(baseline, transformed);
 			transformed.FactualTableSha256["historical_operation_archive"].Should().Be(baseline.FactualTableSha256["historical_operation_archive"]);
 			transformed.FactualTableSha256["source_revision_archive"].Should().Be(baseline.FactualTableSha256["source_revision_archive"]);
@@ -148,7 +150,7 @@ public sealed partial class ClassificationTests
 	[InlineData(true)]
 	public async Task ArchiveAcceptanceSourceMigrationDowngradeBoundary(bool retainedAudit)
 	{
-		var isolated = new PostgresFixture("20261027110503_RaiseCategoryAssistanceDailyLimit"); await isolated.InitializeAsync();
+		var isolated = new PostgresFixture("20261030134404_AddEnvelopes"); await isolated.InitializeAsync();
 		try { await new ClassificationTests(isolated).AcceptanceSourceDowngrade(retainedAudit); }
 		finally { await isolated.DisposeAsync(); }
 	}

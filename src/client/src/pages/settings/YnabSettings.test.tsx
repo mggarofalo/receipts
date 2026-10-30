@@ -11,49 +11,35 @@ beforeAll(() => {
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import YnabSettings from "./YnabSettings";
-import { chooseCategoryOption } from "@/test/category-picker";
 
-const taxonomy = {
-  id: "revision-1",
-  nodes: [
-    { id: "food", name: "Food", parentId: null, archived: false },
-    { id: "groceries", name: "Groceries", parentId: "food", archived: false },
-    { id: "transport", name: "Transport", parentId: null, archived: false },
-  ],
-};
+const envelopes = [
+  { id: "env-groceries", name: "Groceries", isActive: true },
+  { id: "env-gifts", name: "Gifts", isActive: true },
+];
 
-vi.mock("@/hooks/useCategoryTaxonomy", () => ({
-  useCategoryTaxonomy: vi.fn(() =>
-    mockQueryResult({
-      data: taxonomy,
-      isSuccess: true,
-      isError: false,
-      isLoading: false,
-      isFetching: false,
-    }),
-  ),
+vi.mock("@/hooks/useEnvelopes", () => ({
+  useEnvelopes: vi.fn(),
 }));
 
 // Match a settled useStableQuery projection and its successful wire payload;
 // loading/error fixtures remain genuinely unverified instead of claiming success.
-function settingsQuery(
-  fields: Record<string, unknown>,
-  wireCategories = false,
-) {
+function settingsQuery(fields: Record<string, unknown>) {
   const loading = fields.isLoading === true;
   const error = fields.isError === true;
-  const collection = ["budgets", "accounts", "mappings", "categories"].find(
-    (key) => key in fields,
-  );
+  const collection = [
+    "budgets",
+    "accounts",
+    "mappings",
+    "categories",
+    "envelopes",
+  ].find((key) => key in fields);
   const payload =
     fields.data ??
     (collection
-      ? { [wireCategories ? "categories" : "data"]: fields[collection] }
+      ? { data: fields[collection] }
       : "selectedBudgetId" in fields
         ? { selectedBudgetId: fields.selectedBudgetId }
-        : "unmappedCategories" in fields
-          ? { unmappedCategories: fields.unmappedCategories }
-          : "rateLimitStatus" in fields
+        : "rateLimitStatus" in fields
             ? fields.rateLimitStatus
             : "isConfigured" in fields
               ? {
@@ -120,16 +106,11 @@ vi.mock("@/hooks/useYnab", () => ({
   useYnabCategories: vi.fn(() =>
     settingsQuery({ categories: [], isLoading: false }),
   ),
-  useDistinctReceiptItemCategories: vi.fn(() =>
-    settingsQuery({ categories: [], isLoading: false }),
-  ),
-  useYnabCategoryMappings: vi.fn(() =>
+  useYnabEnvelopeMappings: vi.fn(() =>
     settingsQuery({ mappings: [], isLoading: false }),
   ),
-  useUnmappedCategories: vi.fn(() => settingsQuery({ unmappedCategories: [] })),
-  useCreateYnabCategoryMapping: vi.fn(() => mockMutationResult()),
-  useUpdateYnabCategoryMapping: vi.fn(() => mockMutationResult()),
-  useDeleteYnabCategoryMapping: vi.fn(() => mockMutationResult()),
+  useSetYnabEnvelopeMapping: vi.fn(() => mockMutationResult()),
+  useDeleteYnabEnvelopeMapping: vi.fn(() => mockMutationResult()),
   useYnabRateLimitStatus: vi.fn(() => settingsQuery({ rateLimitStatus: null })),
   useStaleMappings: vi.fn(() =>
     settingsQuery({
@@ -148,15 +129,9 @@ vi.mock("@/components/YnabBulkSyncCard", () => ({
 }));
 
 beforeEach(async () => {
-  const { useCategoryTaxonomy } = await import("@/hooks/useCategoryTaxonomy");
-  vi.mocked(useCategoryTaxonomy).mockReturnValue(
-    mockQueryResult({
-      data: taxonomy,
-      isSuccess: true,
-      isError: false,
-      isLoading: false,
-      isFetching: false,
-    }) as ReturnType<typeof useCategoryTaxonomy>,
+  const { useEnvelopes } = await import("@/hooks/useEnvelopes");
+  vi.mocked(useEnvelopes).mockReturnValue(
+    settingsQuery({ envelopes }) as ReturnType<typeof useEnvelopes>,
   );
   const hooks = await import("@/hooks/useYnab");
   const defaults = {
@@ -170,9 +145,7 @@ beforeEach(async () => {
     useYnabAccounts: { accounts: [] },
     useYnabAccountMappings: { mappings: [] },
     useYnabCategories: { categories: [] },
-    useDistinctReceiptItemCategories: { categories: [] },
-    useYnabCategoryMappings: { mappings: [] },
-    useUnmappedCategories: { unmappedCategories: [] },
+    useYnabEnvelopeMappings: { mappings: [] },
     useYnabRateLimitStatus: { rateLimitStatus: null },
     useStaleMappings: {
       staleAccountMappingCount: 0,
@@ -182,7 +155,7 @@ beforeEach(async () => {
   };
   for (const [name, fields] of Object.entries(defaults)) {
     (hooks[name as keyof typeof hooks] as Mock).mockReturnValue(
-      settingsQuery(fields, name === "useDistinctReceiptItemCategories"),
+      settingsQuery(fields),
     );
   }
 });
@@ -282,7 +255,7 @@ describe("YnabSettings – Connection Status", () => {
   });
 });
 
-describe("YnabSettings – Category Mapping", () => {
+describe("YnabSettings – Envelope Mapping", () => {
   it("hides the mapping cards when YNAB is not configured", async () => {
     const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
     vi.mocked(useYnabConnectionStatus).mockReturnValue(
@@ -304,10 +277,10 @@ describe("YnabSettings – Category Mapping", () => {
     expect(screen.getByText("Connection Status")).toBeInTheDocument();
     expect(screen.queryByText("Budget Selection")).not.toBeInTheDocument();
     expect(screen.queryByText("Account Mapping")).not.toBeInTheDocument();
-    expect(screen.queryByText("Category Mapping")).not.toBeInTheDocument();
+    expect(screen.queryByText("Envelope Mapping")).not.toBeInTheDocument();
   });
 
-  it("shows 'Select a budget above to map categories.' when selectedBudgetId is null and not in error state", async () => {
+  it("shows 'Select a budget above to link envelopes.' when selectedBudgetId is null and not in error state", async () => {
     const { useYnabBudgets, useSelectedYnabBudget } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
@@ -324,7 +297,7 @@ describe("YnabSettings – Category Mapping", () => {
     renderWithProviders(<YnabSettings />);
 
     expect(
-      screen.getByText("Select a budget above to map categories."),
+      screen.getByText("Select a budget above to link envelopes."),
     ).toBeInTheDocument();
   });
 
@@ -343,7 +316,7 @@ describe("YnabSettings – Category Mapping", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows loading spinner when categoryMappingLoading is true", async () => {
+  it("shows loading spinner while YNAB categories load", async () => {
     const { useYnabBudgets, useSelectedYnabBudget, useYnabCategories } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
@@ -365,51 +338,26 @@ describe("YnabSettings – Category Mapping", () => {
 
     renderWithProviders(<YnabSettings />);
 
-    expect(screen.getByText("Loading categories...")).toBeInTheDocument();
+    expect(screen.getByText("Loading envelopes...")).toBeInTheDocument();
   });
 
-  it("shows empty taxonomy guidance when no active categories exist", async () => {
-    const {
-      useYnabBudgets,
-      useSelectedYnabBudget,
-      useYnabCategories,
-      useDistinctReceiptItemCategories,
-    } = await import("@/hooks/useYnab");
-    vi.mocked(useYnabBudgets).mockReturnValue(
+  it("shows empty envelope guidance when no active envelopes exist", async () => {
+    const { useEnvelopes } = await import("@/hooks/useEnvelopes");
+    vi.mocked(useEnvelopes).mockReturnValue(
       settingsQuery({
-        budgets: [{ id: "budget-1", name: "Budget" }],
-        isLoading: false,
-        isError: false,
-      }),
-    );
-    vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      settingsQuery({
-        selectedBudgetId: "budget-1",
-        isLoading: false,
-      }),
-    );
-    vi.mocked(useYnabCategories).mockReturnValue(
-      settingsQuery({ categories: [], isLoading: false }),
-    );
-    vi.mocked(useDistinctReceiptItemCategories).mockReturnValue(
-      settingsQuery({ categories: [], isLoading: false }, true),
-    );
-    const { useCategoryTaxonomy } = await import("@/hooks/useCategoryTaxonomy");
-    vi.mocked(useCategoryTaxonomy).mockReturnValue(
-      mockQueryResult({
-        data: { id: "revision-1", nodes: [] },
-        isSuccess: true,
-        isError: false,
-        isLoading: false,
-        isFetching: false,
-      }) as ReturnType<typeof useCategoryTaxonomy>,
+        envelopes: [{ id: "env-old", name: "Old", isActive: false }],
+      }) as ReturnType<typeof useEnvelopes>,
     );
 
     renderWithProviders(<YnabSettings />);
 
     expect(
-      screen.getByText("No active categories found. Create a category first."),
+      screen.getByText("No active envelopes found. Create an envelope first."),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Envelopes" })).toHaveAttribute(
+      "href",
+      "/settings/envelopes",
+    );
   });
 
   it("shows bulk sync card when YNAB is configured and budget is selected", async () => {
@@ -469,95 +417,128 @@ describe("YnabSettings – Category Mapping", () => {
     expect(screen.queryByTestId("ynab-bulk-sync-card")).not.toBeInTheDocument();
   });
 
-  it("offers category paths from the current taxonomy", async () => {
-    const {
-      useYnabBudgets,
-      useSelectedYnabBudget,
-      useYnabCategories,
-      useDistinctReceiptItemCategories,
-      useYnabCategoryMappings,
-      useUnmappedCategories,
-    } = await import("@/hooks/useYnab");
-    vi.mocked(useYnabBudgets).mockReturnValue(
-      settingsQuery({
-        budgets: [{ id: "budget-1", name: "Budget" }],
-        isLoading: false,
-        isError: false,
-      }),
+  const ynabCategories = [
+    { id: "ynab-food", name: "Food", categoryGroupName: "Living" },
+    { id: "ynab-fun", name: "Fun", categoryGroupName: "Wants" },
+  ];
+  const groceriesLink = {
+    id: "link-1",
+    envelopeId: "env-groceries",
+    envelopeName: "Groceries",
+    ynabCategoryId: "ynab-food",
+    ynabCategoryName: "Food",
+    ynabCategoryGroupName: "Living",
+    ynabBudgetId: "budget-1",
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  it("lists one YNAB category select per active envelope", async () => {
+    const hooks = await import("@/hooks/useYnab");
+    vi.mocked(hooks.useYnabCategories).mockReturnValue(
+      settingsQuery({ categories: ynabCategories }),
     );
-    vi.mocked(useSelectedYnabBudget).mockReturnValue(
-      settingsQuery({
-        selectedBudgetId: "budget-1",
-        isLoading: false,
-      }),
-    );
-    vi.mocked(useYnabCategories).mockReturnValue(
-      settingsQuery({
-        categories: [
-          {
-            id: "ynab-cat-1",
-            name: "Groceries",
-            categoryGroupName: "Everyday",
-          },
-        ],
-        isLoading: false,
-      }),
-    );
-    vi.mocked(useDistinctReceiptItemCategories).mockReturnValue(
-      settingsQuery(
-        {
-          categories: ["Food", "Transport"],
-          isLoading: false,
-        },
-        true,
-      ),
-    );
-    vi.mocked(useYnabCategoryMappings).mockReturnValue(
-      settingsQuery({ mappings: [], isLoading: false }),
-    );
-    vi.mocked(useUnmappedCategories).mockReturnValue(
-      settingsQuery({ unmappedCategories: ["Food", "Transport"] }),
+    vi.mocked(hooks.useYnabEnvelopeMappings).mockReturnValue(
+      settingsQuery({ mappings: [groceriesLink] }),
     );
 
     renderWithProviders(<YnabSettings />);
 
     expect(
-      screen.getByRole("combobox", { name: "Receipt category" }),
+      screen.getByRole("combobox", { name: "YNAB category for Groceries" }),
+    ).toHaveTextContent("Food");
+    expect(
+      screen.getByRole("combobox", { name: "YNAB category for Gifts" }),
+    ).toHaveTextContent("Not linked");
+    expect(
+      screen.getByRole("button", { name: "Unlink Groceries" }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Unlink Gifts" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("creates a mapping for the selected nested category ID", async () => {
+  it("links an envelope by PUTting the chosen YNAB category for the selected budget", async () => {
     const user = userEvent.setup();
     const hooks = await import("@/hooks/useYnab");
-    const create = vi.fn();
+    const link = vi.fn();
     vi.mocked(hooks.useYnabCategories).mockReturnValue(
-      settingsQuery({
-        categories: [
-          { id: "ynab-food", name: "Food", categoryGroupName: "Living" },
-        ],
-      }),
+      settingsQuery({ categories: ynabCategories }),
     );
-    vi.mocked(hooks.useCreateYnabCategoryMapping).mockReturnValue(
-      mockMutationResult({ mutate: create }) as ReturnType<
-        typeof hooks.useCreateYnabCategoryMapping
+    vi.mocked(hooks.useSetYnabEnvelopeMapping).mockReturnValue(
+      mockMutationResult({ mutate: link }) as ReturnType<
+        typeof hooks.useSetYnabEnvelopeMapping
       >,
     );
     renderWithProviders(<YnabSettings />);
+
     await user.click(
-      screen.getByRole("combobox", { name: "Receipt category" }),
+      screen.getByRole("combobox", { name: "YNAB category for Gifts" }),
     );
-    await chooseCategoryOption(user, "Food / Groceries");
-    expect(screen.getByText("Unmapped")).toBeInTheDocument();
-    await user.click(screen.getByRole("combobox", { name: "YNAB category" }));
-    await user.click(screen.getByRole("option", { name: "Food" }));
-    expect(create).toHaveBeenCalledWith({
-      receiptsCategory: "Groceries",
-      receiptsCategoryId: "groceries",
-      ynabCategoryId: "ynab-food",
-      ynabCategoryName: "Food",
-      ynabCategoryGroupName: "Living",
+    await user.click(screen.getByRole("option", { name: "Fun" }));
+
+    expect(link).toHaveBeenCalledWith({
+      envelopeId: "env-gifts",
+      ynabCategoryId: "ynab-fun",
+      ynabCategoryName: "Fun",
+      ynabCategoryGroupName: "Wants",
       ynabBudgetId: "budget-1",
     });
+  });
+
+  it("unlinks an envelope by its envelope id", async () => {
+    const user = userEvent.setup();
+    const hooks = await import("@/hooks/useYnab");
+    const unlink = vi.fn();
+    vi.mocked(hooks.useYnabCategories).mockReturnValue(
+      settingsQuery({ categories: ynabCategories }),
+    );
+    vi.mocked(hooks.useYnabEnvelopeMappings).mockReturnValue(
+      settingsQuery({ mappings: [groceriesLink] }),
+    );
+    vi.mocked(hooks.useDeleteYnabEnvelopeMapping).mockReturnValue(
+      mockMutationResult({ mutate: unlink }) as ReturnType<
+        typeof hooks.useDeleteYnabEnvelopeMapping
+      >,
+    );
+    renderWithProviders(<YnabSettings />);
+
+    await user.click(screen.getByRole("button", { name: "Unlink Groceries" }));
+
+    expect(unlink).toHaveBeenCalledWith("env-groceries");
+  });
+
+  it("keeps an archived envelope listed while it is still linked, and hides archived unlinked ones", async () => {
+    const hooks = await import("@/hooks/useYnab");
+    const { useEnvelopes } = await import("@/hooks/useEnvelopes");
+    vi.mocked(useEnvelopes).mockReturnValue(
+      settingsQuery({
+        envelopes: [
+          { id: "env-groceries", name: "Groceries", isActive: false },
+          { id: "env-travel", name: "Travel", isActive: false },
+          { id: "env-gifts", name: "Gifts", isActive: true },
+        ],
+      }) as ReturnType<typeof useEnvelopes>,
+    );
+    vi.mocked(hooks.useYnabCategories).mockReturnValue(
+      settingsQuery({ categories: ynabCategories }),
+    );
+    vi.mocked(hooks.useYnabEnvelopeMappings).mockReturnValue(
+      settingsQuery({ mappings: [groceriesLink] }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    const archived = screen.getByRole("combobox", {
+      name: "YNAB category for Groceries",
+    }).parentElement!;
+    expect(archived).toHaveTextContent("Archived");
+    expect(
+      screen.queryByRole("combobox", { name: "YNAB category for Travel" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "YNAB category for Gifts" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -733,7 +714,7 @@ describe("YnabSettings – Stale Mappings", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows stale mapping banner when stale category mappings exist", async () => {
+  it("shows stale mapping banner when stale envelope links exist", async () => {
     const { useYnabBudgets, useSelectedYnabBudget, useStaleMappings } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
@@ -756,13 +737,13 @@ describe("YnabSettings – Stale Mappings", () => {
 
     renderWithProviders(<YnabSettings />);
 
-    expect(screen.getByText(/3 category mapping\(s\)/)).toBeInTheDocument();
+    expect(screen.getByText(/3 envelope link\(s\)/)).toBeInTheDocument();
     expect(
       screen.getByText("Delete previous-budget mappings"),
     ).toBeInTheDocument();
   });
 
-  it("shows both account and category counts when both are stale", async () => {
+  it("shows both account and envelope link counts when both are stale", async () => {
     const { useYnabBudgets, useSelectedYnabBudget, useStaleMappings } =
       await import("@/hooks/useYnab");
     vi.mocked(useYnabBudgets).mockReturnValue(
@@ -786,7 +767,7 @@ describe("YnabSettings – Stale Mappings", () => {
     renderWithProviders(<YnabSettings />);
 
     expect(screen.getByText(/2 account mapping\(s\)/)).toBeInTheDocument();
-    expect(screen.getByText(/3 category mapping\(s\)/)).toBeInTheDocument();
+    expect(screen.getByText(/3 envelope link\(s\)/)).toBeInTheDocument();
   });
 
   it("does not show stale mapping banner when no stale mappings exist", async () => {

@@ -92,8 +92,8 @@ export function YnabPushButton({
           result.unmappedCategories.length > 0 && (
             <Alert variant="destructive" role="alert">
               <AlertDescription>
-                Unmapped categories:{" "}
-                {result.unmappedCategories.join(", ")}. Map them in{" "}
+                Unmapped envelopes:{" "}
+                {result.unmappedCategories.join(", ")}. Link them in{" "}
                 <a href="/settings/ynab" className="underline">
                   YNAB Settings
                 </a>

@@ -195,6 +195,9 @@ export function mockReceiptItemResponse(
     unitPrice: 9.99,
     category: "General",
     subcategory: null,
+    envelopeId: null,
+    envelopeSource: "default",
+    occasionId: null,
     ...overrides,
   };
 }

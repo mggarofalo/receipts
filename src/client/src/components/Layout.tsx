@@ -71,6 +71,7 @@ const NAV: readonly NavSection[] = [
       { to: "/accounts", label: "Accounts", icon: Icon.Wallet },
       { to: "/cards", label: "Cards", icon: Icon.Card },
       { to: "/classification", label: "Classification", icon: Icon.Tag },
+      { to: "/settings/envelopes", label: "Envelopes", icon: Icon.Wallet },
       { to: "/settings/ynab", label: "YNAB", icon: Icon.Link },
       { to: "/ynab", label: "YNAB Status", icon: Icon.Chart },
     ],

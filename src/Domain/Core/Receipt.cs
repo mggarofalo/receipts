@@ -6,6 +6,9 @@ public class Receipt
 	public string Location { get; set; }
 	public DateOnly Date { get; set; }
 	public Money TaxAmount { get; set; }
+	// Optional receipt-level "paid from" envelope, applied to its items as receipt-sourced.
+	public Guid? PaidFromEnvelopeId { get; set; }
+	public Guid? OccasionId { get; set; }
 
 	public const string LocationCannotBeEmpty = "Location cannot be empty";
 

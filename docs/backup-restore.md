@@ -4,7 +4,7 @@ The application supports portable SQLite backups for disaster recovery, migratio
 
 ## What gets backed up
 
-The export (current format `export_version = 13`) includes your domain data plus YNAB
+The export (current format `export_version = 15`) includes your domain data plus YNAB
 configuration/state and normalized-description settings:
 
 - Accounts
@@ -18,7 +18,11 @@ configuration/state and normalized-description settings:
 - Adjustments
 - YNAB configuration and state: selected budget, account mappings, category mappings, and
   sync records (current per-transaction sync state)
-- Stable YNAB category bindings and exact legacy-name resolution evidence (format 13)
+- Stable YNAB category bindings and exact legacy-name resolution evidence (format 13).
+  Since format 15 these node-keyed mappings are frozen evidence; push uses envelope links.
+- Envelopes, occasions, item-type default envelopes, envelope-to-YNAB-category links, each
+  item's recorded envelope, envelope source and occasion, each receipt's paid-from envelope
+  and occasion, and the envelope backfill marker (format 15). See [Envelopes](envelopes.md).
 - Normalized descriptions, display labels, review/rejection status, recorded neighbour context, and settings
 - Accepted duplicate pairs, including deleted decisions and their receipt dependencies
 - Normalization source mappings, catalog operation observations and membership,
@@ -97,6 +101,21 @@ The proof is rechecked under business-table write locks, and removal and import
 commit or roll back together. Existing business history is never removed. Formats
 1–9 retain their conversion/replay rules and do not perform this cleanup.
 
+### Format 15 envelopes and older formats
+
+Format 15 keeps the format 14 taxonomy codec unchanged and adds the envelope tables
+(`envelopes`, `occasions`, `item_type_envelope_defaults`, `ynab_envelope_mappings`,
+`receipt_item_envelopes`, `receipt_envelope_choices`, `envelope_backfill`). Item and
+receipt choices live in side tables, so the receipt schemas of formats 1 to 14 and the
+offline tools that read them are unchanged. Envelopes and occasions carry their own
+deletion state.
+
+A format 14 or older file carries no envelopes. Restoring it marks every restored
+purchase as historical and derives envelopes from its node-keyed YNAB mappings exactly
+as the [deploy backfill](migrations/20261030134404_AddEnvelopes.md) does, in the same
+transaction. That requires a destination without envelopes or item-type defaults;
+otherwise the import is rejected before any business row changes. Use a fresh database.
+
 ### Formats 1–9: fresh-target conversion
 
 Older portable imports automatically derive the initial taxonomy and assignments
@@ -140,7 +159,8 @@ values are rejected. Versions 5 and later require the complete base table invent
 versions 7 and later also require `normalization_catalog`, and version 10 and later require
 `taxonomy_archive` and `portable_deletion_state`. Versions 11 and later require
 `category_mapping_archive`; versions 12 and later require `historical_operation_archive`
-and `source_revision_archive`. Missing tables cannot silently
+and `source_revision_archive`; versions 14 and later require `review_disposition_archive`
+and `review_preference_archive`; version 15 requires the envelope tables. Missing tables cannot silently
 turn a restore into partial recovery. Use an importer that explicitly supports
 the file's format version.
 

@@ -1,5 +1,6 @@
 ﻿using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Envelopes;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -101,8 +102,15 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 		YnabSyncRecordEntity deletedSync = YnabSyncRecordEntityGenerator.Generate(localTransactionId: activeTransaction.Id, syncType: Common.YnabSyncType.MemoUpdate);
 		deletedSync.DeletedAt = deletedAt;
 
+		EnvelopeEntity activeEnvelope = new() { Id = Guid.NewGuid(), Name = $"Envelope {Guid.NewGuid():N}", IsActive = true };
+		EnvelopeEntity deletedEnvelope = new() { Id = Guid.NewGuid(), Name = $"Envelope {Guid.NewGuid():N}", IsActive = true, DeletedAt = deletedAt };
+		OccasionEntity activeOccasion = new() { Id = Guid.NewGuid(), Name = $"Occasion {Guid.NewGuid():N}", IsActive = true };
+		OccasionEntity deletedOccasion = new() { Id = Guid.NewGuid(), Name = $"Occasion {Guid.NewGuid():N}", IsActive = true, DeletedAt = deletedAt };
+
 		await using (ApplicationDbContext setup = fixture.CreateDbContext())
 		{
+			setup.Envelopes.AddRange(activeEnvelope, deletedEnvelope);
+			setup.Occasions.AddRange(activeOccasion, deletedOccasion);
 			setup.Accounts.Add(account);
 			setup.Cards.Add(card);
 			setup.Receipts.AddRange(activeReceipt, deletedReceipt, pairReceiptA, pairReceiptB);
@@ -162,6 +170,12 @@ public class PurgeTrashServiceTests(PostgresFixture fixture)
 
 		(await verify.YnabSyncRecords.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedSync.Id)).Should().BeFalse();
 		(await verify.YnabSyncRecords.IgnoreQueryFilters().AnyAsync(e => e.Id == activeSync.Id)).Should().BeTrue();
+
+		(await verify.Envelopes.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedEnvelope.Id)).Should().BeFalse();
+		(await verify.Envelopes.IgnoreQueryFilters().AnyAsync(e => e.Id == activeEnvelope.Id)).Should().BeTrue();
+
+		(await verify.Occasions.IgnoreQueryFilters().AnyAsync(e => e.Id == deletedOccasion.Id)).Should().BeFalse();
+		(await verify.Occasions.IgnoreQueryFilters().AnyAsync(e => e.Id == activeOccasion.Id)).Should().BeTrue();
 	}
 
 	[Fact]

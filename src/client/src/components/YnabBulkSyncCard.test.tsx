@@ -184,7 +184,7 @@ describe("YnabBulkSyncCard", () => {
           results: [
             { receiptId: "r1", result: { success: true, operationStatus: "synced", pushedTransactions: [], error: null } },
             { receiptId: "r2", result: { success: true, operationStatus: "synced", pushedTransactions: [], error: null } },
-            { receiptId: "r3", result: { success: false, operationStatus: "failed", pushedTransactions: [], error: "Unmapped categories" } },
+            { receiptId: "r3", result: { success: false, operationStatus: "failed", pushedTransactions: [], error: "Unmapped envelopes found." } },
           ],
         },
       }),

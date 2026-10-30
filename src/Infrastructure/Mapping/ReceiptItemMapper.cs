@@ -47,6 +47,11 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationExclusionReason))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.NormalizationExclusionReason))]
 	[MapperIgnoreTarget(nameof(ReceiptItemEntity.ReviewedTargetId))]
+	// Persistence derives the recorded envelope; a write supplies only an override intent.
+	[MapperIgnoreSource(nameof(ReceiptItem.EnvelopeId))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.EnvelopeId))]
+	[MapperIgnoreSource(nameof(ReceiptItem.EnvelopeSource))]
+	[MapperIgnoreTarget(nameof(ReceiptItemEntity.EnvelopeSource))]
 	private partial ReceiptItemEntity ToEntityPartial(ReceiptItem source);
 
 	public ReceiptItemEntity ToEntity(ReceiptItem source)
@@ -86,6 +91,8 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.ReviewMappingRevision))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.NormalizationSourceHash))]
 	[MapperIgnoreSource(nameof(ReceiptItemEntity.ReviewedTargetId))]
+	[MapperIgnoreSource(nameof(ReceiptItemEntity.EnvelopeOverrideId))]
+	[MapperIgnoreTarget(nameof(ReceiptItem.EnvelopeOverrideId))]
 	private partial ReceiptItem ToDomainPartial(ReceiptItemEntity source);
 
 	public ReceiptItem ToDomain(ReceiptItemEntity source)

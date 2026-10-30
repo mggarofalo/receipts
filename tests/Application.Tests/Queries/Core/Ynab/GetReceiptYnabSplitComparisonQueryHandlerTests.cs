@@ -7,6 +7,7 @@ using Application.Tests.Commands.Ynab;
 using Common;
 using Domain;
 using Domain.Aggregates;
+using Domain.Envelopes;
 using Domain.Taxonomy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -18,11 +19,14 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 {
 	private static readonly Guid NewRootId = Guid.Parse("ba1bda16-22bb-4d08-a833-2eb106600001");
 	private static readonly Guid CurrentRevisionId = Guid.Parse("ba1bda16-22bb-4d08-a833-2eb106600002");
+	private static readonly Guid CurrentEnvelopeId = Guid.Parse("ba1bda16-22bb-4d08-a833-2eb106600003");
 	private readonly Mock<IReceiptService> _receiptServiceMock = new();
 	private readonly Mock<IReceiptItemService> _receiptItemServiceMock = new();
 	private readonly Mock<IAdjustmentService> _adjustmentServiceMock = new();
 	private readonly Mock<ITransactionService> _transactionServiceMock = new();
-	private readonly Mock<IYnabCategoryMappingService> _categoryMappingServiceMock = new();
+	private readonly Mock<IYnabEnvelopeMappingService> _envelopeMappingServiceMock = new();
+	private readonly Mock<IEnvelopeService> _envelopeServiceMock = new();
+	private readonly Mock<IItemTypeEnvelopeDefaultService> _envelopeDefaultServiceMock = new();
 	private readonly Mock<IYnabAccountMappingService> _accountMappingServiceMock = new();
 	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionServiceMock = new();
 	private readonly Mock<IYnabSyncRecordService> _syncRecordServiceMock = new();
@@ -40,12 +44,17 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 
 	public GetReceiptYnabSplitComparisonQueryHandlerTests()
 	{
+		_envelopeServiceMock.Setup(s => s.GetAllAsync(null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync([YnabRecordedCategoryFixture.GroceriesEnvelope, new Envelope(CurrentEnvelopeId, "Current")]);
+		_envelopeDefaultServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
 		_handler = new GetReceiptYnabSplitComparisonQueryHandler(
 			_receiptServiceMock.Object,
 			_receiptItemServiceMock.Object,
 			_adjustmentServiceMock.Object,
 			_transactionServiceMock.Object,
-			_categoryMappingServiceMock.Object,
+			_envelopeMappingServiceMock.Object,
+			_envelopeServiceMock.Object,
+			_envelopeDefaultServiceMock.Object,
 			_accountMappingServiceMock.Object,
 			_budgetSelectionServiceMock.Object,
 			_taxonomyServiceMock.Object,
@@ -83,9 +92,9 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 		_transactionServiceMock.Setup(s => s.GetTransactionAccountsByReceiptIdAsync(_receiptId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(txAccounts);
 
-		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
+		_envelopeMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
-								YnabRecordedCategoryFixture.Mapped(new YnabCategoryMappingDto(Guid.NewGuid(), "Groceries", "ynab-cat-1", "Groceries", "Food", _budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)),
+								YnabRecordedCategoryFixture.Mapped("ynab-cat-1", "Groceries", "Food", _budgetId),
 			]);
 
 		_budgetSelectionServiceMock.Setup(s => s.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>()))
@@ -108,6 +117,12 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 
 		_syncRecordServiceMock.Setup(s => s.GetByTransactionTypeAndBudgetAsync(_transactionId, YnabSyncType.TransactionPush, _budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync((YnabSyncRecordDto?)null);
+	}
+
+	private void SetupDefault(Guid categoryId, Guid envelopeId)
+	{
+		_envelopeDefaultServiceMock.Setup(s => s.GetAllAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync([new ItemTypeEnvelopeDefault(categoryId, envelopeId, DateTimeOffset.UtcNow)]);
 	}
 
 	private void SetupCurrentRevision(IReadOnlyList<TaxonomyNode> nodes)
@@ -149,18 +164,19 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 	[Theory]
 	[InlineData(false)]
 	[InlineData(true)]
-	public async Task Handle_CurrentHierarchy_UsesStableIdentityAfterMoveOrRename(bool directMapping)
+	public async Task Handle_CurrentHierarchy_DefaultSourcedItemUsesCurrentItemTypeDefaultAfterMove(bool directDefault)
 	{
 		SetupHappyPath();
 		SetupCurrentRevision([
 			new TaxonomyNode(NewRootId, null, "New parent", null, false),
 			new TaxonomyNode(YnabRecordedCategoryFixture.GroceriesId, NewRootId, "Renamed groceries", null, false),
 		]);
-		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
+		SetupDefault(directDefault ? YnabRecordedCategoryFixture.GroceriesId : NewRootId, CurrentEnvelopeId);
+		_envelopeMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync([
-				new YnabCategoryMappingDto(Guid.NewGuid(), "New parent", "ynab-current", "Current", "Food",
-					_budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)
-				{ ReceiptsCategoryId = directMapping ? YnabRecordedCategoryFixture.GroceriesId : NewRootId },
+				YnabRecordedCategoryFixture.Mapped("ynab-cat-1", "Groceries", "Food", _budgetId),
+				new YnabEnvelopeMappingDto(Guid.NewGuid(), CurrentEnvelopeId, "Current", "ynab-current", "Current", "Food",
+					_budgetId, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow),
 			]);
 		Dictionary<string, string>? targets = null;
 		_splitCalculatorMock.Setup(s => s.ComputeWaterfallSplits(
@@ -184,47 +200,46 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 	}
 
 	[Fact]
-	public async Task Handle_CurrentHierarchy_AmbiguousMappingFailsClosed()
+	public async Task Handle_CurrentHierarchy_HistoricalItemKeepsRecordedEnvelope()
 	{
 		SetupHappyPath();
+		Domain.Core.ReceiptItem item = YnabRecordedCategoryFixture.Classified(new(Guid.NewGuid(), null, "Historical", 1,
+			new Money(10m), new Money(10m), "Groceries", null));
+		item.EnvelopeSource = EnvelopeSource.Historical;
+		_receiptItemServiceMock.Setup(s => s.GetByReceiptIdAsync(_receiptId, 0, 10000,
+				It.IsAny<SortParams>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PagedResult<Domain.Core.ReceiptItem>([item], 1, 0, 10000));
 		SetupCurrentRevision([new TaxonomyNode(YnabRecordedCategoryFixture.GroceriesId, null, "Renamed", null, false)]);
-		YnabCategoryMappingDto mapping = YnabRecordedCategoryFixture.Mapped(new(
-			Guid.NewGuid(), "Groceries", "one", "One", "Food", _budgetId,
-			DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
-		_categoryMappingServiceMock.Setup(s => s.GetByBudgetIdAsync(_budgetId, It.IsAny<CancellationToken>()))
-			.ReturnsAsync([mapping, mapping with { Id = Guid.NewGuid(), YnabCategoryId = "two" }]);
+		SetupDefault(YnabRecordedCategoryFixture.GroceriesId, CurrentEnvelopeId);
+		Dictionary<string, string>? targets = null;
+		_splitCalculatorMock.Setup(s => s.ComputeWaterfallSplits(
+				It.IsAny<ReceiptWithItems>(), It.IsAny<List<Domain.Core.Transaction>>(),
+				It.IsAny<Dictionary<string, string>>()))
+			.Returns((ReceiptWithItems _, List<Domain.Core.Transaction> _, Dictionary<string, string> mapping) =>
+			{
+				targets = mapping;
+				return new YnabSplitResult([new YnabTransactionSplit(_transactionId, -11000,
+					[new YnabSubTransactionSplit("ynab-cat-1", -11000)])]);
+			});
 
 		ReceiptYnabSplitComparisonResult result = await _handler.Handle(
 			new GetReceiptYnabSplitComparisonQuery(_receiptId, YnabComparisonCategoryView.CurrentHierarchy),
 			CancellationToken.None);
 
-		result.CanComputeExpected.Should().BeFalse();
-		result.UnmappedCategories.Should().ContainSingle().Which.Should().Contain("AmbiguousMapping");
-		result.CapturedCurrentRevisionId.Should().Be(CurrentRevisionId);
-		_splitCalculatorMock.Verify(s => s.ComputeWaterfallSplits(
-			It.IsAny<ReceiptWithItems>(), It.IsAny<List<Domain.Core.Transaction>>(),
-			It.IsAny<Dictionary<string, string>>()), Times.Never);
+		result.CanComputeExpected.Should().BeTrue();
+		targets.Should().ContainSingle().Which.Value.Should().Be("ynab-cat-1");
 	}
 
 	[Theory]
 	[InlineData("missing")]
-	[InlineData("archived")]
-	[InlineData("cycle")]
 	[InlineData("unassigned")]
-	public async Task Handle_CurrentHierarchy_InvalidAssignmentFailsClosed(string condition)
+	public async Task Handle_CurrentHierarchy_ItemTypeWithoutCurrentDefaultFailsClosed(string condition)
 	{
 		SetupHappyPath();
-		TaxonomyNode leaf = new(YnabRecordedCategoryFixture.GroceriesId,
-			condition == "cycle" ? NewRootId : null, "Renamed", null,
-			condition == "archived");
-		TaxonomyNode parent = new(NewRootId, YnabRecordedCategoryFixture.GroceriesId,
-			"Parent", null, false);
-		SetupCurrentRevision(condition switch
-		{
-			"missing" => [],
-			"cycle" => [leaf, parent],
-			_ => [leaf],
-		});
+		SetupCurrentRevision(condition == "missing"
+			? []
+			: [new TaxonomyNode(YnabRecordedCategoryFixture.GroceriesId, null, "Renamed", null, false)]);
+		SetupDefault(YnabRecordedCategoryFixture.GroceriesId, CurrentEnvelopeId);
 		if (condition == "unassigned")
 		{
 			Domain.Core.ReceiptItem item = new(Guid.NewGuid(), null, "Unassigned", 1,
@@ -239,9 +254,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 			CancellationToken.None);
 
 		result.CanComputeExpected.Should().BeFalse();
-		result.UnmappedCategories.Should().ContainSingle();
-		result.UnmappedCategories[0].Should().Contain(
-			condition == "unassigned" ? "Unassigned" : "InvalidAncestry");
+		result.UnmappedCategories.Should().ContainSingle().Which.Should().Contain("Unresolved");
 		result.CategoryView.Should().Be("currentHierarchy");
 		result.CapturedCurrentRevisionId.Should().Be(CurrentRevisionId);
 		_taxonomyServiceMock.Verify(s => s.ReadAsync(null, It.IsAny<CancellationToken>()), Times.Once);
@@ -281,7 +294,7 @@ public class GetReceiptYnabSplitComparisonQueryHandlerTests
 		result.CanComputeExpected.Should().BeFalse();
 		result.ExpectedUnavailableReason.Should().Contain("Unmapped");
 		result.UnmappedCategories.Should().ContainSingle()
-				.Which.Should().StartWith("Gas (item ").And.EndWith(": Unassigned)");
+				.Which.Should().StartWith("No envelope (item ").And.EndWith(": Unresolved)");
 	}
 
 	[Fact]

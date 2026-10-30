@@ -10,7 +10,7 @@ public class GetStaleMappingsQueryHandlerTests
 {
 	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionMock = new();
 	private readonly Mock<IYnabAccountMappingService> _accountMappingMock = new();
-	private readonly Mock<IYnabCategoryMappingService> _categoryMappingMock = new();
+	private readonly Mock<IYnabEnvelopeMappingService> _envelopeMappingMock = new();
 	private readonly GetStaleMappingsQueryHandler _handler;
 
 	public GetStaleMappingsQueryHandlerTests()
@@ -18,7 +18,7 @@ public class GetStaleMappingsQueryHandlerTests
 		_handler = new GetStaleMappingsQueryHandler(
 			_budgetSelectionMock.Object,
 			_accountMappingMock.Object,
-			_categoryMappingMock.Object);
+			_envelopeMappingMock.Object);
 	}
 
 	[Fact]
@@ -30,7 +30,7 @@ public class GetStaleMappingsQueryHandlerTests
 			.ReturnsAsync(budgetId);
 		_accountMappingMock.Setup(s => s.CountStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(3);
-		_categoryMappingMock.Setup(s => s.CountStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
+		_envelopeMappingMock.Setup(s => s.CountStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(5);
 
 		// Act
@@ -57,7 +57,7 @@ public class GetStaleMappingsQueryHandlerTests
 		result.StaleCategoryMappingCount.Should().Be(0);
 		result.CurrentBudgetId.Should().BeNull();
 		_accountMappingMock.Verify(s => s.CountStaleMappingsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-		_categoryMappingMock.Verify(s => s.CountStaleMappingsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+		_envelopeMappingMock.Verify(s => s.CountStaleMappingsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
@@ -85,7 +85,7 @@ public class GetStaleMappingsQueryHandlerTests
 			.ReturnsAsync(budgetId);
 		_accountMappingMock.Setup(s => s.CountStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
-		_categoryMappingMock.Setup(s => s.CountStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
+		_envelopeMappingMock.Setup(s => s.CountStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 
 		// Act

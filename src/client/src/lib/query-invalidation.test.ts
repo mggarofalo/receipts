@@ -10,8 +10,8 @@ const cacheKeys = {
   budget: ["ynab", "settings", "budget"],
   accounts: ["ynab", "accounts"],
   accountMappings: ["ynab", "account-mappings"],
-  categoryMappings: ["ynab", "category-mappings"],
-  unmappedCategories: ["ynab", "category-mappings", "unmapped"],
+  envelopeMappings: ["ynab", "envelope-mappings"],
+  unmappedEnvelopes: ["ynab", "envelope-mappings", "unmapped"],
   staleMappings: ["ynab", "stale-mappings"],
   splitComparison: ["ynab", "split-comparison"],
   syncStatus: ["ynab", "sync-status"],
@@ -21,6 +21,9 @@ const cacheKeys = {
   status: ["ynab", "status"],
   similarItems: ["similarItems", "milk"],
   categoryRecommendations: ["categoryRecommendations", "milk"],
+  envelopes: ["envelopes", "all"],
+  occasions: ["occasions", "all"],
+  itemTypeEnvelopeDefaults: ["item-type-envelope-defaults"],
   unrelated: ["receipts"],
 } satisfies Record<string, QueryKey>;
 
@@ -47,8 +50,8 @@ describe("YNAB committed-change invalidation", () => {
       change: "ynab-mapping",
       affected: [
         cacheKeys.accountMappings,
-        cacheKeys.categoryMappings,
-        cacheKeys.unmappedCategories,
+        cacheKeys.envelopeMappings,
+        cacheKeys.unmappedEnvelopes,
         cacheKeys.staleMappings,
         cacheKeys.splitComparison,
       ],
@@ -65,6 +68,23 @@ describe("YNAB committed-change invalidation", () => {
     {
       change: "ynab-sync-event",
       affected: [cacheKeys.events, cacheKeys.status],
+    },
+    {
+      change: "envelope",
+      affected: [
+        cacheKeys.envelopes,
+        cacheKeys.itemTypeEnvelopeDefaults,
+        cacheKeys.envelopeMappings,
+        cacheKeys.unmappedEnvelopes,
+      ],
+    },
+    {
+      change: "occasion",
+      affected: [cacheKeys.occasions],
+    },
+    {
+      change: "item-type-envelope-default",
+      affected: [cacheKeys.itemTypeEnvelopeDefaults],
     },
     {
       change: "item-embedding",

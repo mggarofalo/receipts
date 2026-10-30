@@ -27,6 +27,7 @@ import BackupRestore from "@/pages/BackupRestore";
 import NormalizedDescriptions from "@/pages/NormalizedDescriptions";
 import NewReceipt from "@/pages/new-receipt/NewReceiptPage";
 import YnabSettings from "@/pages/settings/YnabSettings";
+import EnvelopeSettings from "@/pages/settings/EnvelopeSettings";
 import Ynab from "@/pages/Ynab";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
@@ -80,6 +81,7 @@ export const routeConfig = [
           { path: "/security", element: <SecurityLog /> },
           { path: "/settings", element: <Settings /> },
           { path: "/settings/ynab", element: <YnabSettings /> },
+          { path: "/settings/envelopes", element: <EnvelopeSettings /> },
           { path: "/ynab", element: <Ynab /> },
           {
             path: "/audit",

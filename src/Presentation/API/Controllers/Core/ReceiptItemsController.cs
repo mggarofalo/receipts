@@ -37,7 +37,6 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	public const string RouteGetDeleted = "deleted";
 	public const string RouteRestore = "{id}/restore";
 	public const string RouteGetSuggestions = "suggestions";
-	public const string RouteGetDistinctCategories = "distinct-categories";
 
 	[HttpGet("normalization-candidates")]
 	[EndpointSummary("Get bounded advisory product candidates for receipt entry")]
@@ -372,14 +371,5 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 		})];
 
 		return TypedResults.Ok(response);
-	}
-
-	[HttpGet(RouteGetDistinctCategories)]
-	[EndpointSummary("Get distinct receipt item categories")]
-	[EndpointDescription("Returns the distinct Category values from all non-deleted receipt items.")]
-	public async Task<Ok<DistinctCategoriesResponse>> GetDistinctCategories(CancellationToken cancellationToken)
-	{
-		List<string> categories = await mediator.Send(new GetDistinctReceiptItemCategoriesQuery(), cancellationToken);
-		return TypedResults.Ok(new DistinctCategoriesResponse { Categories = categories.ToList() });
 	}
 }

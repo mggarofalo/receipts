@@ -96,14 +96,11 @@ const server = setupServer(
     mappingWrites.push("delete");
     return new HttpResponse(null, { status: 204 });
   }),
-  ...["receipts", "ynab/categories", "ynab/category-mappings"].map((path) =>
+  ...["receipts", "ynab/categories"].map((path) =>
     http.get(`*/api/${path}`, () => page([])),
   ),
-  http.get("*/api/receipt-items/distinct-categories", () =>
-    HttpResponse.json({ categories: [] }),
-  ),
-  http.get("*/api/ynab/category-mappings/unmapped", () =>
-    HttpResponse.json({ categories: [] }),
+  ...["envelopes", "ynab/envelope-mappings", "ynab/envelope-mappings/unmapped"].map(
+    (path) => http.get(`*/api/${path}`, () => HttpResponse.json({ data: [] })),
   ),
   http.get("*/api/ynab/rate-limit-status", () =>
     HttpResponse.json({ requestsUsed: 0, requestsRemaining: 200 }),

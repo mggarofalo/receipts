@@ -34,7 +34,7 @@ public class YnabAccountMappingControllerTests
 		_budgetSelectionMock = new Mock<IYnabBudgetSelectionService>();
 		_mapper = new YnabMapper();
 		_loggerMock = ControllerTestHelpers.GetLoggerMock<YnabController>();
-		_controller = new YnabController(_mediatorMock.Object, _ynabClientMock.Object, _budgetSelectionMock.Object, _mapper, _loggerMock.Object);
+		_controller = new YnabController(_mediatorMock.Object, _ynabClientMock.Object, _budgetSelectionMock.Object, _mapper, new EnvelopeMapper(), _loggerMock.Object);
 		_controller.ControllerContext = new ControllerContext
 		{
 			HttpContext = new DefaultHttpContext()

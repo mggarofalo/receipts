@@ -40,8 +40,8 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 // 3-param ctor carries [ActivatorUtilitiesConstructor]; without this, factory.CreateDbContextAsync()
 // throws "Unable to resolve service for type 'ICurrentUserAccessor'", which under docker-entrypoint.sh
 // (set -e) would abort container boot before the API starts. Migrations need no user attribution, so the
-// null accessor is correct. (IDescriptionChangeSignal stays unregistered — the ctor parameter is optional
-// and migrations never call SaveChangesAsync.)
+// null accessor is correct. (IDescriptionChangeSignal stays unregistered — the ctor parameter is optional.
+// The one-time envelope backfill after migrating does save, attributed to no user, like other system writes.)
 builder.Services.AddSingleton<ICurrentUserAccessor, NullCurrentUserAccessor>();
 builder.Services.AddTransient<IDatabaseMigratorService, DatabaseMigratorService>();
 

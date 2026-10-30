@@ -7,7 +7,7 @@ namespace Application.Queries.Core.Ynab;
 public class GetStaleMappingsQueryHandler(
 	IYnabBudgetSelectionService budgetSelectionService,
 	IYnabAccountMappingService accountMappingService,
-	IYnabCategoryMappingService categoryMappingService) : IRequestHandler<GetStaleMappingsQuery, StaleMappingsResult>
+	IYnabEnvelopeMappingService envelopeMappingService) : IRequestHandler<GetStaleMappingsQuery, StaleMappingsResult>
 {
 	public async ValueTask<StaleMappingsResult> Handle(GetStaleMappingsQuery request, CancellationToken cancellationToken)
 	{
@@ -19,7 +19,7 @@ public class GetStaleMappingsQueryHandler(
 		}
 
 		int staleAccountCount = await accountMappingService.CountStaleMappingsAsync(currentBudgetId, cancellationToken);
-		int staleCategoryCount = await categoryMappingService.CountStaleMappingsAsync(currentBudgetId, cancellationToken);
+		int staleCategoryCount = await envelopeMappingService.CountStaleMappingsAsync(currentBudgetId, cancellationToken);
 
 		return new StaleMappingsResult(staleAccountCount, staleCategoryCount, currentBudgetId);
 	}

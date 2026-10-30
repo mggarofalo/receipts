@@ -73,9 +73,10 @@ public partial class BackupImportService(
 		{
 			await preflight.OpenAsync(cancellationToken);
 			int preflightVersion = ReadExportVersion(preflight);
-			candidate = preflightVersion == PortableAutomaticHistoricalV14.Version;
-			if (requireCandidate && preflightVersion != PortableAutomaticHistoricalV14.Version)
-			{ throw new InvalidOperationException("Candidate import requires version 14."); }
+			// Format 15 carries the v14 taxonomy codec unchanged.
+			candidate = preflightVersion >= PortableAutomaticHistoricalV14.Version;
+			if (requireCandidate && !candidate)
+			{ throw new InvalidOperationException("Candidate import requires version 14 or later."); }
 			if (preflightVersion >= 5)
 			{
 				foreach (string table in PortableBackupFormat.RequiredTablesFor(preflightVersion))
@@ -155,6 +156,7 @@ public partial class BackupImportService(
 			await sqlite.OpenAsync(cancellationToken);
 
 			int exportVersion = ReadExportVersion(sqlite);
+			await PortableEnvelopeArchive.RequireDerivableDestinationAsync(context, exportVersion, cancellationToken);
 			if (exportVersion >= 7 && !TableExists(sqlite, "normalization_catalog"))
 			{ throw new InvalidOperationException("Backup export_version=7 is missing required 'normalization_catalog' table."); }
 			if (exportVersion >= 5)
@@ -223,6 +225,8 @@ public partial class BackupImportService(
 				await LegacyTaxonomyMigrationService.AppendInTransactionAsync(context, legacyTaxonomy, cancellationToken);
 			}
 			if (taxonomy != null) { await PortableTaxonomyArchive.RestoreSourceRevisionsAsync(context, taxonomy, cancellationToken); }
+			// Envelope-only updates keep restored source revisions (see the AddEnvelopes migration).
+			await PortableEnvelopeArchive.ImportAsync(context, sqlite, exportVersion, cancellationToken);
 			await transaction.CommitAsync(cancellationToken);
 
 			BackupImportResult result = new(
@@ -291,7 +295,7 @@ public partial class BackupImportService(
 		entity.CascadeDeletedByParentId = null;
 	}
 
-	private static bool TableExists(SqliteConnection sqlite, string tableName)
+	internal static bool TableExists(SqliteConnection sqlite, string tableName)
 	{
 		using SqliteCommand cmd = sqlite.CreateCommand();
 		cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@name";
