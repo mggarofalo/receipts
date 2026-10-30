@@ -17,7 +17,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from aggregate_scoring import _require
+from aggregate_scoring import REPOSITORY, _require
 from evaluation import _load, _rate
 
 COMPLETED = "completed"
@@ -53,7 +53,7 @@ def verify_replay(packet, exchanges_path, runner, replay, scratch):
     _require(runner.suffix.lower() == ".dll" and runner.is_file())
     regenerated = scratch / "regenerated.private.json"
     result = subprocess.run(["dotnet", str(runner.resolve()), "offline-replay-v4", str(packet.resolve()),
-                             str(exchanges_path.resolve()), str(regenerated.resolve())],
+                             str(exchanges_path.resolve()), str(REPOSITORY), str(regenerated.resolve())],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
     _require(result.returncode == 0 and _load(regenerated) == replay)
 

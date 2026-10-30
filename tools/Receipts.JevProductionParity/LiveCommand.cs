@@ -88,14 +88,7 @@ public static class LiveCommand
 			bool dryRun = flags.Contains(DryRunFlag);
 			bool apiUserSecrets = flags.Contains(UserSecretsFlag);
 			// Evidence outputs must live outside the checkout; never overwrite artifacts.
-			string repo = Path.GetFullPath(repository).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-			foreach (string path in new[] { packet, approvalPath, journalPath, outputPath })
-			{
-				if (Path.GetFullPath(path).StartsWith(repo, StringComparison.OrdinalIgnoreCase))
-				{
-					throw new ArgumentException("Private path required.");
-				}
-			}
+			PrivateEvidence.RequireOutside(repository, packet, approvalPath, journalPath, outputPath);
 
 			if (File.Exists(outputPath))
 			{
@@ -139,7 +132,7 @@ public static class LiveCommand
 			using HttpClient client = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
 			OfflineReplay result = await LiveEvaluation.RunAsync(cases, policy, journalPath, BindCredential(Identity(freezeHash, approvalHash, cases), key),
 				(payload, ct) => SendAsync(client, payload, key, ct), authorize);
-			using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+			using FileStream output = PrivateEvidence.CreateNew(outputPath);
 			await JsonSerializer.SerializeAsync(output, result, ProductionParity.JsonOptions);
 			output.Flush(flushToDisk: true);
 			Console.WriteLine(result.Stopped ? "Evaluation stopped. Inspect private evidence." : "Evaluation completed. Private evidence saved.");
@@ -180,7 +173,7 @@ public static class LiveCommand
 		using HttpClient client = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
 		TwoStageReplay result = await JournalledRun.RunAsync(new TwoStageProtocol(twoStage), journalPath,
 			BindCredential(TwoStageCommand.Identity(freezeHash, approvalHash), key), (payload, ct) => SendAsync(client, payload, key, ct), authorize);
-		using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+		using FileStream output = PrivateEvidence.CreateNew(outputPath);
 		await JsonSerializer.SerializeAsync(output, result, ProductionParity.JsonOptions);
 		output.Flush(flushToDisk: true);
 		Console.WriteLine(result.Stopped ? "Evaluation stopped. Inspect private evidence." : "Evaluation completed. Private evidence saved.");
@@ -239,7 +232,7 @@ public static class LiveCommand
 			requestBytes = new { minimum = payloads.Min(p => p.Length), maximum = payloads.Max(p => p.Length), total = payloads.Sum(p => (long)p.Length) },
 			requestSha256s = payloads.Select(OfflinePairedEvaluation.Hash).ToArray()
 		};
-		using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+		using FileStream output = PrivateEvidence.CreateNew(outputPath);
 		await JsonSerializer.SerializeAsync(output, report, ProductionParity.JsonOptions);
 		output.Flush(flushToDisk: true);
 	}

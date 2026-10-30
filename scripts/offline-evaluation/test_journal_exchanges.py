@@ -81,7 +81,7 @@ class JournalExchangeTests(unittest.TestCase):
             extract(rows, replay)
 
     def test_full_conditional_journal_and_unknown_tail_feed_bound_scorer(self):
-        from test_aggregate_scoring import RUNNER as runner, fixture, policy_for, write_freeze
+        from test_aggregate_scoring import REPOSITORY, RUNNER as runner, fixture, policy_for, write_freeze
         if not runner.is_file():
             self.skipTest("build production parity tool for socket-free integration")
         with tempfile.TemporaryDirectory() as directory:
@@ -104,7 +104,8 @@ class JournalExchangeTests(unittest.TestCase):
                 paths["replay"].unlink(missing_ok=True)
                 result = subprocess.run(["dotnet", str(runner), "offline-replay", str(paths["policy"]),
                                          str(paths["cases"]),
-                                         str(paths["exchanges"]), str(paths["replay"])], capture_output=True)
+                                         str(paths["exchanges"]), str(REPOSITORY), str(paths["replay"])],
+                                        capture_output=True)
                 self.assertEqual(result.returncode, 0)
                 replay = json.loads(paths["replay"].read_text())
                 if not replay["stopped"]:
@@ -146,7 +147,8 @@ class JournalExchangeTests(unittest.TestCase):
             paths["exchanges"].write_text(json.dumps(exchanges[:-1]), encoding="utf-8")
             paths["replay"].unlink()
             subprocess.run(["dotnet", str(runner), "offline-replay", str(paths["policy"]), str(paths["cases"]),
-                            str(paths["exchanges"]), str(paths["replay"])], check=True, capture_output=True)
+                            str(paths["exchanges"]), str(REPOSITORY), str(paths["replay"])], check=True,
+                           capture_output=True)
             journal.write_text("".join(json.dumps(row) + "\n" for row in rows[:-1]), encoding="utf-8")
             paths["exchanges"].unlink()
             self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)

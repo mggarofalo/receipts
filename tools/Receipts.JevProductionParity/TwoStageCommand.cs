@@ -82,7 +82,7 @@ public static class TwoStageCommand
 			journal = new { status = journalStatus, completedExchanges, identityMatches },
 			stage1RequestSha256s = packet.Stage1Payloads.Select(OfflinePairedEvaluation.Hash).ToArray()
 		};
-		using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+		using FileStream output = PrivateEvidence.CreateNew(outputPath);
 		await JsonSerializer.SerializeAsync(output, report, ProductionParity.JsonOptions);
 		output.Flush(flushToDisk: true);
 	}

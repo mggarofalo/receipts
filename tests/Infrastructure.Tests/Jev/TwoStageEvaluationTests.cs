@@ -285,6 +285,43 @@ public class TwoStageEvaluationTests : IDisposable
 	}
 
 	[Fact]
+	public async Task JournalIsCreatedOwnerOnly()
+	{
+		await JournalledRun.RunAsync(new TwoStageProtocol(NewPacket()), Journal, "pin", (payload, _) => Task.FromResult(Answer(payload)), () => { });
+		if (!OperatingSystem.IsWindows())
+		{
+			Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Journal));
+		}
+	}
+
+	[Fact]
+	public async Task DriftOnTheFinalSavedExchangeFailsWithoutSending()
+	{
+		TwoStagePacket packet = NewPacket();
+		int calls = 0;
+		Task<ReplayExchange> Send(byte[] payload, CancellationToken ct)
+		{
+			calls++;
+			return Task.FromResult(Answer(payload));
+		}
+
+		await JournalledRun.RunAsync(new TwoStageProtocol(packet), Journal, "pin", Send, () => { });
+		Assert.Equal(4, calls);
+		// Rebind the final intent and response to a request replay will not rebuild.
+		string[] lines = File.ReadAllLines(Journal);
+		string saved = JsonDocument.Parse(lines[^1]).RootElement.GetProperty("requestSha256").GetString()!;
+		string other = new(saved[0] == 'a' ? 'b' : 'a', 64);
+		lines[^2] = lines[^2].Replace(saved, other, StringComparison.Ordinal);
+		lines[^1] = lines[^1].Replace(saved, other, StringComparison.Ordinal);
+		File.WriteAllLines(Journal, lines);
+
+		InvalidOperationException drift = await Assert.ThrowsAsync<InvalidOperationException>(
+			() => JournalledRun.RunAsync(new TwoStageProtocol(packet), Journal, "pin", Send, () => { }));
+		Assert.Equal("Request drift.", drift.Message);
+		Assert.Equal(4, calls);
+	}
+
+	[Fact]
 	public async Task UsageAboveTheByteReservationStopsBeforeTheNextSend()
 	{
 		TwoStagePacket packet = NewPacket();
@@ -339,19 +376,42 @@ public class TwoStageEvaluationTests : IDisposable
 	public async Task OfflinePlanAndReplayCommandsWriteOnlyToNewPrivateFiles()
 	{
 		WritePacket();
+		string repository = Path.Combine(directory, "repository");
+		Directory.CreateDirectory(repository);
 		string plan = Path.Combine(directory, "plan.json");
-		Assert.Equal(0, await OfflineCommand.RunAsync(["offline-plan", Packet, directory, plan]));
+		Assert.Equal(0, await OfflineCommand.RunAsync(["offline-plan", Packet, repository, plan]));
 		using (JsonDocument document = JsonDocument.Parse(File.ReadAllText(plan)))
 		{
 			Assert.Equal(2, document.RootElement.GetProperty("cases").GetArrayLength());
 		}
 
-		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-plan", Packet, directory, plan]));
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-plan", Packet, repository, plan]));
 		string exchanges = Path.Combine(directory, "exchanges.json");
 		File.WriteAllText(exchanges, "[]");
 		string replay = Path.Combine(directory, "replay.json");
-		Assert.Equal(0, await OfflineCommand.RunAsync(["offline-replay-v4", Packet, exchanges, replay]));
+		Assert.Equal(0, await OfflineCommand.RunAsync(["offline-replay-v4", Packet, exchanges, repository, replay]));
 		using JsonDocument result = JsonDocument.Parse(File.ReadAllText(replay));
 		Assert.True(result.RootElement.GetProperty("stopped").GetBoolean());
+		if (!OperatingSystem.IsWindows())
+		{
+			Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(plan));
+			Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(replay));
+		}
+	}
+
+	[Fact]
+	public async Task OfflineCommandsRejectOutputInsideTheRepository()
+	{
+		WritePacket();
+		string exchanges = Path.Combine(directory, "exchanges.json");
+		File.WriteAllText(exchanges, "[]");
+		string plan = Path.Combine(directory, "plan.json");
+		string replay = Path.Combine(directory, "replay.json");
+		// The packet's parent stands in for the checkout: both outputs fall inside it.
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-plan", Packet, directory, plan]));
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay-v4", Packet, exchanges, directory, replay]));
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay-v4", Packet, exchanges, replay]));
+		Assert.False(File.Exists(plan));
+		Assert.False(File.Exists(replay));
 	}
 }

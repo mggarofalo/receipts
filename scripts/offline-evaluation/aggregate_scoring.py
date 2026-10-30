@@ -21,6 +21,8 @@ from evaluation import _load, _rate, score
 # Inherited reservation assumption: 65,536 input tokens at USD 0.042/million.
 PER_ATTEMPT_NANODOLLARS = 2_752_512
 MAXIMUM_COHORT = 48
+# The runner refuses to write replay output inside this checkout. A guard root, not a data path.
+REPOSITORY = Path(__file__).resolve().parents[2]
 WRITES = ("most_specific", "broad", "sibling_leaf_same_root", "harmful_specificity",
           "wrong_branch", "other_unsupported", "unresolved_assignment")
 USEFUL = ("most_specific", "broad")
@@ -187,7 +189,7 @@ def verify_production_replay(policy_path, cases_path, exchanges_path, runner, re
     regenerated = scratch / "regenerated.private.json"
     result = subprocess.run(["dotnet", str(runner.resolve()), "offline-replay",
                              str(policy_path.resolve()), str(cases_path.resolve()),
-                             str(exchanges_path.resolve()),
+                             str(exchanges_path.resolve()), str(REPOSITORY),
                              str(regenerated.resolve())], stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, timeout=120)
     _require(result.returncode == 0 and _load(regenerated) == replay)

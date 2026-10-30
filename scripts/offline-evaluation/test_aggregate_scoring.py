@@ -9,10 +9,10 @@ import sys
 import tempfile
 import unittest
 
-from aggregate_scoring import aggregate, validate_freeze, verify_bindings
+from aggregate_scoring import REPOSITORY, aggregate, validate_freeze, verify_bindings
 
 CARRY = 4_750_000_000
-RUNNER = (Path(__file__).resolve().parents[2]
+RUNNER = (REPOSITORY
           / "tools/Receipts.JevProductionParity/bin/Debug/net10.0/Receipts.JevProductionParity.dll")
 
 
@@ -448,7 +448,8 @@ class AggregateScoringTests(unittest.TestCase):
                 paths[key].write_text(json.dumps(value), encoding="utf-8")
             paths["exchanges"].write_text("[]", encoding="utf-8")
             generated = subprocess.run(["dotnet", str(runner), "offline-replay", str(paths["policy"]),
-                                        str(paths["cases"]), str(paths["exchanges"]), str(paths["replay"])],
+                                        str(paths["cases"]), str(paths["exchanges"]), str(REPOSITORY),
+                                        str(paths["replay"])],
                                        capture_output=True)
             self.assertEqual(generated.returncode, 0)
             write_freeze(freeze, paths)
@@ -485,7 +486,7 @@ class AggregateScoringTests(unittest.TestCase):
             cohort.write_text(json.dumps(cases), encoding="utf-8")
             exchanges.write_text("[]", encoding="utf-8")
             subprocess.run(["dotnet", str(runner), "offline-replay", str(policy), str(cohort),
-                            str(exchanges), str(output)], check=True, capture_output=True)
+                            str(exchanges), str(REPOSITORY), str(output)], check=True, capture_output=True)
             replay = json.loads(output.read_text())
             tampered = deepcopy(replay)
             tampered["outcomes"][0]["baseline"] = answer()

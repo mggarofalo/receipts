@@ -78,9 +78,13 @@ the supplied checkout, requires exactly `cases` cases sharing one ordered
 taxonomy, and writes the policy numbers, gates and exact baseline payloads to a
 new private file. It does not read annotation labels or evaluate cases.
 
+Every offline command takes the repository root and rejects an output path
+inside it, the same guard `live-run` applies. Outputs and the live journal are
+created owner-only (`0600` on Unix) and never replace an existing file.
+
 ```powershell
 dotnet run --project tools/Receipts.JevProductionParity -- offline-plan <private-packet-directory> <repository-root> <new-private-plan.json>
-dotnet run --project tools/Receipts.JevProductionParity -- offline-replay <policy.private.json> <private-cases.json> <private-exchanges.json> <new-private-replay.json>
+dotnet run --project tools/Receipts.JevProductionParity -- offline-replay <policy.private.json> <private-cases.json> <private-exchanges.json> <repository-root> <new-private-replay.json>
 dotnet test tests/Infrastructure.Tests/Infrastructure.Tests.csproj --filter FullyQualifiedName~Jev
 ```
 
@@ -196,8 +200,8 @@ are flushed to disk before transport; every complete response is flushed before
 the next attempt. Responses retain provider usage privately. All reservations
 remain charged, including failed/unknown attempts, up to the policy maximum.
 The controller reuses saved responses through the production parsers on resume.
-A missing response, partial journal, parse/HTTP failure, request drift or
-ambiguous send stops; an outstanding intent is never resent automatically.
+A missing response, partial journal, parse/HTTP failure, request drift (on any
+saved exchange, including the last) or ambiguous send stops; an outstanding intent is never resent automatically.
 Complete successful prefixes can resume, preserving the original ordering and
 conditional selected-path calls. Do not resume failed/unknown holdouts for
 tuning. Disk corruption, deletion, manual edits and separate copies of a packet
@@ -229,7 +233,7 @@ source snapshots to pin.
 
 ```bash
 dotnet <dll> offline-plan <packet-directory> <repository-root> <new-private-plan.json>
-dotnet <dll> offline-replay-v4 <packet-directory> <exchanges.json> <new-private-replay.json>
+dotnet <dll> offline-replay-v4 <packet-directory> <exchanges.json> <repository-root> <new-private-replay.json>
 dotnet <dll> live-run <packet-directory> <repository-root> <approval.json> <packet-directory>/live.journal.jsonl <new-output.json> --dry-run
 ```
 

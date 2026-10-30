@@ -109,6 +109,35 @@ public sealed class OfflinePacketTests : IDisposable
 	}
 
 	[Fact]
+	public async Task PlanAndReplayRejectOutputInsideTheRepository()
+	{
+		packet.Prepare();
+		string policy = Path.Combine(packet.Packet, "policy.private.json");
+		string cases = Path.Combine(packet.Packet, "cases.private.json");
+		string exchanges = Path.Combine(packet.Root, "exchanges.json");
+		File.WriteAllText(exchanges, "[]");
+		string plan = Path.Combine(packet.Repository, "plan.json");
+		string replay = Path.Combine(packet.Repository, "nested", "..", "replay.json");
+
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-plan", packet.Packet, packet.Repository, plan]));
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay", policy, cases, exchanges, packet.Repository, replay]));
+		Assert.False(File.Exists(plan));
+		Assert.False(File.Exists(Path.Combine(packet.Repository, "replay.json")));
+	}
+
+	[Fact]
+	public async Task PlanIsCreatedOwnerOnly()
+	{
+		packet.Prepare();
+		string output = Path.Combine(packet.Root, "plan.json");
+		Assert.Equal(0, await OfflineCommand.RunAsync(["offline-plan", packet.Packet, packet.Repository, output]));
+		if (!OperatingSystem.IsWindows())
+		{
+			Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(output));
+		}
+	}
+
+	[Fact]
 	public async Task ReplayCommandTakesPolicyFirstAndEnforcesItsCap()
 	{
 		packet.Prepare();
@@ -118,7 +147,7 @@ public sealed class OfflinePacketTests : IDisposable
 		File.WriteAllText(exchanges, "[]");
 		string output = Path.Combine(packet.Root, "replay.json");
 
-		Assert.Equal(0, await OfflineCommand.RunAsync(["offline-replay", policy, cases, exchanges, output]));
+		Assert.Equal(0, await OfflineCommand.RunAsync(["offline-replay", policy, cases, exchanges, packet.Repository, output]));
 		using (JsonDocument replay = JsonDocument.Parse(File.ReadAllText(output)))
 		{
 			Assert.Equal(0, replay.RootElement.GetProperty("priorCarryNanodollars").GetInt64());
@@ -128,7 +157,8 @@ public sealed class OfflinePacketTests : IDisposable
 
 		string tooMany = Path.Combine(packet.Root, "nine.json");
 		File.WriteAllText(tooMany, JsonSerializer.Serialize(Enumerable.Range(0, 9).Select(_ => new { body = "{}", statusCode = 200, requestSha256 = new string('a', 64) })));
-		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay", policy, cases, tooMany, Path.Combine(packet.Root, "r2.json")]));
-		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay", cases, exchanges, Path.Combine(packet.Root, "r3.json")]));
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay", policy, cases, tooMany, packet.Repository, Path.Combine(packet.Root, "r2.json")]));
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay", cases, exchanges, packet.Repository, Path.Combine(packet.Root, "r3.json")]));
+		Assert.Equal(2, await OfflineCommand.RunAsync(["offline-replay", policy, cases, exchanges, Path.Combine(packet.Root, "r4.json")]));
 	}
 }

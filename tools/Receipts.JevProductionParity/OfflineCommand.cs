@@ -18,15 +18,16 @@ public static class OfflineCommand
 		try
 		{
 			object result;
-			string output;
-			if (args is ["offline-plan", var v4Packet, _, var v4Output] && PacketKindOf(v4Packet) == TwoStagePolicy.PacketKind)
+			string output, repository;
+			if (args is ["offline-plan", var v4Packet, var v4Repository, var v4Output] && PacketKindOf(v4Packet) == TwoStagePolicy.PacketKind)
 			{
 				// Round 4 builds its own requests; there is no production source to pin.
+				(output, repository) = (v4Output, v4Repository);
 				result = TwoStageCommand.Plan(TwoStagePacket.Load(v4Packet));
-				output = v4Output;
 			}
-			else if (args is ["offline-replay-v4", var replayPacket, var v4Exchanges, var v4ReplayOutput])
+			else if (args is ["offline-replay-v4", var replayPacket, var v4Exchanges, var v4ReplayRepository, var v4ReplayOutput])
 			{
+				(output, repository) = (v4ReplayOutput, v4ReplayRepository);
 				ReplayExchange[] exchanges = Load<ReplayExchange[]>(v4Exchanges);
 				if (exchanges.Any(e => e is null || e.Body is null || e.StatusCode is < 100 or > 599 ||
 					e.RequestSha256 is null || e.RequestSha256.Length != 64 || !e.RequestSha256.All(Uri.IsHexDigit)))
@@ -35,10 +36,10 @@ public static class OfflineCommand
 				}
 
 				result = TwoStageEvaluation.Replay(TwoStagePacket.Load(replayPacket), exchanges);
-				output = v4ReplayOutput;
 			}
-			else if (args is ["offline-plan", var packet, var repository, var planOutput])
+			else if (args is ["offline-plan", var packet, var planRepository, var planOutput])
 			{
+				(output, repository) = (planOutput, planRepository);
 				EvaluationPolicy policy = ValidateFreeze(packet, repository);
 				OfflineCase[] cases = Load<OfflineCase[]>(Path.Combine(packet, "cases.private.json"));
 				OfflinePairedEvaluation.ValidateCases(cases, policy, requireFullPacket: true);
@@ -64,10 +65,10 @@ public static class OfflineCommand
 						return new { c.Id, requestSha256 = OfflinePairedEvaluation.Hash(payload), requestJson = Encoding.UTF8.GetString(payload) };
 					}).ToArray()
 				};
-				output = planOutput;
 			}
-			else if (args is ["offline-replay", var policyPath, var casesPath, var exchangesPath, var replayOutput])
+			else if (args is ["offline-replay", var policyPath, var casesPath, var exchangesPath, var replayRepository, var replayOutput])
 			{
+				(output, repository) = (replayOutput, replayRepository);
 				EvaluationPolicy policy = LoadPolicy(policyPath);
 				ReplayExchange[] exchanges = Load<ReplayExchange[]>(exchangesPath);
 				if (exchanges.Any(e => e is null || e.Body is null || e.StatusCode is < 100 or > 599 ||
@@ -77,15 +78,15 @@ public static class OfflineCommand
 				}
 
 				result = await OfflinePairedEvaluation.ReplayAsync(Load<OfflineCase[]>(casesPath), exchanges, policy);
-				output = replayOutput;
 			}
 			else
 			{
-				Console.Error.WriteLine("Usage: offline-plan <packet-directory> <repository-root> <new-private-output.json> | offline-replay <policy.private.json> <cases.json> <exchanges.json> <new-private-output.json> | offline-replay-v4 <packet-directory> <exchanges.json> <new-private-output.json>");
+				Console.Error.WriteLine("Usage: offline-plan <packet-directory> <repository-root> <new-private-output.json> | offline-replay <policy.private.json> <cases.json> <exchanges.json> <repository-root> <new-private-output.json> | offline-replay-v4 <packet-directory> <exchanges.json> <repository-root> <new-private-output.json>");
 				return 2;
 			}
-			// Never write request bodies or identifiers to the console, or overwrite evidence.
-			using FileStream stream = new(output, FileMode.CreateNew, FileAccess.Write);
+			// Never write request bodies or identifiers to the console or the checkout, or overwrite evidence.
+			PrivateEvidence.RequireOutside(repository, output);
+			using FileStream stream = PrivateEvidence.CreateNew(output);
 			await JsonSerializer.SerializeAsync(stream, result, ProductionParity.JsonOptions);
 			Console.WriteLine("Offline artifact created. No network transport was used.");
 			return 0;

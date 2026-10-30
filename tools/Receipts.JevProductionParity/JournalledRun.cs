@@ -40,7 +40,7 @@ public static class JournalledRun
 	{
 		ArgumentNullException.ThrowIfNull(protocol);
 		// Never replace this file: the open handle is also the exclusive process lock.
-		using FileStream journal = new(journalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+		using FileStream journal = PrivateEvidence.Open(journalPath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
 		LiveJournalState state = LiveJournalState.Read(journal);
 		void Append(object row)
 		{
@@ -74,6 +74,12 @@ public static class JournalledRun
 
 			for (int i = 0; i < exchanges.Count; i++)
 			{
+				// Every saved exchange must answer the request replay rebuilds, wherever it sits.
+				if (replay.Attempts[i].RequestSha256 != exchanges[i].RequestSha256)
+				{
+					throw new InvalidOperationException("Request drift.");
+				}
+
 				// Billed usage stays in the private response. Never release reservations.
 				if (UsageExceeds(exchanges[i], replay.Attempts[i].ReservedInputTokens))
 				{
@@ -96,15 +102,6 @@ public static class JournalledRun
 			{
 				throw new InvalidOperationException("Request or reservation mismatch.");
 			}
-			// Reject changed earlier requests before dispatching a suffix.
-			for (int i = 0; i < exchanges.Count; i++)
-			{
-				if (replay.Attempts[i].RequestSha256 != exchanges[i].RequestSha256)
-				{
-					throw new InvalidOperationException("Request drift.");
-				}
-			}
-
 			authorize(); ct.ThrowIfCancellationRequested();
 			Append(new
 			{
