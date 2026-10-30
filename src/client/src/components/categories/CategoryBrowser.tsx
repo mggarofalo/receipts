@@ -134,6 +134,15 @@ function definitionExcerpt(text: string, ranges: MatchRange[]) {
   };
 }
 
+/**
+ * A keyboard-pressed back or breadcrumb button unmounts with the level it led
+ * from; move focus first so the panel keeps receiving keys.
+ */
+function keepPanelFocus(from: HTMLElement, touch: boolean) {
+  const panel = from.closest<HTMLElement>("[data-category-browser]");
+  (touch ? panel : panel?.querySelector<HTMLElement>("input"))?.focus();
+}
+
 function ancestry(row: CategoryPath) {
   return row.path
     .slice(0, -1)
@@ -187,11 +196,14 @@ export function CategoryBrowser({
         hit,
       }));
       const tokens = searchTokens(query);
+      // Never ahead of real matches: "cl" + Enter must not clear a category.
       if (
         allowUnclassified &&
-        tokens.every((token) => "unclassified".includes(token))
+        tokens.length === 1 &&
+        tokens[0].length >= 3 &&
+        "unclassified".startsWith(tokens[0])
       )
-        options.unshift({ kind: "unclassified", key: "unclassified" });
+        options.push({ kind: "unclassified", key: "unclassified" });
       return {
         sections: [{ id: "results", options }] as Section[],
         total: total + (options.length > hits.length ? 1 : 0),
@@ -548,7 +560,10 @@ export function CategoryBrowser({
             className={touch ? "h-10 w-10" : "h-7 w-7"}
             aria-label={`Back to ${crumbs.at(-2)?.name ?? "all categories"}`}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => goTo(levelRow.node.parentId ?? null)}
+            onClick={(event) => {
+              keepPanelFocus(event.currentTarget, touch);
+              goTo(levelRow.node.parentId ?? null);
+            }}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -584,7 +599,10 @@ export function CategoryBrowser({
                     type="button"
                     className="truncate rounded-sm px-0.5 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => goTo(node.id)}
+                    onClick={(event) => {
+                      keepPanelFocus(event.currentTarget, touch);
+                      goTo(node.id);
+                    }}
                   >
                     {node.name}
                   </button>
@@ -596,9 +614,6 @@ export function CategoryBrowser({
       )}
       <div
         key={listKey}
-        id={`${baseId}-list`}
-        role="listbox"
-        aria-label="Categories"
         className={cn(
           "min-h-0 flex-1 overflow-y-auto overscroll-contain p-1",
           place.direction === "in" &&
@@ -608,40 +623,42 @@ export function CategoryBrowser({
           "duration-150",
         )}
       >
-        {sections.map((section) => {
-          const headingId = `${baseId}-${section.id}`;
-          const chips = section.layout === "chips";
-          return (
-            <div
-              key={section.id}
-              role={section.heading ? "group" : undefined}
-              aria-labelledby={section.heading ? headingId : undefined}
-              className={cn(
-                "py-0.5",
-                section.divided && "mt-0.5 border-t pt-1",
-              )}
-            >
-              {section.heading && (
-                <div
-                  id={headingId}
-                  className="flex items-center gap-1.5 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground"
-                >
-                  {section.id === "suggested" && (
-                    <Sparkles className="h-3 w-3" />
-                  )}
-                  {section.heading}
-                </div>
-              )}
+        <div id={`${baseId}-list`} role="listbox" aria-label="Categories">
+          {sections.map((section) => {
+            const headingId = `${baseId}-${section.id}`;
+            const chips = section.layout === "chips";
+            return (
               <div
-                className={
-                  chips ? "flex flex-wrap gap-1.5 px-2 pb-1" : undefined
-                }
+                key={section.id}
+                role={section.heading ? "group" : undefined}
+                aria-labelledby={section.heading ? headingId : undefined}
+                className={cn(
+                  "py-0.5",
+                  section.divided && "mt-0.5 border-t pt-1",
+                )}
               >
-                {section.options.map((option) => renderOption(option, chips))}
+                {section.heading && (
+                  <div
+                    id={headingId}
+                    className="flex items-center gap-1.5 px-2 pt-1.5 pb-1 text-xs font-medium text-muted-foreground"
+                  >
+                    {section.id === "suggested" && (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                    {section.heading}
+                  </div>
+                )}
+                <div
+                  className={
+                    chips ? "flex flex-wrap gap-1.5 px-2 pb-1" : undefined
+                  }
+                >
+                  {section.options.map((option) => renderOption(option, chips))}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
         {searching && flat.length === 0 && (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">
             <p>No categories match “{query.trim()}”.</p>
@@ -746,9 +763,9 @@ function OptionText({ option }: { option: Option }) {
   if (option.kind === "pick" && option.source === "self")
     return (
       <>
-        <span className="block font-medium">Just {row.node.name}</span>
+        <span className="block font-medium">{row.node.name}</span>
         <span className="block truncate text-xs text-muted-foreground">
-          Without a subcategory
+          Use without a subcategory
         </span>
       </>
     );

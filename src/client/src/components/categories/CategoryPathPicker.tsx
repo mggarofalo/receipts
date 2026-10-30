@@ -72,12 +72,19 @@ export const CategoryPathPicker = forwardRef<
   const label = value
     ? value.path.map((node) => node.name).join(" / ") || "Unclassified"
     : "Choose category";
+  const blocked = !!disabled || !revision || loading || error;
+  // Becoming disabled while open (e.g. a submit starts) closes the panel
+  // for good, rather than hiding it until the control is enabled again.
+  if (open && blocked) {
+    setOpen(false);
+    setCreating(undefined);
+  }
   function onOpenChange(next: boolean) {
     setOpen(next);
     if (!next) setCreating(undefined);
   }
   function select(categoryId: string | null) {
-    if (!revision || disabled || loading || error) return;
+    if (blocked || !revision) return;
     const row = categoryId === null ? undefined : index.byId.get(categoryId);
     if (categoryId !== null && !row) return;
     onValueChange({
@@ -98,7 +105,7 @@ export const CategoryPathPicker = forwardRef<
       aria-expanded={open}
       aria-busy={loading || undefined}
       title={label}
-      disabled={disabled || !revision || loading || error}
+      disabled={blocked}
       className={cn(
         "h-auto min-h-9 w-full min-w-0 justify-between gap-2 py-1.5 text-left font-normal",
         className,

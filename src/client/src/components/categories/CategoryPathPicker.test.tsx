@@ -94,6 +94,13 @@ function expectActive(name: string) {
   );
 }
 
+/** The "use the parent itself" row: visible name, accessible full path. */
+function expectParentRow(path: string, name: string) {
+  const row = screen.getByRole("option", { name: path });
+  expect(row).toHaveTextContent(name);
+  expect(row).toHaveTextContent("Use without a subcategory");
+}
+
 async function openPicker(
   user: ReturnType<typeof userEvent.setup>,
   name?: string,
@@ -146,7 +153,7 @@ describe("CategoryPathPicker", () => {
         "Food / Dairy",
         "Fruit, 2 subcategories",
       ]);
-      expect(screen.getByText("Just Food")).toBeInTheDocument();
+      expectParentRow("Food", "Food");
       expectActive("Food / Dairy");
       expect(onValueChange).not.toHaveBeenCalled();
 
@@ -250,6 +257,34 @@ describe("CategoryPathPicker", () => {
       expect(onValueChange).not.toHaveBeenCalled();
     });
 
+    it("keeps focus in the search box after keyboard-pressing Back or a crumb", async () => {
+      const user = userEvent.setup();
+      render(
+        <CategoryPathPicker
+          revision={revision}
+          value={choice(food, fruit, apple)}
+          onValueChange={vi.fn()}
+        />,
+      );
+      await openPicker(user);
+      screen.getByRole("button", { name: "Back to Food" }).focus();
+      await user.keyboard("{Enter}");
+      expect(optionNames()[0]).toBe("Food");
+      expect(document.activeElement).toBe(searchBox());
+
+      await user.keyboard("{ArrowDown}{ArrowDown}{ArrowRight}");
+      expect(optionNames()[0]).toBe("Food / Fruit");
+      within(screen.getByRole("navigation", { name: "Category path" }))
+        .getByRole("button", { name: "Food" })
+        .focus();
+      await user.keyboard(" ");
+      expect(optionNames()[0]).toBe("Food");
+      expect(document.activeElement).toBe(searchBox());
+      // The panel still answers the keyboard from there.
+      await user.keyboard("{ArrowLeft}");
+      expect(optionNames()[0]).toBe("Unclassified");
+    });
+
     it("labels the back button with the parent level", async () => {
       const user = userEvent.setup();
       render(
@@ -314,7 +349,7 @@ describe("CategoryPathPicker", () => {
         />,
       );
       await openPicker(user);
-      expect(screen.getByText("Just Fruit")).toBeInTheDocument();
+      expectParentRow("Food / Fruit", "Fruit");
       expectActive("Food / Fruit");
     });
 
@@ -424,8 +459,9 @@ describe("CategoryPathPicker", () => {
         <CategoryPathPicker revision={revision} onValueChange={vi.fn()} />,
       );
       await openPicker(user);
-      await user.type(searchBox(), "banan");
-      expect(optionNames()).toContain("Food / Fruit / Banana");
+      // A transposition: no prefix, substring or in-order letters match it.
+      await user.type(searchBox(), "bnaana");
+      expect(optionNames()).toEqual(["Food / Fruit / Banana"]);
       await user.clear(searchBox());
       await user.type(searchBox(), "appel");
       expect(optionNames()).toEqual(
@@ -473,7 +509,39 @@ describe("CategoryPathPicker", () => {
       expect(searchBox()).toHaveValue("a");
       await user.keyboard("{Backspace}");
       expect(searchBox()).toHaveValue("");
-      expect(screen.getByText("Just Fruit")).toBeInTheDocument();
+      expectParentRow("Food / Fruit", "Fruit");
+    });
+
+    it("never puts Unclassified ahead of real matches for a short query", async () => {
+      const user = userEvent.setup();
+      const onValueChange = vi.fn();
+      const clothing = { id: "clothing", name: "Clothing", archived: false };
+      const cleaning = { id: "cleaning", name: "Cleaning", archived: false };
+      const uncle = { id: "uncle", name: "Uncle gifts", archived: false };
+      render(
+        <CategoryPathPicker
+          revision={{ ...revision, nodes: [clothing, cleaning, uncle] }}
+          onValueChange={onValueChange}
+        />,
+      );
+      await openPicker(user);
+      await user.type(searchBox(), "cl");
+      expect(optionNames()).not.toContain("Unclassified");
+      await user.keyboard("{Enter}");
+      expect(onValueChange).toHaveBeenCalledWith(
+        expect.objectContaining({ categoryId: "cleaning" }),
+      );
+
+      await openPicker(user);
+      await user.type(searchBox(), "uncl");
+      expect(optionNames()).toEqual(["Uncle gifts", "Unclassified"]);
+      expect(screen.getByRole("status")).toHaveTextContent("2 matches");
+      await user.clear(searchBox());
+      await user.type(searchBox(), "un");
+      expect(optionNames()).not.toContain("Unclassified");
+      await user.clear(searchBox());
+      await user.type(searchBox(), "uncl gifts");
+      expect(optionNames()).toEqual(["Uncle gifts"]);
     });
 
     it("finds Unclassified by name", async () => {
@@ -524,9 +592,12 @@ describe("CategoryPathPicker", () => {
 
       fireEvent.change(searchBox(), { target: { value: "item" } });
       expect(optionNames()).toHaveLength(50);
+      const note = screen.getByText(
+        "Showing 50 of 1200. Keep typing to narrow.",
+      );
       expect(
-        screen.getByText("Showing 50 of 1200. Keep typing to narrow."),
-      ).toBeInTheDocument();
+        screen.getByRole("listbox", { name: "Categories" }),
+      ).not.toContainElement(note);
       expect(screen.getByRole("status")).toHaveTextContent("1200 matches");
 
       fireEvent.change(searchBox(), { target: { value: "item 7-31" } });
@@ -649,6 +720,57 @@ describe("CategoryPathPicker", () => {
       expect(trigger).toHaveTextContent("Apple");
       expect(trigger).toHaveTextContent("Food / Fruit");
       expect(trigger).toHaveAttribute("title", "Food / Fruit / Apple");
+    });
+
+    it("closes for good when it becomes unavailable while open", async () => {
+      const user = userEvent.setup();
+      const onValueChange = vi.fn();
+      const { rerender } = render(
+        <CategoryPathPicker
+          revision={revision}
+          onValueChange={onValueChange}
+        />,
+      );
+      await openPicker(user);
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      rerender(
+        <CategoryPathPicker
+          revision={revision}
+          onValueChange={onValueChange}
+          disabled
+        />,
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox")).toBeDisabled();
+      rerender(
+        <CategoryPathPicker
+          revision={revision}
+          onValueChange={onValueChange}
+        />,
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox")).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+
+      await openPicker(user);
+      rerender(
+        <CategoryPathPicker
+          revision={revision}
+          onValueChange={onValueChange}
+          loading
+        />,
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      rerender(
+        <CategoryPathPicker
+          revision={revision}
+          onValueChange={onValueChange}
+        />,
+      );
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(onValueChange).not.toHaveBeenCalled();
     });
 
     it("exposes loading and initial error states without inventing a choice", () => {
@@ -814,6 +936,37 @@ describe("CategoryPathPicker", () => {
       expect(onValueChange).toHaveBeenCalledWith(choice(home, homeApple));
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
+    it("keeps focus on the panel, not the search box, after Back or a crumb", async () => {
+      const user = userEvent.setup();
+      render(
+        <CategoryPathPicker
+          revision={revision}
+          value={choice(food, fruit, apple)}
+          onValueChange={vi.fn()}
+        />,
+      );
+      await user.click(screen.getByRole("combobox"));
+      const sheet = await screen.findByRole("dialog", {
+        name: "Choose category",
+      });
+      const panel = sheet.querySelector("[data-category-browser]");
+      within(sheet).getByRole("button", { name: "Back to Food" }).focus();
+      await user.keyboard("{Enter}");
+      expect(optionNames()[0]).toBe("Food");
+      expect(document.activeElement).toBe(panel);
+
+      await user.click(
+        within(sheet).getByRole("option", { name: "Fruit, 2 subcategories" }),
+      );
+      within(screen.getByRole("navigation", { name: "Category path" }))
+        .getByRole("button", { name: "Food" })
+        .focus();
+      await user.keyboard("{Enter}");
+      expect(optionNames()[0]).toBe("Food");
+      expect(document.activeElement).toBe(panel);
+      expect(searchBox()).not.toHaveFocus();
+    });
+
     it("sends a hardware keyboard's typing to the search box", async () => {
       const user = userEvent.setup();
       render(
@@ -921,6 +1074,11 @@ describe("CategoryPathPicker", () => {
       expect(
         screen.getByText("No categories match “Kefir drinks”."),
       ).toBeVisible();
+      const list = screen.getByRole("listbox", { name: "Categories" });
+      expect(list).not.toContainElement(
+        screen.getByRole("button", { name: "Create “Kefir drinks”" }),
+      );
+      expect(within(list).queryAllByRole("button")).toEqual([]);
       await user.click(
         screen.getByRole("button", { name: "Create “Kefir drinks”" }),
       );
