@@ -179,6 +179,12 @@ for (const width of [1280, 375]) {
     await page.getByPlaceholder("Item description").fill("Preserve my draft");
     const picker = page.getByRole("combobox", { name: /^Category/ });
     await picker.click();
+    // Browsing starts at the roots; duplicate leaf names are told apart by
+    // their full path once the whole tree is searched.
+    await expect(
+      page.getByRole("option", { name: "Plant, 1 subcategory", exact: true }),
+    ).toBeVisible();
+    await page.getByPlaceholder("Search category paths…").fill("Dairy");
     await expect(
       page.getByRole("option", { name: "Food / Dairy", exact: true }),
     ).toBeVisible();
@@ -190,7 +196,13 @@ for (const width of [1280, 375]) {
     await expect(
       page.getByRole("option", { name: path, exact: true }),
     ).toBeVisible();
-    const popup = page.locator('[data-slot="popover-content"]');
+    // A popover on desktop, a bottom sheet on a phone.
+    const popup = page.locator(
+      width === 375
+        ? '[data-slot="category-picker-sheet"]'
+        : '[data-slot="popover-content"]',
+    );
+    await expect(popup).toBeVisible();
     await popup.evaluate(async (element) => {
       await Promise.all(
         element.getAnimations().map((animation) => animation.finished),
@@ -235,7 +247,7 @@ for (const width of [1280, 375]) {
       fullPage: true,
       animations: "disabled",
     });
-    await page.getByPlaceholder("Search category paths…").press("ArrowDown");
+    // The first result is active as soon as the search narrows.
     await page.getByPlaceholder("Search category paths…").press("Enter");
     await expect(picker).toHaveAttribute("title", path);
     await expect(picker).toContainText(deep[8].name);

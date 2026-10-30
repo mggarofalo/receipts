@@ -27,6 +27,7 @@ vi.mock("@/lib/export-csv", async (importOriginal) => {
 import { useUncategorizedItemsReport } from "@/hooks/useUncategorizedItemsReport";
 import client from "@/lib/api-client";
 import { downloadCsv } from "@/lib/export-csv";
+import { findCategoryOption } from "@/test/category-picker";
 const mockHook = vi.mocked(useUncategorizedItemsReport);
 const mockClient = vi.mocked(client);
 const mockDownloadCsv = vi.mocked(downloadCsv);
@@ -293,11 +294,9 @@ describe("UncategorizedItems", () => {
       screen.getByRole("combobox", { name: "Category for selected items" }),
     );
     expect(
-      screen.getByRole("option", { name: "Food / Dairy" }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole("option", { name: "Unclassified" }),
     ).toBeInTheDocument();
+    expect(await findCategoryOption(user, "Food / Dairy")).toBeInTheDocument();
   });
 
   it("does not submit an explicit Unclassified choice as a categorization", async () => {

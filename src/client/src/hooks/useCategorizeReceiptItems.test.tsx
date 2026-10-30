@@ -17,6 +17,7 @@ import { useCategorizeReceiptItems } from "./useCategorizeReceiptItems";
 import UncategorizedItems from "@/components/reports/UncategorizedItems";
 import "@/test/setup-combobox-polyfills";
 import { taxonomyFixture } from "@/test/taxonomy-fixture";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 vi.hoisted(() =>
   vi.stubEnv("VITE_API_URL", "http://categorize-projection.test"),
@@ -109,7 +110,7 @@ it.each(["transport failure", "success"] as const)(
           name: "Category for selected items",
         }),
       );
-      await user.click(await screen.findByRole("option", { name: "Food" }));
+      await chooseCategoryOption(user, "Food");
       const readsBefore = reads;
       await user.click(
         screen.getByRole("button", { name: "Apply to Selected" }),

@@ -8,6 +8,7 @@ import { usePurchaseSearch } from "@/hooks/usePurchaseSearch";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
 import { taxonomyFixture } from "@/test/taxonomy-fixture";
 import PurchaseSearch from "./PurchaseSearch";
+import { chooseCategoryOption } from "@/test/category-picker";
 vi.mock("@/hooks/usePurchaseSearch", () => ({ usePurchaseSearch: vi.fn() }));
 vi.mock("@/hooks/useCategoryTaxonomy", () => ({
   useCategoryTaxonomy: vi.fn(),
@@ -556,8 +557,9 @@ it("selects a nested path, resets paging, and shows category paths and unresolve
     }),
   );
   renderPage("/search?q=milk&offset=25&sortBy=quantity");
-  await userEvent.click(screen.getByRole("combobox", { name: "Category" }));
-  await userEvent.click(screen.getByRole("option", { name: /Food \/ Dairy/ }));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Category" }));
+  await chooseCategoryOption(user, "Food / Dairy");
   expect(currentParams().get("categoryId")).toBe(taxonomyFixture.nodes[1].id);
   expect(currentParams().get("offset")).toBeNull();
   expect(currentParams().get("sortBy")).toBe("quantity");

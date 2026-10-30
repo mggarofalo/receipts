@@ -30,6 +30,7 @@ import { clearTokens, setTokens } from "@/lib/auth";
 import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import { locationHistory } from "@/lib/location-history";
 import "@/test/setup-combobox-polyfills";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 let locationFailure: boolean;
 let locationReads: number;
@@ -323,7 +324,7 @@ async function enterLine() {
     expect(screen.getByRole("combobox", { name: /^Category/ })).toBeEnabled(),
   );
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-  await user.click(await screen.findByRole("option", { name: "Food" }));
+  await chooseCategoryOption(user, "Food");
   await user.clear(screen.getByLabelText(/^Unit Price/));
   await user.type(screen.getByLabelText(/^Unit Price/), "2.01");
   await user.type(screen.getByPlaceholderText("Item description"), "Milk");
@@ -499,7 +500,7 @@ it("keeps category lookup failures local while the description changes and permi
     expect(screen.getByRole("combobox", { name: /^Category/ })).toBeEnabled(),
   );
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-  await user.click(screen.getByRole("option", { name: "Food" }));
+  await chooseCategoryOption(user, "Food");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(categoryReads).toEqual([]);
   expect(writes).toEqual([]);

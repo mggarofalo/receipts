@@ -172,6 +172,52 @@ html[data-palette="paper"] {
   box-shadow: inset 3px 0 0 var(--command-selection-marker);
 }
 
+/* Category picker. Each root carries a stable hue (--cat-h, set inline from
+   its ID) so a path's family reads at a glance; the monogram letter carries
+   the same identity for anyone who cannot rely on colour. */
+.cat-hue {
+  --cat-ink: oklch(0.8 0.11 var(--cat-h, 250));
+}
+html[data-palette="paper"] .cat-hue {
+  --cat-ink: oklch(0.47 0.13 var(--cat-h, 250));
+}
+.cat-monogram {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--cat-ink) 16%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklch, var(--cat-ink) 34%, transparent);
+  color: var(--cat-ink);
+  font: 600 0.75rem/1 var(--sans);
+}
+/* Generated so the letter never leaks into accessible names or text matches. */
+.cat-monogram::before {
+  content: attr(data-letter);
+}
+.cat-monogram[data-empty] {
+  background: transparent;
+  box-shadow: none;
+  color: var(--mute);
+  outline: 1px dashed var(--line-2);
+  outline-offset: -1px;
+}
+.cat-option[data-active="true"] {
+  background-color: var(--command-selection-background);
+  box-shadow: inset 3px 0 0 var(--cat-ink, var(--command-selection-marker));
+}
+.cat-option[data-chip][data-active="true"] {
+  box-shadow: inset 0 0 0 1px var(--cat-ink, var(--command-selection-marker));
+}
+.cat-option mark {
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--accent) 24%, transparent);
+  color: inherit;
+}
+
 /* ── Density modifier ───────────────────────────────────────────────── */
 html[data-density="compact"] {
   --row: 36px;

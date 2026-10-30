@@ -25,6 +25,7 @@ import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import { useYnabSplitComparison } from "@/hooks/useYnab";
 import YnabSettings from "./YnabSettings";
 import "@/test/setup-combobox-polyfills";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 const reads = [
   ["connection", "ynab/connection-status", ["ynab", "connection-status"]],
@@ -255,9 +256,7 @@ async function selectReceiptCategory() {
   });
   await waitFor(() => expect(picker).toBeEnabled());
   await userEvent.setup().click(picker);
-  await userEvent
-    .setup()
-    .click(await screen.findByRole("option", { name: "Groceries" }));
+  await chooseCategoryOption(userEvent.setup(), "Groceries");
 }
 
 it("distinguishes a direct mapping from an inherited ancestor mapping", async () => {
@@ -282,9 +281,7 @@ it("distinguishes a direct mapping from an inherited ancestor mapping", async ()
   expect(screen.getByText("Direct mapping")).toBeVisible();
   const picker = screen.getByRole("combobox", { name: "Receipt category" });
   await userEvent.setup().click(picker);
-  await userEvent
-    .setup()
-    .click(await screen.findByRole("option", { name: "Groceries / Produce" }));
+  await chooseCategoryOption(userEvent.setup(), "Groceries / Produce");
   expect(
     screen.getByText("Inherited from Groceries: Living / Food A"),
   ).toBeVisible();
@@ -322,9 +319,7 @@ it("shows the current path after a taxonomy revision and uses its current node n
   });
   await waitFor(() => expect(picker).toBeEnabled());
   await userEvent.setup().click(picker);
-  await userEvent
-    .setup()
-    .click(await screen.findByRole("option", { name: "Food / Produce" }));
+  await chooseCategoryOption(userEvent.setup(), "Food / Produce");
   expect(picker).toHaveAttribute("title", "Food / Produce");
   expect(picker).toHaveTextContent("Produce");
   expect(picker).toHaveTextContent("Food");

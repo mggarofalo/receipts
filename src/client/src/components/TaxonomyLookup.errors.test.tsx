@@ -28,6 +28,7 @@ import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import "@/test/setup-combobox-polyfills";
 
 import { taxonomyFixture, dairyClassification } from "@/test/taxonomy-fixture";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 const defaults = {
   receiptId: "receipt",
@@ -199,7 +200,7 @@ async function select(
 ) {
   await waitFor(() => expect(context.picker).toBeEnabled());
   await context.user.click(context.picker);
-  await context.user.click(await screen.findByRole("option", { name: label }));
+  await chooseCategoryOption(context.user, label);
 }
 async function save(
   consumer: Consumer,
@@ -352,9 +353,7 @@ for (const consumer of ["item-form", "line-add", "line-edit"] as const) {
     const c = await prepare(consumer);
     await waitFor(() => expect(c.picker).toBeEnabled());
     await c.user.click(c.picker);
-    expect(
-      screen.queryByRole("option", { name: "Food" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option")).toHaveLength(1);
     expect(screen.getByRole("option", { name: "Unclassified" })).toBeVisible();
     await c.user.keyboard("{Escape}");
     expect(c.description).toHaveValue("Retained milk");
@@ -375,9 +374,11 @@ for (const consumer of ["item-form", "line-add", "line-edit"] as const) {
     const c = await prepare(consumer);
     await waitFor(() => expect(c.picker).toBeEnabled());
     await c.user.click(c.picker);
-    expect(
-      screen.queryByRole("option", { name: "Food / Dairy" }),
-    ).not.toBeInTheDocument();
+    await c.user.type(
+      screen.getByRole("combobox", { name: "Search category paths" }),
+      "Dairy",
+    );
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
     await c.user.keyboard("{Escape}");
     expect(c.description).toHaveValue("Retained milk");
     expect(writes).toEqual([]);

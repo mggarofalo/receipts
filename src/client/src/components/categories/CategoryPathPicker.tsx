@@ -1,27 +1,22 @@
 import { forwardRef, useMemo, useState, type ComponentProps } from "react";
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
+import { Dialog as SheetPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  categoryPaths,
-  type CategoryChoice,
-  type CategoryPath,
-  type CategoryRevision,
-} from "@/lib/category-paths";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import type { CategoryChoice, CategoryRevision } from "@/lib/category-paths";
+import { indexCategories } from "@/lib/category-tree";
 import { cn } from "@/lib/utils";
+import { CategoryBrowser, type CategorySuggestion } from "./CategoryBrowser";
 import { CategoryCreation } from "./CategoryCreation";
+import { CategoryMonogram } from "./CategoryMonogram";
+
+export type { CategorySuggestion };
 
 interface CategoryPathPickerProps extends Omit<
   ComponentProps<"button">,
@@ -34,6 +29,8 @@ interface CategoryPathPickerProps extends Omit<
   error?: boolean;
   canCreate?: boolean;
   allowUnclassified?: boolean;
+  /** Offered above the tree so the likely answer is one tap away. */
+  suggestions?: CategorySuggestion[];
 }
 
 function compactAncestry(path: CategoryChoice["path"]) {
@@ -55,89 +52,150 @@ export const CategoryPathPicker = forwardRef<
     error = false,
     canCreate = false,
     allowUnclassified = true,
+    suggestions,
     disabled,
     className,
     ...props
   },
   ref,
 ) {
+  const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const rows = useMemo(
-    () => categoryPaths(revision?.nodes ?? []),
+  const [creating, setCreating] = useState<{
+    parentId: string | null;
+    name: string;
+  }>();
+  const index = useMemo(
+    () => indexCategories(revision?.nodes ?? []),
     [revision?.nodes],
   );
-  const groups = useMemo(() => {
-    const grouped = new Map<string, { name: string; rows: CategoryPath[] }>();
-    for (const row of rows) {
-      const root = row.path[0];
-      const group = grouped.get(root.id) ?? { name: root.name, rows: [] };
-      group.rows.push(row);
-      grouped.set(root.id, group);
-    }
-    return Array.from(grouped.entries());
-  }, [rows]);
   const label = value
     ? value.path.map((node) => node.name).join(" / ") || "Unclassified"
     : "Choose category";
+  function onOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) setCreating(undefined);
+  }
   function select(categoryId: string | null) {
     if (!revision || disabled || loading || error) return;
-    const row = rows.find((entry) => entry.node.id === categoryId);
+    const row = categoryId === null ? undefined : index.byId.get(categoryId);
     if (categoryId !== null && !row) return;
     onValueChange({
       categoryId,
       taxonomyRevisionId: revision.id,
       path: row?.path ?? [],
     });
-    setOpen(false);
+    onOpenChange(false);
   }
-  return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setCreating(false);
-      }}
+
+  const trigger = (
+    <Button
+      {...props}
+      ref={ref}
+      type="button"
+      variant="outline"
+      role="combobox"
+      aria-expanded={open}
+      aria-busy={loading || undefined}
+      title={label}
+      disabled={disabled || !revision || loading || error}
+      className={cn(
+        "h-auto min-h-9 w-full min-w-0 justify-between gap-2 py-1.5 text-left font-normal",
+        className,
+      )}
     >
-      <PopoverTrigger asChild>
-        <Button
-          {...props}
-          ref={ref}
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          aria-busy={loading || undefined}
-          title={label}
-          disabled={disabled || !revision || loading || error}
-          className={cn(
-            "h-auto min-h-9 w-full min-w-0 justify-between py-1.5 text-left font-normal",
-            className,
-          )}
-        >
-          <span className="min-w-0">
-            <span className="block truncate">
-              {value?.path.length
-                ? value.path.at(-1)!.name
-                : value
-                  ? label
-                  : loading
-                    ? "Loading categories…"
-                    : error
-                      ? "Categories unavailable"
-                      : label}
-            </span>
-            {value && value.path.length > 1 && (
-              <span className="block truncate text-xs text-muted-foreground">
-                {compactAncestry(value.path)}
-              </span>
-            )}
+      {value?.path.length ? (
+        <CategoryMonogram
+          root={value.path[0]}
+          className="h-5 w-5 text-[0.65rem]"
+        />
+      ) : null}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">
+          {value?.path.length
+            ? value.path.at(-1)!.name
+            : value
+              ? label
+              : loading
+                ? "Loading categories…"
+                : error
+                  ? "Categories unavailable"
+                  : label}
+        </span>
+        {value && value.path.length > 1 && (
+          <span className="block truncate text-xs text-muted-foreground">
+            {compactAncestry(value.path)}
           </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
+        )}
+      </span>
+      <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+    </Button>
+  );
+
+  const panel =
+    creating && revision ? (
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <CategoryCreation
+          revision={revision}
+          suggestedParentId={creating.parentId}
+          initialName={creating.name}
+          onCreated={(choice) => {
+            onValueChange(choice);
+            onOpenChange(false);
+          }}
+          onCancel={() => setCreating(undefined)}
+        />
+      </div>
+    ) : (
+      <CategoryBrowser
+        index={index}
+        value={value}
+        allowUnclassified={allowUnclassified}
+        suggestions={suggestions}
+        touch={isMobile}
+        onSelect={select}
+        onCreate={
+          canCreate && revision
+            ? (parentId, name) => setCreating({ parentId, name })
+            : undefined
+        }
+      />
+    );
+
+  if (isMobile)
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetPrimitive.Trigger asChild>{trigger}</SheetPrimitive.Trigger>
+        <SheetContent
+          side="bottom"
+          aria-describedby={undefined}
+          data-slot="category-picker-sheet"
+          className="h-[min(92dvh,48rem)] gap-0 overflow-hidden rounded-t-xl p-0"
+          style={{
+            backgroundColor: "var(--popover)",
+            color: "var(--popover-foreground)",
+          }}
+          // Browsing by touch comes first; the keyboard opens only on request.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement)
+              .querySelector<HTMLElement>("[data-category-browser]")
+              ?.focus();
+          }}
+        >
+          <SheetTitle className="px-4 pt-4 pb-2 pr-12 text-base">
+            Choose category
+          </SheetTitle>
+          {panel}
+        </SheetContent>
+      </Sheet>
+    );
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] min-w-[min(24rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto p-0 shadow-lg"
+        className="flex w-[var(--radix-popover-trigger-width)] min-w-[min(26rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] max-h-[min(34rem,var(--radix-popover-content-available-height))] flex-col overflow-hidden p-0 shadow-lg"
         style={{
           backgroundColor: "var(--popover)",
           color: "var(--popover-foreground)",
@@ -145,101 +203,7 @@ export const CategoryPathPicker = forwardRef<
         align="start"
         aria-describedby={undefined}
       >
-        {!creating && (
-          <Command>
-            <CommandInput placeholder="Search category paths…" />
-            <CommandList>
-              <CommandEmpty>No categories found.</CommandEmpty>
-              <CommandGroup>
-                {allowUnclassified && (
-                  <CommandItem
-                    value="unclassified"
-                    onSelect={() => select(null)}
-                  >
-                    <Check
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        value?.categoryId === null
-                          ? "opacity-100"
-                          : "opacity-0",
-                      )}
-                    />
-                    Unclassified
-                  </CommandItem>
-                )}
-              </CommandGroup>
-              {groups.map(([rootId, group]) => (
-                <CommandGroup key={rootId} heading={group.name}>
-                  {group.rows.map((row) => (
-                    <CommandItem
-                      key={row.node.id}
-                      value={row.node.id}
-                      keywords={[row.label]}
-                      aria-label={row.label}
-                      title={row.label}
-                      className="items-start py-2"
-                      onSelect={() => select(row.node.id)}
-                    >
-                      <Check
-                        className={cn(
-                          "mt-0.5 h-4 w-4 shrink-0",
-                          value?.categoryId === row.node.id
-                            ? "opacity-100"
-                            : "opacity-0",
-                        )}
-                      />
-                      <span
-                        className="min-w-0 flex-1"
-                        style={{
-                          paddingInlineStart: `${Math.min(row.path.length - 1, 3) * 0.5}rem`,
-                        }}
-                      >
-                        <span className="block break-words font-medium">
-                          {row.node.name}
-                        </span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {row.path.length === 1
-                            ? "General · use this category"
-                            : compactAncestry(row.path)}
-                        </span>
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
-        )}
-        {canCreate &&
-          revision &&
-          (creating ? (
-            <CategoryCreation
-              revision={revision}
-              suggestedParentId={
-                rows.some((row) => row.node.id === value?.categoryId)
-                  ? value!.categoryId
-                  : null
-              }
-              onCreated={(choice) => {
-                onValueChange(choice);
-                setCreating(false);
-                setOpen(false);
-              }}
-              onCancel={() => setCreating(false)}
-            />
-          ) : (
-            <div className="border-t p-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => setCreating(true)}
-              >
-                <Plus className="mr-2 h-4 w-4" /> Create category
-              </Button>
-            </div>
-          ))}
+        {panel}
       </PopoverContent>
     </Popover>
   );
