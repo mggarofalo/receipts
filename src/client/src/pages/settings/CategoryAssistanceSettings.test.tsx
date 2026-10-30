@@ -12,6 +12,7 @@ const current = {
   model: null,
   dailyLimit: 10,
   pendingLimit: 3,
+  autoApply: false,
   revision: "11111111-1111-4111-8111-111111111111",
 };
 const ready = {
@@ -38,6 +39,7 @@ beforeEach(() => {
         queued: 1,
         dispatching: 2,
         suggested: 3,
+        applied: 8,
         abstained: 4,
         failed: 5,
         stale: 6,
@@ -120,6 +122,7 @@ it("requires explicit consent, available model, and bounded limits before saving
           model: "jev-1.14.0",
           dailyLimit: 5000,
           pendingLimit: 3,
+          autoApply: false,
           expectedRevision: current.revision,
         },
       }),
@@ -211,6 +214,7 @@ it("shows only safe failure copy in activity", async () => {
           queued: 0,
           dispatching: 0,
           suggested: 0,
+          applied: 0,
           abstained: 0,
           failed: 2,
           stale: 0,
@@ -243,4 +247,67 @@ it("shows only safe failure copy in activity", async () => {
     screen.getByText("Category assistance could not complete this request."),
   ).toBeInTheDocument();
   expect(screen.queryByText("provider secret detail")).not.toBeInTheDocument();
+});
+
+it.each([true, false])(
+  "renders the automatic apply toggle from the server value %s",
+  async (autoApply) => {
+    const get = mockClient.GET.getMockImplementation()!;
+    mockClient.GET.mockImplementation(async (path: string, options: unknown) =>
+      path.endsWith("/settings")
+        ? ok({ ...current, autoApply })
+        : get(path, options),
+    );
+    renderWithQueryClient(<CategoryAssistanceSettings />);
+    const toggle = await screen.findByRole("checkbox", {
+      name: /apply strong matches automatically/i,
+    });
+    if (autoApply) expect(toggle).toBeChecked();
+    else expect(toggle).not.toBeChecked();
+  },
+);
+
+it("sends the automatic apply choice when saving", async () => {
+  const user = userEvent.setup();
+  renderWithQueryClient(<CategoryAssistanceSettings />);
+  const toggle = await screen.findByRole("checkbox", {
+    name: /apply strong matches automatically/i,
+  });
+  expect(
+    screen.getByText(/only fills items that have no category/i),
+  ).toBeInTheDocument();
+  await user.click(toggle);
+  expect(toggle).toBeChecked();
+  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await waitFor(() =>
+    expect(mockClient.PUT).toHaveBeenCalledWith(
+      "/api/category-assistance/settings",
+      expect.objectContaining({
+        body: {
+          enabled: false,
+          provider: null,
+          model: null,
+          dailyLimit: 10,
+          pendingLimit: 3,
+          autoApply: true,
+          expectedRevision: current.revision,
+        },
+      }),
+    ),
+  );
+});
+
+it("shows the automatically applied count in technical activity", async () => {
+  const user = userEvent.setup();
+  renderWithQueryClient(<CategoryAssistanceSettings />);
+  await user.click(
+    await screen.findByRole("button", { name: "Show technical activity" }),
+  );
+  const technical = await screen.findByRole("heading", {
+    name: "Technical activity",
+  });
+  const label = within(technical.parentElement!).getByText(
+    "Applied automatically",
+  );
+  expect(label.nextElementSibling).toHaveTextContent("8");
 });

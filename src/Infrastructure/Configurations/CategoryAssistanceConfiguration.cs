@@ -16,6 +16,7 @@ public sealed class CategoryAssistanceConfiguration : IEntityTypeConfiguration<C
 		});
 		b.HasKey(x => x.Id); b.Property(x => x.Id).ValueGeneratedNever();
 		b.Property(x => x.Revision).IsConcurrencyToken();
+		b.Property(x => x.AutoApply).HasDefaultValue(true);
 		b.HasData(new CategoryAssistanceSettingsEntity { Revision = Guid.Parse("4bb4909f-fb40-433c-a98d-d48a2bd0cd48"), RestoreGeneration = Guid.Parse("5c5ebfbf-0833-432d-aefc-c388be8e0460") });
 	}
 	public void Configure(EntityTypeBuilder<CategoryAssistanceSettingsAuditEntity> b)

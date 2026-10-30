@@ -3,8 +3,9 @@ using Application.Taxonomy;
 namespace Application.Classification;
 
 /// <summary>Deployment-wide consent for a server API-key service; no personal integration owner.</summary>
+/// <summary>AutoApply lets strong Jev matches be written automatically; it has effect only while consent is enabled.</summary>
 public sealed record CategoryAssistanceSettings(bool Enabled, string? Provider, string? Model,
-	int DailyLimit, int PendingLimit, Guid Revision)
+	int DailyLimit, int PendingLimit, Guid Revision, bool AutoApply = true)
 {
 	public static CategoryAssistanceSettings Default => new(false, null, null, 100, 3, Guid.NewGuid());
 }

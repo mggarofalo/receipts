@@ -10,7 +10,12 @@ public sealed record HistoricalItemPage(IReadOnlyList<HistoricalItemResult> Item
 	IReadOnlyList<HistoricalUndoResult> UndoItems, int? NextOffset);
 public sealed record HistoricalOperationSummary(Guid OperationId, HistoricalOperationState State,
 		DateTimeOffset CapturedAt, Guid TaxonomyRevisionId, string Reason,
-		IReadOnlyList<HistoricalGroupSelection> Groups, HistoricalProgress Progress, Guid? UndoTaxonomyRevisionId = null);
+		IReadOnlyList<HistoricalGroupSelection> Groups, HistoricalProgress Progress, Guid? UndoTaxonomyRevisionId = null)
+{
+	/// <summary>Who decided the change: <c>manual</c>, <c>approved_mapping</c> or <c>jev</c>.</summary>
+	[System.Text.Json.Serialization.JsonRequired]
+	public string Source { get; init; } = "manual";
+}
 public sealed record HistoricalOperationPage(IReadOnlyList<HistoricalOperationSummary> Items, int? NextOffset);
 public enum HistoricalGroupDisposition { Later, LeaveAsIs }
 public sealed record HistoricalDispositionRecord(HistoricalGroupKey Group, HistoricalGroupDisposition? Disposition,

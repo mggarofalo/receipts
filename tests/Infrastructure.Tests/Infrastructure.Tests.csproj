@@ -29,8 +29,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Fixtures/jev-suggestion-v4.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Update="Fixtures/jev-selected-path-experiment.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\..\src\Infrastructure\Infrastructure.csproj" />
     <ProjectReference Include="../../tools/Receipts.JevProductionParity/Receipts.JevProductionParity.csproj" />
     <ProjectReference Include="..\SampleData\SampleData.csproj" />

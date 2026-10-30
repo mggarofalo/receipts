@@ -52,6 +52,7 @@ public sealed class CategoryAssistanceSettingsStore(IDbContextFactory<Applicatio
 		{ throw new TaxonomyException(400, "Select the supported category assistance provider and model."); }
 		row.Enabled = proposed.Enabled; row.Provider = proposed.Provider; row.Model = proposed.Model;
 		row.DailyLimit = proposed.DailyLimit; row.PendingLimit = proposed.PendingLimit; row.Revision = proposed.Revision;
+		row.AutoApply = proposed.AutoApply;
 		db.CategoryAssistanceSettingsAudits.Add(new()
 		{
 			Id = Guid.NewGuid(),
@@ -66,7 +67,7 @@ public sealed class CategoryAssistanceSettingsStore(IDbContextFactory<Applicatio
 		return proposed;
 	}
 	internal static CategoryAssistanceSettings Read(CategoryAssistanceSettingsEntity row) =>
-		new(row.Enabled, row.Provider, row.Model, row.DailyLimit, row.PendingLimit, row.Revision);
+		new(row.Enabled, row.Provider, row.Model, row.DailyLimit, row.PendingLimit, row.Revision, row.AutoApply);
 	internal static void RequireTransaction(ApplicationDbContext db)
 	{
 		if (!db.Database.IsNpgsql() || db.Database.CurrentTransaction == null)

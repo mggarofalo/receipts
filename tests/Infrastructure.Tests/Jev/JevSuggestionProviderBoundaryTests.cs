@@ -9,7 +9,8 @@ namespace Infrastructure.Tests.Jev;
 public class JevSuggestionProviderBoundaryTests
 {
 	private static readonly CategorySuggestionRequest Request = new("purchase", "revision", [new("category", "Category", "Purchases", null)]);
-	private const string ValidResponse = """{"model":"jev-1.14.0","answers":{"category":{"type":"choice","choice":"category","confidence":1,"probabilities":{"category":1}},"fits":{"type":"noul","noul":0.9}},"usage":{"input_tokens":100,"output_tokens":10}}""";
+	private const string ValidResponse = """{"model":"jev-1.14.0","answers":{"category":{"type":"choice","choice":"Category","confidence":1,"probabilities":{"Category":1}},"fits":{"type":"noul","noul":0.9}},"usage":{"input_tokens":100,"output_tokens":10}}""";
+	private static readonly Func<string, CancellationToken, Task<bool>> Current = (_, _) => Task.FromResult(true);
 
 	[Theory]
 	[InlineData(null)]
@@ -17,11 +18,10 @@ public class JevSuggestionProviderBoundaryTests
 	[InlineData("   ")]
 	public async Task MissingCredentialWithOptInIsUnavailableWithoutDispatch(string? key)
 	{
-		JevOptions options = new() { InferenceEnabled = true, ApiKey = key };
+		JevOptions options = new() { ApiKey = key };
 		Handler handler = new(() => new(HttpStatusCode.OK));
 		JevSuggestionProvider provider = Provider(handler, () => options);
-		Assert.False(provider.IsAvailable);
-		CategorySuggestionResult result = await provider.SuggestAsync(Request, default);
+		CategorySuggestionResult result = await provider.SuggestBoundAsync(Request, Current, default);
 		Assert.Equal(SuggestionFailure.MissingCredential, result.Failure);
 		Assert.Null(result.Suggestion);
 		Assert.Equal(0, handler.Calls);
@@ -32,13 +32,13 @@ public class JevSuggestionProviderBoundaryTests
 	[InlineData(true)]
 	public async Task DisableOrCredentialChangeDuringDispatchDiscardsOtherwiseValidResult(bool rotateKey)
 	{
-		JevOptions options = new() { InferenceEnabled = true, ApiKey = "first-key" };
+		JevOptions options = new() { ApiKey = "first-key" };
 		Handler handler = new(() =>
 		{
-			options = rotateKey ? new() { InferenceEnabled = true, ApiKey = "changed-key" } : new() { ApiKey = "first-key" };
+			options = rotateKey ? new() { ApiKey = "changed-key" } : new() { Enabled = false, ApiKey = "first-key" };
 			return new(HttpStatusCode.OK) { Content = new StringContent(ValidResponse) };
 		});
-		CategorySuggestionResult result = await Provider(handler, () => options).SuggestAsync(Request, default);
+		CategorySuggestionResult result = await Provider(handler, () => options).SuggestBoundAsync(Request, Current, default);
 		Assert.Equal(SuggestionFailure.Disabled, result.Failure);
 		Assert.Null(result.Suggestion);
 		Assert.Equal(1, handler.Calls);
@@ -48,7 +48,7 @@ public class JevSuggestionProviderBoundaryTests
 	public async Task OversizeProviderBodyFailsWithoutSuggestionOrRetry()
 	{
 		Handler handler = new(() => new(HttpStatusCode.OK) { Content = new StringContent(ValidResponse + new string(' ', 1048576)) });
-		CategorySuggestionResult result = await Provider(handler, () => new() { InferenceEnabled = true, ApiKey = "test-key" }).SuggestAsync(Request, default);
+		CategorySuggestionResult result = await Provider(handler, () => new() { ApiKey = "test-key" }).SuggestBoundAsync(Request, Current, default);
 		Assert.NotNull(result.Failure);
 		Assert.Null(result.Suggestion);
 		Assert.Equal(1, handler.Calls);
@@ -58,7 +58,7 @@ public class JevSuggestionProviderBoundaryTests
 	public async Task LargeValidResponseIsBufferedAndAcceptedOnce()
 	{
 		Handler handler = new(() => new(HttpStatusCode.OK) { Content = new StringContent(ValidResponse + new string(' ', 150000)) });
-		CategorySuggestionResult result = await Provider(handler, () => new() { InferenceEnabled = true, ApiKey = "test-key" }).SuggestAsync(Request, default);
+		CategorySuggestionResult result = await Provider(handler, () => new() { ApiKey = "test-key" }).SuggestBoundAsync(Request, Current, default);
 		Assert.Null(result.Failure);
 		Assert.Equal("category", result.Suggestion!.CategoryId);
 		Assert.Equal(1, handler.Calls);

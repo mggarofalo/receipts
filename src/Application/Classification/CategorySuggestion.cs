@@ -1,40 +1,58 @@
 namespace Application.Classification;
 
 public sealed record SuggestionCategory(string Id, string Name, string Definition, string? ParentId);
-public sealed record CategorySuggestionRequest(string Description, string TaxonomyRevision, IReadOnlyList<SuggestionCategory> Categories);
-public sealed record CategoryJudgment(string Model, string TaxonomyRevision, string CategoryId, double FitProbability,
-	double Confidence, IReadOnlyDictionary<string, double> Probabilities, long InputTokens, long OutputTokens);
-public sealed record CategoryChoiceJudgment(string CategoryId, double Confidence, IReadOnlyDictionary<string, double> Probabilities);
-public sealed record CategoryHierarchyJudgment(string Model, string TaxonomyRevision, double FitProbability,
-		IReadOnlyDictionary<string, CategoryChoiceJudgment> Choices, long InputTokens, long OutputTokens);
+
+/// <summary>What a person sees on the receipt line: the item text and, when known, the store. Nothing else is sent.</summary>
+public sealed record CategorySuggestionRequest(string Description, string TaxonomyRevision, IReadOnlyList<SuggestionCategory> Categories,
+	string? Store = null);
+
+/// <summary>One validated Choice answer keyed by category ID, plus the stage-1 fit Noul when it was asked.</summary>
+public sealed record CategoryStageJudgment(string Model, string ChosenCategoryId, double Confidence,
+	IReadOnlyDictionary<string, double> Probabilities, double? FitProbability, long InputTokens, long OutputTokens);
+
 public sealed record SuggestionProvenance(string Provider, string Model, string QuestionPolicy, string TaxonomyRevision, long InputTokens, long OutputTokens);
+
+/// <summary>A candidate category and the probability its own stage's Choice gave it.</summary>
+public sealed record SuggestionCandidate(string CategoryId, double Probability);
+
+/// <summary>
+/// RootCandidates are the stage-1 top roots in rank order (they select the stage-2 options); LeafCandidates are the
+/// stage-2 top options in rank order and are absent until stage 2 has answered. SelectedPathSupport is only read
+/// back from results stored by an earlier policy.
+/// </summary>
 public sealed record CategorySuggestion(string? CategoryId, IReadOnlyList<string> Path, string? AbstentionReason,
 		double FitProbability, double CategoryProbability, double Confidence, SuggestionProvenance Provenance,
-		string ProbabilityScope = "global_choice", double? SelectedPathSupport = null);
+		string ProbabilityScope = "global_choice", double? SelectedPathSupport = null,
+		IReadOnlyList<SuggestionCandidate>? RootCandidates = null, IReadOnlyList<SuggestionCandidate>? LeafCandidates = null);
 public enum SuggestionFailure { Disabled, MissingCredential, InvalidInput, PayloadTooLarge, Busy, Authentication, RateLimited, Timeout, Unavailable, InvalidResponse }
 public sealed record CategorySuggestionResult(CategorySuggestion? Suggestion, SuggestionFailure? Failure)
 {
 	public static CategorySuggestionResult Failed(SuggestionFailure failure) => new(null, failure);
 }
 
-/// <summary>Suggestions require explicit user confirmation. This contract never assigns a category.</summary>
-public interface ICategorySuggestionProvider
-{
-	bool IsAvailable { get; }
-	Task<CategorySuggestionResult> SuggestAsync(CategorySuggestionRequest request, CancellationToken cancellationToken);
-}
-
+/// <summary>
+/// Two-stage hierarchy policy. Stage 1 chooses among the roots and asks whether any root fits. Stage 2 chooses among
+/// the children of the stage-1 top roots. Back-off to the root is decided here, never offered as an option.
+/// </summary>
 public static class CategorySuggestionPolicy
 {
-	public const string Version = "classification-questions-v6";
+	public const string Version = "classification-questions-v7";
 	public const string Model = "jev-1.14.0";
 	public const int MaximumPayloadBytes = 65536;
+	public const int TopRoots = 3;
+	public const int TopLeaves = 3;
+	public const int MaximumOptions = 255;
+	public const double NoFitAtOrBelow = 0.3;
+	public const double FitGate = 0.7;
+	private const long MaximumTokens = 9007199254740991;
 
+	/// <summary>A valid request names a nonempty purchase and a two-level tree: roots and their immediate children.</summary>
 	public static bool IsValid(CategorySuggestionRequest request)
 	{
 		if (request is null || request.Categories is null || string.IsNullOrWhiteSpace(request.Description) || request.Description.Length > MaximumPayloadBytes ||
 			string.IsNullOrWhiteSpace(request.TaxonomyRevision) || request.TaxonomyRevision.Length > 200 ||
-						request.Categories.Count < 1)
+			(request.Store is not null && (string.IsNullOrWhiteSpace(request.Store) || request.Store.Length > MaximumPayloadBytes)) ||
+			request.Categories.Count < 1)
 		{
 			return false;
 		}
@@ -49,89 +67,117 @@ public static class CategorySuggestionPolicy
 				return false;
 			}
 		}
-		foreach (SuggestionCategory category in categories.Values)
-		{
-			HashSet<string> seen = [category.Id];
-			string? parent = category.ParentId;
-			while (parent is not null)
-			{
-				if (!seen.Add(parent) || !categories.TryGetValue(parent, out SuggestionCategory? ancestor))
-				{
-					return false;
-				}
 
-				parent = ancestor.ParentId;
-			}
-		}
-		if (categories.Values.Count(category => category.ParentId is null) is < 1 or > 255 ||
-			categories.Values.GroupBy(category => category.ParentId).Any(group => group.Key is not null && group.Count() > 254))
+		// Two stages reach depth two. A deeper tree fails explicitly rather than silently losing its leaves.
+		if (categories.Values.Any(c => c.ParentId is not null &&
+			(!categories.TryGetValue(c.ParentId, out SuggestionCategory? parent) || parent.ParentId is not null)))
 		{
 			return false;
 		}
-		return true;
+
+		int roots = categories.Values.Count(category => category.ParentId is null);
+		int largestStage2 = Roots(request).Select(r => Math.Max(1, Children(request, r.Id).Count))
+			.OrderDescending().Take(TopRoots).Sum();
+		return roots is >= 1 and <= MaximumOptions && largestStage2 <= MaximumOptions;
 	}
 
-	public static CategorySuggestionResult Decide(CategorySuggestionRequest request, CategoryHierarchyJudgment judgment, string provider)
+	/// <summary>Stage-1 options: every root, in taxonomy order.</summary>
+	public static IReadOnlyList<SuggestionCategory> Roots(CategorySuggestionRequest request) =>
+		[.. request.Categories.Where(c => c.ParentId is null)];
+
+	/// <summary>
+	/// Stage-2 options: the children of the given roots in taxonomy order (not stage-1 rank, so the stage-1 winner
+	/// gets no first-option advantage). A root without children is offered as itself.
+	/// </summary>
+	public static IReadOnlyList<SuggestionCategory> Stage2Options(CategorySuggestionRequest request, IReadOnlyCollection<string> rootIds)
 	{
-		if (!IsValid(request) || judgment is null || judgment.Choices is null || judgment.Model != Model ||
-			judgment.TaxonomyRevision != request.TaxonomyRevision || !Probability(judgment.FitProbability) ||
-			judgment.InputTokens is < 0 or > 9007199254740991 || judgment.OutputTokens is < 0 or > 9007199254740991)
+		List<SuggestionCategory> options = [];
+		foreach (SuggestionCategory root in Roots(request).Where(r => rootIds.Contains(r.Id)))
 		{
-			return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
+			IReadOnlyList<SuggestionCategory> children = Children(request, root.Id);
+			if (children.Count == 0) { options.Add(root); }
+			else { options.AddRange(children); }
 		}
-
-		var children = request.Categories.GroupBy(x => x.ParentId).ToDictionary(x => x.Key ?? "", x => x.ToArray());
-		var internals = request.Categories.Where(x => children.ContainsKey(x.Id)).ToArray();
-		var expected = new Dictionary<string, string[]>(StringComparer.Ordinal)
-		{
-			["category"] = children[""].Select(x => x.Id).ToArray()
-		};
-		for (int i = 0; i < internals.Length; i++)
-		{
-			expected[$"branch_{i}"] = [internals[i].Id, .. children[internals[i].Id].Select(x => x.Id)];
-		}
-
-		if (judgment.Choices.Count != expected.Count)
-		{
-			return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
-		}
-
-		foreach (var (key, ids) in expected)
-		{
-			if (!judgment.Choices.TryGetValue(key, out CategoryChoiceJudgment? choice) || choice is null ||
-				choice.Probabilities is null || string.IsNullOrWhiteSpace(choice.CategoryId) ||
-				!Probability(choice.Confidence) || choice.Probabilities.Count != ids.Length ||
-				!choice.Probabilities.TryGetValue(choice.CategoryId, out double selected) ||
-				ids.Any(id => !choice.Probabilities.TryGetValue(id, out double p) || !Probability(p)) ||
-							!DistributionTotalValid(choice.Probabilities.Values) ||
-				choice.Probabilities.Values.Any(value => value > selected + 1e-9))
-			{
-				return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
-			}
-		}
-
-		string? reason = judgment.FitProbability <= 0.3 ? "no-fit" : judgment.FitProbability < 0.7 ? "uncertain-fit" : null;
-		string id = judgment.Choices["category"].CategoryId;
-		CategoryChoiceJudgment terminal = judgment.Choices["category"];
-		if (reason is null)
-		{
-			while (children.ContainsKey(id))
-			{
-				int index = Array.FindIndex(internals, x => x.Id == id);
-				terminal = judgment.Choices[$"branch_{index}"];
-				if (terminal.CategoryId == id)
-				{
-					break;
-				}
-
-				id = terminal.CategoryId;
-			}
-		}
-		return new(new(reason is null ? id : null, reason is null ? PathFor(request, id) : [], reason,
-			judgment.FitProbability, terminal.Probabilities[terminal.CategoryId], terminal.Confidence,
-			new(provider, judgment.Model, Version, request.TaxonomyRevision, judgment.InputTokens, judgment.OutputTokens),
-			"local_choice"), null);
+		return options;
 	}
+
+	/// <summary>The roots whose children stage 2 offers: the stage-1 baseline's root candidates.</summary>
+	public static IReadOnlyList<string> Stage2RootIds(CategorySuggestion baseline) =>
+		[.. (baseline.RootCandidates ?? []).Select(c => c.CategoryId)];
+
+	/// <summary>
+	/// Validates stage 1. Fit at or below 0.3 abstains as no-fit and below 0.7 as uncertain-fit; otherwise the result
+	/// proposes the top root and is the baseline for stage 2.
+	/// </summary>
+	public static CategorySuggestionResult DecideStage1(CategorySuggestionRequest request, CategoryStageJudgment judgment, string provider)
+	{
+		IReadOnlyList<SuggestionCategory> roots = IsValid(request) ? Roots(request) : [];
+		if (roots.Count == 0 || string.IsNullOrWhiteSpace(provider) || !IsValidJudgment(judgment, roots) ||
+			judgment.FitProbability is not double fit || !Probability(fit))
+		{
+			return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
+		}
+
+		List<SuggestionCandidate> top = Rank(roots, judgment.Probabilities, TopRoots);
+		string? reason = fit <= NoFitAtOrBelow ? "no-fit" : fit < FitGate ? "uncertain-fit" : null;
+		SuggestionCandidate chosen = top[0];
+		return new(new(reason is null ? chosen.CategoryId : null, reason is null ? PathFor(request, chosen.CategoryId) : [], reason,
+			fit, chosen.Probability, judgment.Confidence,
+			new(provider, judgment.Model, Version, request.TaxonomyRevision, judgment.InputTokens, judgment.OutputTokens),
+			"local_choice", RootCandidates: top), null);
+	}
+
+	/// <summary>
+	/// Validates stage 2 against the baseline's roots. The proposal is the top child when it lies under the stage-1 top
+	/// root, otherwise the stage-1 top root (back-off). Probability and confidence describe the proposal's own stage.
+	/// </summary>
+	public static CategorySuggestionResult DecideStage2(CategorySuggestionRequest request, CategorySuggestion baseline, CategoryStageJudgment judgment)
+	{
+		if (!IsValid(request) || !IsBaseline(request, baseline))
+		{
+			return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
+		}
+
+		IReadOnlyList<SuggestionCategory> options = Stage2Options(request, Stage2RootIds(baseline));
+		if (!IsValidJudgment(judgment, options) || judgment.FitProbability is not null ||
+			judgment.InputTokens > MaximumTokens - baseline.Provenance.InputTokens ||
+			judgment.OutputTokens > MaximumTokens - baseline.Provenance.OutputTokens)
+		{
+			return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
+		}
+
+		List<SuggestionCandidate> leaves = Rank(options, judgment.Probabilities, TopLeaves);
+		string topRoot = baseline.RootCandidates![0].CategoryId;
+		bool consistent = RootOf(request, leaves[0].CategoryId) == topRoot;
+		string chosen = consistent ? leaves[0].CategoryId : topRoot;
+		return new(baseline with
+		{
+			CategoryId = chosen,
+			Path = PathFor(request, chosen),
+			CategoryProbability = consistent ? leaves[0].Probability : baseline.CategoryProbability,
+			Confidence = consistent ? judgment.Confidence : baseline.Confidence,
+			Provenance = baseline.Provenance with
+			{
+				InputTokens = baseline.Provenance.InputTokens + judgment.InputTokens,
+				OutputTokens = baseline.Provenance.OutputTokens + judgment.OutputTokens
+			},
+			LeafCandidates = leaves
+		}, null);
+	}
+
+	/// <summary>A stage-1 result that may start stage 2: it proposes its own top root and has no stage-2 answer.</summary>
+	public static bool IsBaseline(CategorySuggestionRequest request, CategorySuggestion? baseline) =>
+		baseline is { AbstentionReason: null, CategoryId: not null, LeafCandidates: null, SelectedPathSupport: null, RootCandidates: { Count: > 0 } roots } &&
+		baseline.Path is not null && baseline.Provenance is not null &&
+		Probability(baseline.FitProbability) && baseline.FitProbability >= FitGate &&
+		roots.Count == Math.Min(TopRoots, Roots(request).Count) &&
+		roots.All(c => c is not null && Probability(c.Probability) && request.Categories.Any(x => x.Id == c.CategoryId && x.ParentId is null)) &&
+		roots.Select(c => c.CategoryId).Distinct(StringComparer.Ordinal).Count() == roots.Count &&
+		roots.Zip(roots.Skip(1)).All(pair => pair.First.Probability >= pair.Second.Probability) &&
+		baseline.CategoryId == roots[0].CategoryId && baseline.CategoryProbability == roots[0].Probability &&
+		baseline.Path.SequenceEqual(PathFor(request, baseline.CategoryId));
+
+	public static string RootOf(CategorySuggestionRequest request, string id) => PathFor(request, id)[0];
 
 	public static IReadOnlyList<string> PathFor(CategorySuggestionRequest request, string id)
 	{
@@ -145,22 +191,23 @@ public static class CategorySuggestionPolicy
 		return path;
 	}
 
-	public static CategorySuggestionResult Decide(CategorySuggestionRequest request, CategoryJudgment judgment, string provider)
-	{
-		if (!IsValid(request) || judgment is null || judgment.Probabilities is null || string.IsNullOrWhiteSpace(judgment.CategoryId) || judgment.Model != Model || judgment.TaxonomyRevision != request.TaxonomyRevision ||
-			!Probability(judgment.FitProbability) || !Probability(judgment.Confidence) || judgment.InputTokens is < 0 or > 9007199254740991 || judgment.OutputTokens is < 0 or > 9007199254740991 ||
-			judgment.Probabilities.Count != request.Categories.Count || !judgment.Probabilities.TryGetValue(judgment.CategoryId, out double selected) ||
-			request.Categories.Any(category => !judgment.Probabilities.TryGetValue(category.Id, out double probability) || !Probability(probability)) ||
-					!DistributionTotalValid(judgment.Probabilities.Values) || judgment.Probabilities.Values.Any(value => value > selected + 1e-9))
-		{
-			return CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse);
-		}
+	private static IReadOnlyList<SuggestionCategory> Children(CategorySuggestionRequest request, string parentId) =>
+		[.. request.Categories.Where(c => c.ParentId == parentId)];
 
-		string? reason = judgment.FitProbability <= 0.3 ? "no-fit" : judgment.FitProbability < 0.7 ? "uncertain-fit" : null;
-		return new(new(reason is null ? judgment.CategoryId : null, reason is null ? PathFor(request, judgment.CategoryId) : [], reason,
-			judgment.FitProbability, selected, judgment.Confidence,
-			new(provider, judgment.Model, Version, request.TaxonomyRevision, judgment.InputTokens, judgment.OutputTokens)), null);
-	}
+	/// <summary>Exact option set, finite probabilities that sum to one, and a chosen option that holds the maximum.</summary>
+	public static bool IsValidJudgment(CategoryStageJudgment? judgment, IReadOnlyList<SuggestionCategory> options) =>
+		judgment is { Probabilities: not null } && judgment.Model == Model && !string.IsNullOrWhiteSpace(judgment.ChosenCategoryId) &&
+		Probability(judgment.Confidence) && judgment.InputTokens is >= 0 and <= MaximumTokens && judgment.OutputTokens is >= 0 and <= MaximumTokens &&
+		judgment.Probabilities.Count == options.Count &&
+		options.All(o => judgment.Probabilities.TryGetValue(o.Id, out double p) && Probability(p)) &&
+		DistributionTotalValid(judgment.Probabilities.Values) &&
+		judgment.Probabilities.TryGetValue(judgment.ChosenCategoryId, out double selected) &&
+		judgment.Probabilities.Values.All(value => value <= selected + 1e-9);
+
+	// Ties keep taxonomy order.
+	private static List<SuggestionCandidate> Rank(IReadOnlyList<SuggestionCategory> options, IReadOnlyDictionary<string, double> probabilities, int take) =>
+		[.. options.Select((o, i) => (o.Id, i)).OrderByDescending(x => probabilities[x.Id]).ThenBy(x => x.i)
+			.Take(take).Select(x => new SuggestionCandidate(x.Id, probabilities[x.Id]))];
 
 	// Accommodate accumulation rounding at the inclusive one-percent boundary;
 	// this allowance is far below the provider tolerance.

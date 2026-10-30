@@ -12,7 +12,6 @@ public static class JevConfiguration
 			.Configure<IConfiguration>((options, configuration) =>
 			{
 				options.Enabled = configuration.GetValue("Jev:Enabled", true);
-				options.InferenceEnabled = configuration.GetValue("Jev:InferenceEnabled", false);
 				options.ApiKey = configuration["TYPESAFE_API_KEY"];
 			});
 #pragma warning disable EXTEXP0001 // Framework API explicitly removes inherited resilience for this one-shot check.
@@ -27,6 +26,11 @@ public static class JevConfiguration
 		services.AddScoped<ICategoryAssistanceDecisionStore, CategoryAssistanceDecisionStore>();
 		services.AddScoped<ICategoryAssistanceReviewPreferenceStore, CategoryAssistanceReviewPreferenceStore>();
 		services.AddScoped<CategoryAssistanceDispatcher>();
+		services.AddOptions<CategoryAutoWriteOptions>().BindConfiguration("CategoryAssistance")
+			.Validate(options => options.IsValid(), "CategoryAssistance auto-write thresholds must be between 0.7 and 1.")
+			.ValidateOnStart();
+		services.AddSingleton<CategoryAssistanceAutoWriteCursor>();
+		services.AddScoped<CategoryAssistanceAutoWriter>();
 		services.AddScoped<JevCategoryAssistanceSelectedProvider>();
 		services.AddScoped<ICategoryAssistanceSelectedProvider>(provider =>
 				provider.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
@@ -36,8 +40,6 @@ public static class JevConfiguration
 	.RemoveAllResilienceHandlers()
 	.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
 	.RemoveAllLoggers();
-		services.AddScoped<ICategorySuggestionProvider>(provider =>
-				provider.GetRequiredService<JevSuggestionProvider>());
 		return services.AddHttpClient<IClassificationProviderConnection, JevConnection>()
 			// An explicit user check is one bounded attempt, without inherited retries or circuits.
 			.RemoveAllResilienceHandlers()

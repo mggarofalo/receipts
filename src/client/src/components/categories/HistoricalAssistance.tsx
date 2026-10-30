@@ -33,17 +33,19 @@ function summarizeStates(states: string[]) {
           ? "without a suggestion"
           : state === "accepted"
             ? "accepted"
-            : state === "dismissed"
-              ? "dismissed"
-              : state === "stale"
-                ? "out of date"
-                : state === "failed"
-                  ? "failed"
-                  : state === "indeterminate"
-                    ? "with an unknown outcome"
-                    : ["waiting", "queued", "dispatching"].includes(state)
-                      ? "in progress"
-                      : "with status unavailable";
+            : state === "applied"
+              ? "applied automatically"
+              : state === "dismissed"
+                ? "dismissed"
+                : state === "stale"
+                  ? "out of date"
+                  : state === "failed"
+                    ? "failed"
+                    : state === "indeterminate"
+                      ? "with an unknown outcome"
+                      : ["waiting", "queued", "dispatching"].includes(state)
+                        ? "in progress"
+                        : "with status unavailable";
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return Array.from(counts, ([label, count]) => `${count} ${label}`).join(

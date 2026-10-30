@@ -259,6 +259,9 @@ namespace Infrastructure.Migrations
                     b.Property<Guid?>("AssignmentId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("AutoWriteCheckedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<Guid?>("ClaimToken")
                         .HasColumnType("uuid");
 
@@ -402,7 +405,7 @@ namespace Infrastructure.Migrations
 
                     b.ToTable("Attempts", "category_assistance", t =>
                         {
-                            t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate','accepted','dismissed')");
+                            t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate','accepted','dismissed','applied')");
                         });
                 });
 
@@ -701,6 +704,11 @@ namespace Infrastructure.Migrations
                     b.Property<int>("Id")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("AutoApply")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<int>("DailyLimit")
                         .HasColumnType("integer");
 
@@ -736,6 +744,7 @@ namespace Infrastructure.Migrations
                         new
                         {
                             Id = 1,
+                            AutoApply = true,
                             DailyLimit = 100,
                             Enabled = false,
                             PendingLimit = 3,

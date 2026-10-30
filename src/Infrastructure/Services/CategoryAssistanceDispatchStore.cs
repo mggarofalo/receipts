@@ -86,7 +86,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			}
 
 			if (!await EligibleAsync(db, marker, head.RevisionId, ct)) { marker.DispatchSkipped = true; continue; }
-			var request = await BuildRequestAsync(db, marker.Description, head.RevisionId, ct);
+			var request = await BuildRequestAsync(db, marker.Location, marker.Description, head.RevisionId, ct);
 			bool invalidRequest = request == null || !CategorySuggestionPolicy.IsValid(request);
 			var attempt = new CategoryAssistanceAttemptEntity
 			{
@@ -418,12 +418,13 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			return false;
 		}
 
-		var request = await BuildRequestAsync(db, marker.Description, taxonomyRevision, ct);
+		var request = await BuildRequestAsync(db, marker.Location, marker.Description, taxonomyRevision, ct);
 		return request != null && JsonSerializer.Serialize(request) == row.RequestJson;
 	}
 
-	private static async Task<CategorySuggestionRequest?> BuildRequestAsync(ApplicationDbContext db, string description,
-		Guid revision, CancellationToken ct)
+	// The store is the receipt location (owner-approved); payment, date, amount and identifiers are never sent.
+	private static async Task<CategorySuggestionRequest?> BuildRequestAsync(ApplicationDbContext db, string location,
+		string description, Guid revision, CancellationToken ct)
 	{
 		var nodes = await db.TaxonomyNodes.AsNoTracking().Where(x => x.RevisionId == revision && !x.Archived)
 			.OrderBy(x => x.CategoryId).ToListAsync(ct);
@@ -439,7 +440,8 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		}
 
 		return new(description, revision.ToString("D"), nodes.Select(x => new SuggestionCategory(
-						x.CategoryId.ToString("D"), x.Name, string.IsNullOrWhiteSpace(x.Definition) ? x.Name : x.Definition, x.ParentId?.ToString("D"))).ToArray());
+						x.CategoryId.ToString("D"), x.Name, string.IsNullOrWhiteSpace(x.Definition) ? x.Name : x.Definition, x.ParentId?.ToString("D"))).ToArray(),
+			string.IsNullOrWhiteSpace(location) ? null : location);
 	}
 
 	private static CategoryAssistanceQueuedWork ToWork(CategoryAssistanceAttemptEntity row, CategorySuggestion? baseline = null)

@@ -97,7 +97,7 @@ public static class JournalledRun
 			byte[] payload = Encoding.UTF8.GetBytes(next.RequestJson);
 			long reserved = checked(protocol.PriorCarryNanodollars + replay.Attempts.Sum(a => a.ReservationNanodollars) +
 				protocol.HeadroomNanodollars);
-			if (OfflinePairedEvaluation.Hash(payload) != next.RequestSha256 || exchanges.Count >= protocol.MaximumAttempts ||
+			if (Hashing.Hash(payload) != next.RequestSha256 || exchanges.Count >= protocol.MaximumAttempts ||
 					next.ReservationNanodollars <= 0 || reserved > protocol.ReservationLimitNanodollars)
 			{
 				throw new InvalidOperationException("Request or reservation mismatch.");

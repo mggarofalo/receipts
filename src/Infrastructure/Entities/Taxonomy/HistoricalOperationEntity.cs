@@ -2,7 +2,7 @@ using Application.Taxonomy;
 
 namespace Infrastructure.Entities.Taxonomy;
 
-public enum HistoricalOperationKind { ManualV1, ApprovedMappingV1 }
+public enum HistoricalOperationKind { ManualV1, ApprovedMappingV1, JevSuggestionV1 }
 
 public sealed class HistoricalOperationEntity
 {

@@ -28,6 +28,8 @@ public sealed record TwoStagePolicy(int Cases, int MaximumAttempts, long PriorCa
 	public const long HeadroomInputTokens = 65_536;
 	public const int MaximumPayloadBytes = 65_536;
 	public const long HeadroomNanodollars = HeadroomInputTokens * NanodollarsPerInputToken;
+	// Round 3's fixed reservation (65,536 tokens per attempt), reported only for comparison.
+	public const long FixedReservationNanodollarsPerAttempt = HeadroomInputTokens * NanodollarsPerInputToken;
 
 	/// <summary>Every field is required; live authorization never comes from the packet.</summary>
 	public static TwoStagePolicy Load(string path)
@@ -210,7 +212,7 @@ public static class TwoStageEvaluation
 				throw new InvalidOperationException("Offline attempt ceiling reached.");
 			}
 
-			string hash = OfflinePairedEvaluation.Hash(payload);
+			string hash = Hashing.Hash(payload);
 			ReplayExchange? exchange = attempts.Count < exchanges.Count ? exchanges[attempts.Count] : null;
 			bool unknown = exchange is null || (exchange.RequestSha256 is not null && exchange.RequestSha256 != hash);
 			attempts.Add(new(caseId, stage, hash, Encoding.UTF8.GetString(payload), unknown ? "unknown" : "replayed",

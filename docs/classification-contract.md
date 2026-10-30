@@ -48,7 +48,9 @@ returns 409 and requires refresh rather than silently accepting changed meaning.
 Historical import can retain archived nodes through a separate validated import
 path. Manual, approved mapping, accepted provider suggestion, legacy import, and
 retrospective operation are distinct sources; unknown legacy origin is not proof
-of automatic or manual approval. Provider/model/question-policy versions belong
+of automatic or manual approval. A strong Jev match written automatically has source
+`jev` and a JSON reason with its probabilities and thresholds; an accepted suggestion
+remains `manual`. Provider/model/question-policy versions belong
 in provenance when used, never in category identity.
 
 The receipt date selects reporting periods. `recordedAt` orders observed

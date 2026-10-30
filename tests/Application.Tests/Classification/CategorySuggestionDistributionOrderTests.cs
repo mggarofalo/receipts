@@ -7,13 +7,13 @@ public class CategorySuggestionDistributionOrderTests
 	public static IEnumerable<object[]> BoundaryOrders()
 	{
 		int[][] orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
-		foreach (int mode in new[] { 0, 1, 2 })
+		foreach (int stage in new[] { 1, 2 })
 		{
 			foreach (double last in new[] { 0.15, 0.17 })
 			{
 				foreach (int[] order in orders)
 				{
-					yield return [mode, last, order];
+					yield return [stage, last, order];
 				}
 			}
 		}
@@ -21,61 +21,48 @@ public class CategorySuggestionDistributionOrderTests
 
 	[Theory]
 	[MemberData(nameof(BoundaryOrders))]
-	public void InclusiveSumToleranceAcceptsSameDistributionInEveryInsertionOrder(int mode, double last, int[] order)
+	public void InclusiveSumToleranceAcceptsSameDistributionInEveryInsertionOrder(int stage, double last, int[] order)
 	{
-		var result = Decide(mode, last, order);
+		var result = Decide(stage, last, order);
 		Assert.Null(result.Failure);
 		Assert.NotNull(result.Suggestion);
 		Assert.Equal("fake0", result.Suggestion.CategoryId);
-		Assert.Equal(new[] { "fake0" }, result.Suggestion.Path);
-		Assert.Equal(mode == 1 ? 1.0 : 0.5, result.Suggestion.CategoryProbability);
+		Assert.Equal(stage == 1 ? new[] { "fake0" } : ["root", "fake0"], result.Suggestion.Path);
+		Assert.Equal(0.5, result.Suggestion.CategoryProbability);
 	}
 
 	[Theory]
-	[InlineData(0, 0.1499)]
-	[InlineData(0, 0.1701)]
 	[InlineData(1, 0.1499)]
 	[InlineData(1, 0.1701)]
 	[InlineData(2, 0.1499)]
 	[InlineData(2, 0.1701)]
-	public void DistributionGenuinelyOutsideSumToleranceRemainsInvalid(int mode, double last)
+	public void DistributionGenuinelyOutsideSumToleranceRemainsInvalid(int stage, double last)
 	{
-		var result = Decide(mode, last, [0, 1, 2]);
+		var result = Decide(stage, last, [0, 1, 2]);
 		Assert.Equal(SuggestionFailure.InvalidResponse, result.Failure);
 		Assert.Null(result.Suggestion);
 	}
 
-	// Modes exercise the flat overload, hierarchy root choice, and hierarchy branch choice.
-	private static CategorySuggestionResult Decide(int mode, double last, int[] order)
+	// Stage 1 chooses among three roots; stage 2 among three children of a single root.
+	private static CategorySuggestionResult Decide(int stage, double last, int[] order)
 	{
 		string[] ids = ["fake0", "fake1", "fake2"];
 		double[] values = [0.5, 0.34, last];
 		var probabilities = order.ToDictionary(index => ids[index], index => values[index]);
-		SuggestionCategory[] categories = mode == 2
-			? [new("fake0", "Root", "Synthetic", null), new("fake1", "First", "Synthetic", "fake0"), new("fake2", "Second", "Synthetic", "fake0")]
-			: [new("fake0", "Root", "Synthetic", null), new("fake1", "First", "Synthetic", null), new("fake2", "Second", "Synthetic", null)];
-		if (mode == 1)
+		if (stage == 1)
 		{
-			categories = [.. categories, new("child", "Child", "Synthetic", "fake0")];
+			var flat = new CategorySuggestionRequest("Synthetic diagnostic", "synthetic-revision",
+				[new("fake0", "Root", "Synthetic", null), new("fake1", "First", "Synthetic", null), new("fake2", "Second", "Synthetic", null)]);
+			return CategorySuggestionPolicy.DecideStage1(flat,
+				new CategoryStageJudgment(CategorySuggestionPolicy.Model, "fake0", 0.8, probabilities, 0.8, 1, 0), "test");
 		}
 
-		var request = new CategorySuggestionRequest("Synthetic diagnostic", "synthetic-revision", categories);
-		if (mode == 0)
-		{
-			var judgment = new CategoryJudgment(CategorySuggestionPolicy.Model, request.TaxonomyRevision,
-				"fake0", 0.8, 0.8, probabilities, 1, 0);
-			return CategorySuggestionPolicy.Decide(request, judgment, "test");
-		}
-		var choices = new Dictionary<string, CategoryChoiceJudgment>
-		{
-			["category"] = mode == 2
-				? new("fake0", 0.8, new Dictionary<string, double> { ["fake0"] = 1 })
-				: new("fake0", 0.8, probabilities),
-			["branch_0"] = mode == 2
-				? new("fake0", 0.8, probabilities)
-				: new("fake0", 0.8, new Dictionary<string, double> { ["fake0"] = 1, ["child"] = 0 })
-		};
-		return CategorySuggestionPolicy.Decide(request,
-			new CategoryHierarchyJudgment(CategorySuggestionPolicy.Model, request.TaxonomyRevision, 0.8, choices, 1, 0), "test");
+		var request = new CategorySuggestionRequest("Synthetic diagnostic", "synthetic-revision",
+			[new("root", "Root", "Synthetic", null), new("fake0", "Zero", "Synthetic", "root"),
+				new("fake1", "First", "Synthetic", "root"), new("fake2", "Second", "Synthetic", "root")]);
+		var baseline = CategorySuggestionPolicy.DecideStage1(request, new CategoryStageJudgment(CategorySuggestionPolicy.Model,
+			"root", 0.8, new Dictionary<string, double> { ["root"] = 1 }, 0.8, 1, 0), "test").Suggestion!;
+		return CategorySuggestionPolicy.DecideStage2(request, baseline,
+			new CategoryStageJudgment(CategorySuggestionPolicy.Model, "fake0", 0.8, probabilities, null, 1, 0));
 	}
 }

@@ -43,13 +43,15 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 				ResultJson = JsonSerializer.Serialize(new CategoryAssistanceCompletion(
 					CategoryAssistanceAttemptOutcome.Suggested,
 					new CategorySuggestion(category.ToString(), [category.ToString()], null, 0.9, 0.9, 0.9,
-						new SuggestionProvenance("jev", CategorySuggestionPolicy.Model, "obsolete", Guid.NewGuid().ToString(), 1, 1))))
+						new SuggestionProvenance("jev", CategorySuggestionPolicy.Model, "obsolete", Guid.NewGuid().ToString(), 1, 1),
+						"local_choice", RootCandidates: [new(category.ToString(), 0.9)], LeafCandidates: [new(category.ToString(), 0.9)])))
 			});
 			await db.SaveChangesAsync();
 		}
 		var store = new CategoryAssistanceReadStore(new Factory(isolated), TimeProvider.System);
 		var suggestion = (await store.GetSuggestionAsync(id, default))!;
 		suggestion.IsCurrent.Should().BeFalse(); suggestion.ProposedPath.Should().BeEmpty();
+		suggestion.RootCandidates.Should().BeEmpty(); suggestion.LeafCandidates.Should().BeEmpty();
 		var activity = await store.GetActivityAsync(default);
 		activity.Suggested.Should().Be(0); activity.Stale.Should().Be(1);
 	}
@@ -107,7 +109,7 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 	[Fact]
 	public async Task CompletedPageOmitsFailuresAndMarksMissingEvidenceStale()
 	{
-		Guid restore = Guid.NewGuid(), category = Guid.NewGuid(), failedAttempt = Guid.NewGuid();
+		Guid restore = Guid.NewGuid(), category = Guid.NewGuid(), otherRoot = Guid.NewGuid(), failedAttempt = Guid.NewGuid();
 		var now = DateTimeOffset.UtcNow;
 		await using (var db = fixture.CreateDbContext())
 		{
@@ -137,7 +139,9 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 					CategoryAssistanceAttemptOutcome.Suggested,
 					new CategorySuggestion(category.ToString(), [category.ToString()], null, 0.9, 0.9, 0.9,
 						new SuggestionProvenance("jev", CategorySuggestionPolicy.Model,
-							CategorySuggestionPolicy.Version, Guid.NewGuid().ToString(), 1, 1))))
+							CategorySuggestionPolicy.Version, Guid.NewGuid().ToString(), 1, 1), "local_choice",
+						RootCandidates: [new(category.ToString(), 0.9), new(otherRoot.ToString(), 0.1)],
+						LeafCandidates: [new(category.ToString(), 0.9)])))
 			});
 			db.CategoryAssistanceAttempts.Add(new CategoryAssistanceAttemptEntity
 			{
@@ -173,6 +177,10 @@ public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
 		page.Items[0].AffectedCount.Should().Be(0);
 		page.Items[0].IsCurrent.Should().BeFalse();
 		page.Items[0].ProposedPath.Should().Equal(category);
+		page.Items[0].ProbabilityScope.Should().Be("local_choice");
+		page.Items[0].RootCandidates.Should().Equal(new CategoryAssistanceCandidateRead(category, 0.9),
+			new CategoryAssistanceCandidateRead(otherRoot, 0.1));
+		page.Items[0].LeafCandidates.Should().Equal(new CategoryAssistanceCandidateRead(category, 0.9));
 		(await store.GetSuggestionAsync(failedAttempt, CancellationToken.None)).Should().BeNull();
 	}
 

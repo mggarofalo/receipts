@@ -300,7 +300,7 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		}
 	}
 
-	private static async Task<bool> IsEligibleAsync(ApplicationDbContext db,
+	internal static async Task<bool> IsEligibleAsync(ApplicationDbContext db,
 		CategoryAssistanceAttemptEntity attempt, CategoryAssistanceObservationEntity marker, CancellationToken ct)
 	{
 		if ((attempt.RequestScope == Guid.Empty && marker.Evidence != "post_consent_no_choice_save") ||

@@ -58,6 +58,7 @@ const progress = (state = "preview", pending = 3) => ({
 const summary = (state = "preview", pending = 3) => ({
   operationId: "op-1",
   state,
+  source: "manual",
   capturedAt: "2026-10-26T00:00:00Z",
   taxonomyRevisionId: "rev",
   reason: "Saved reason",

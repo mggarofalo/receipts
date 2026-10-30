@@ -1012,3 +1012,38 @@ it("hides saved Jev request controls while configuration loads and when unavaila
   expect(mockClient.POST).not.toHaveBeenCalled();
   expect(sessionStorage.getItem(savedKey())).toBe(JSON.stringify(body));
 });
+
+it("summarizes automatically applied suggestions apart from ones awaiting review", async () => {
+  const report = progress();
+  report.groups[0] = {
+    ...report.groups[0],
+    attemptIds: ["attempt-1", "attempt-2", "attempt-3"],
+    states: ["applied", "applied", "suggested"],
+    failureReasons: [null, null, null],
+  };
+  mockClient.POST.mockResolvedValue(success(report));
+  mockClient.GET.mockImplementation((path: string) =>
+    Promise.resolve(
+      success(
+        path.endsWith("/status")
+          ? ready
+          : path.endsWith("/{operationId}")
+            ? report
+            : { total: 0, items: [] },
+      ),
+    ),
+  );
+  renderWithQueryClient(
+    <HistoricalAssistance selected={[row("Milk")]} revisionId="rev" />,
+  );
+  await screen.findByText(/20 suggestions per day/);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Request suggestions" }),
+  );
+  const detail = within(
+    await screen.findByLabelText("Suggestion request progress"),
+  );
+  expect(await detail.findByRole("status")).toHaveTextContent(
+    "2 applied automatically · 1 ready to review",
+  );
+});

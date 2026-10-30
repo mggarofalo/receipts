@@ -20,6 +20,7 @@ function toDraft(settings: Settings): Draft {
     model: settings.model,
     dailyLimit: settings.dailyLimit,
     pendingLimit: settings.pendingLimit,
+    autoApply: settings.autoApply,
   };
 }
 
@@ -159,8 +160,9 @@ export default function CategoryAssistanceSettings() {
     <div className="space-y-6">
       <PageHead title="Category Assistance Settings" />
       <p>
-        Control deployment-wide category suggestion consent and limits.
-        Suggestions still require review before receipt items change.
+        Control deployment-wide category suggestion consent and limits. Strong
+        matches can be applied automatically to items without a category; other
+        suggestions wait for review.
       </p>
       <Link className="underline" to="/classification">
         Back to classification
@@ -232,6 +234,22 @@ export default function CategoryAssistanceSettings() {
             />
             <span>
               Enable automatic category suggestion requests (explicit consent)
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={values.autoApply}
+              disabled={busy}
+              onChange={(event) => edit({ autoApply: event.target.checked })}
+            />
+            <span>
+              Apply strong matches automatically
+              <span className="block text-sm text-muted-foreground">
+                Only fills items that have no category. Each change appears in
+                automatic classification activity, where it can be undone.
+                Weaker matches stay as suggestions.
+              </span>
             </span>
           </label>
           {providerReady && (
@@ -365,6 +383,8 @@ export default function CategoryAssistanceSettings() {
                 <dd>{activity.data.dispatching}</dd>
                 <dt>Suggested</dt>
                 <dd>{activity.data.suggested}</dd>
+                <dt>Applied automatically</dt>
+                <dd>{activity.data.applied}</dd>
                 <dt>Abstained (no suggestion)</dt>
                 <dd>{activity.data.abstained}</dd>
                 <dt>Failed (request error)</dt>

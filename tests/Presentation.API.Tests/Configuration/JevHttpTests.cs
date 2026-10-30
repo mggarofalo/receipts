@@ -7,6 +7,7 @@ using API.Controllers;
 using Application.Classification;
 using FluentAssertions;
 using Infrastructure.Jev;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
@@ -67,30 +68,64 @@ public class JevHttpTests
 	}
 
 	[Fact]
-	public async Task SuggestionInferenceRequiresExplicitOptInAndDoesNotInheritRetries()
+	public async Task AssistanceInferenceHonoursTheServerSwitchAndDoesNotInheritRetries()
 	{
 		CountingHandler handler = new(HttpStatusCode.TooManyRequests);
 		CategorySuggestionRequest request = new("purchase", "revision", [new("category", "Category", "Purchases", null)]);
-		await using (WebApplication disabled = await Start(handler, "fake-key"))
+		await using (WebApplication disabled = await Start(handler, "fake-key", enabled: false))
 		{
-			ICategorySuggestionProvider provider = disabled.Services.GetRequiredService<ICategorySuggestionProvider>();
+			await using AsyncServiceScope scope = disabled.Services.CreateAsyncScope();
+			ICategoryAssistanceSelectedProvider provider = scope.ServiceProvider.GetRequiredService<ICategoryAssistanceSelectedProvider>();
 			provider.IsAvailable.Should().BeFalse();
-			(await provider.SuggestAsync(request, default)).Failure.Should().Be(SuggestionFailure.Disabled);
+			(await provider.SuggestAsync(request, Guid.NewGuid(), default)).Failure.Should().Be(SuggestionFailure.Disabled);
 			handler.Calls.Should().Be(0);
 		}
-		await using WebApplication enabled = await Start(handler, "fake-key", true);
-		ICategorySuggestionProvider available = enabled.Services.GetRequiredService<ICategorySuggestionProvider>();
-		available.IsAvailable.Should().BeTrue();
+
+		await using WebApplication enabled = await Start(handler, "fake-key");
 		for (int index = 0; index < 3; index++)
 		{
-			(await available.SuggestAsync(request, default)).Failure.Should().Be(SuggestionFailure.RateLimited);
+			await using AsyncServiceScope scope = enabled.Services.CreateAsyncScope();
+			ICategoryAssistanceSelectedProvider available = scope.ServiceProvider.GetRequiredService<ICategoryAssistanceSelectedProvider>();
+			available.IsAvailable.Should().BeTrue();
+			(await available.SuggestAsync(request, Guid.NewGuid(), default)).Failure.Should().Be(SuggestionFailure.RateLimited);
 			handler.Calls.Should().Be(index + 1);
 		}
 	}
 
-	private static async Task<WebApplication> Start(CountingHandler handler, string? key = null, bool inference = false)
+	[Theory]
+	[InlineData("0.5")]
+	[InlineData("1.5")]
+	public async Task InvalidAutoWriteThresholdStopsStartup(string threshold)
 	{
-		WebApplicationBuilder builder = ConfiguredApiTestHost.CreateBuilder(new Dictionary<string, string?> { ["TYPESAFE_API_KEY"] = key, ["Jev:InferenceEnabled"] = inference.ToString() });
+		Func<Task> start = () => Start(new CountingHandler(HttpStatusCode.OK), "fake-key",
+			settings: new() { ["CategoryAssistance:RootAutoWriteThreshold"] = threshold });
+		await start.Should().ThrowAsync<OptionsValidationException>();
+	}
+
+	[Fact]
+	public async Task AutoWriteOptionsBindFromCategoryAssistanceSection()
+	{
+		await using WebApplication app = await Start(new CountingHandler(HttpStatusCode.OK), "fake-key", settings: new()
+		{
+			["CategoryAssistance:RootAutoWriteThreshold"] = "0.95",
+			["CategoryAssistance:LeafAutoWriteEnabled"] = "true"
+		});
+		CategoryAutoWriteOptions options = app.Services.GetRequiredService<IOptionsMonitor<CategoryAutoWriteOptions>>().CurrentValue;
+		options.RootAutoWriteThreshold.Should().Be(0.95);
+		options.LeafAutoWriteThreshold.Should().Be(0.90);
+		options.LeafAutoWriteEnabled.Should().BeTrue();
+	}
+
+	private static async Task<WebApplication> Start(CountingHandler handler, string? key = null, bool enabled = true,
+		Dictionary<string, string?>? settings = null)
+	{
+		Dictionary<string, string?> configuration = new() { ["TYPESAFE_API_KEY"] = key, ["Jev:Enabled"] = enabled.ToString() };
+		foreach ((string name, string? value) in settings ?? [])
+		{
+			configuration[name] = value;
+		}
+
+		WebApplicationBuilder builder = ConfiguredApiTestHost.CreateBuilder(configuration);
 		builder.AddServiceDefaults();
 		builder.Logging.SetMinimumLevel(LogLevel.Warning);
 		builder.Services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, TestAuth>("Test", _ => { });
@@ -98,11 +133,19 @@ public class JevHttpTests
 		builder.Services.AddVersioningServices().AddApplicationServices(builder.Configuration);
 		builder.Services.AddControllers().AddApplicationPart(typeof(JevController).Assembly);
 		builder.Services.AddJevServices().ConfigurePrimaryHttpMessageHandler(() => handler);
-		builder.Services.AddHttpClient<ICategorySuggestionProvider, JevSuggestionProvider>().ConfigurePrimaryHttpMessageHandler(() => handler);
+		builder.Services.AddHttpClient<JevSuggestionProvider>().ConfigurePrimaryHttpMessageHandler(() => handler);
+		// The persisted connection binding needs a database; a current binding isolates the transport under test.
+		builder.Services.AddScoped<ICategoryAssistanceConnectionBinding, CurrentBinding>();
 		WebApplication app = builder.Build();
 		app.UseAuthentication(); app.UseAuthorization(); app.MapControllers();
 		await app.StartAsync();
 		return app;
+	}
+
+	private sealed class CurrentBinding : ICategoryAssistanceConnectionBinding
+	{
+		public Task<bool> IsCurrentAsync(CategoryAssistanceConnectionCoordinator.Configuration configuration, Guid generation,
+			CancellationToken ct = default) => Task.FromResult(true);
 	}
 
 	private sealed class CountingHandler(HttpStatusCode status) : HttpMessageHandler

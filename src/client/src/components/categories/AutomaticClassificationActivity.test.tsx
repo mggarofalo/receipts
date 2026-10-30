@@ -16,6 +16,7 @@ const ok = (data: unknown) => ({
 const entry = {
   operationId,
   state: "completed",
+  source: "approved_mapping",
   capturedAt: "2026-10-29T12:00:00Z",
   groups: [
     {
@@ -314,3 +315,68 @@ it.each([
     expect(taxonomyReads).toBe(expectedReads);
   },
 );
+
+it("labels strong Jev matches apart from remembered choices", async () => {
+  const jevEntry = {
+    ...entry,
+    operationId: "44444444-4444-4444-8444-444444444444",
+    source: "jev",
+    groups: [
+      {
+        group: { store: "Bakery", rawDescription: "Rye Bread" },
+        targetCategoryId: "55555555-5555-4555-8555-555555555555",
+      },
+    ],
+  };
+  mockClient.GET.mockImplementation(async (path: string) =>
+    ok(
+      path === "/api/taxonomy"
+        ? {
+            id: revisionId,
+            nodes: [{ id: categoryId, name: "Dairy", archived: false }],
+          }
+        : { items: [entry, jevEntry], nextOffset: null },
+    ),
+  );
+  renderWithQueryClient(<AutomaticClassificationActivity />);
+  await userEvent.click(screen.getByText("Automatic classification activity"));
+  const remembered = await screen.findByText("Whole Milk at Market · Dairy");
+  expect(remembered.parentElement).toHaveTextContent(/Remembered choice · /);
+  expect(remembered.parentElement).not.toHaveTextContent(/Strong Jev match/);
+  const jev = screen.getByText("Rye Bread at Bakery · Jev category");
+  expect(jev.parentElement).toHaveTextContent(/Strong Jev match · /);
+  expect(jev.parentElement).not.toHaveTextContent(/Remembered choice/);
+});
+
+it("undoes a strong Jev match through the same undo route", async () => {
+  mockClient.GET.mockImplementation(async (path: string) =>
+    ok(
+      path === "/api/taxonomy"
+        ? {
+            id: revisionId,
+            nodes: [{ id: categoryId, name: "Dairy", archived: false }],
+          }
+        : { items: [{ ...entry, source: "jev" }], nextOffset: null },
+    ),
+  );
+  mockClient.POST.mockResolvedValue(ok({ state: "undone" }));
+  renderWithQueryClient(<AutomaticClassificationActivity />);
+  await userEvent.click(screen.getByText("Automatic classification activity"));
+  expect(await screen.findByText(/Strong Jev match · /)).toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: /^Undo for Whole Milk at Market from/ }),
+  );
+  await waitFor(() =>
+    expect(mockClient.POST).toHaveBeenCalledWith(
+      "/api/historical-reclassifications/{id}/undo",
+      expect.objectContaining({
+        params: { path: { id: operationId } },
+        body: {
+          taxonomyRevisionId: revisionId,
+          reason: "User undid automatic classification",
+          limit: 100,
+        },
+      }),
+    ),
+  );
+});

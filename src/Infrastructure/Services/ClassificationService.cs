@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Application.Classification;
 using Application.Interfaces.Services;
 using Application.Models.CommittedChanges;
 using Application.Normalization;
@@ -32,7 +33,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 
 	internal static async Task<PurchaseClassification> AssignInTransactionAsync(ApplicationDbContext db, string actor, Guid itemId,
 		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared = false, Action? onChanged = null)
-		=> await AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, prepared, onChanged, null);
+		=> await AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, prepared, onChanged, null, null);
 
 	// The caller owns the transaction and must atomically persist its historical outcome.
 	// Frozen revisions, eligibility, suppression and progress remain the caller's responsibility.
@@ -46,12 +47,25 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			|| string.IsNullOrWhiteSpace(evidence.SourceFingerprint) || categoryId == Guid.Empty)
 		{ throw new TaxonomyException(400, "Valid approved mapping evidence and category are required."); }
 		ClassificationCommand command = new(categoryId, taxonomyRevisionId, expectedAssignmentId, operationId, JsonSerializer.Serialize(evidence));
-		return AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, false, null, evidence);
+		return AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, false, null, evidence, null);
+	}
+
+	// The caller owns the transaction, eligibility and its activity record; this only appends the `jev` assignment.
+	internal static Task<PurchaseClassification> AssignJevInTransactionAsync(ApplicationDbContext db, string actor,
+		Guid itemId, Guid categoryId, Guid taxonomyRevisionId, Guid? expectedAssignmentId, Guid operationId,
+		JevAutoWriteEvidence evidence, bool enabled, TimeProvider clock, CancellationToken ct)
+	{
+		if (db.Database.CurrentTransaction == null)
+		{ throw new InvalidOperationException("Automatic Jev assignment requires a caller-owned transaction."); }
+		if (evidence == null || evidence.AttemptId == Guid.Empty || evidence.RequestId == Guid.Empty || categoryId == Guid.Empty)
+		{ throw new TaxonomyException(400, "Valid Jev evidence and category are required."); }
+		ClassificationCommand command = new(categoryId, taxonomyRevisionId, expectedAssignmentId, operationId, JsonSerializer.Serialize(evidence));
+		return AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, false, null, null, evidence);
 	}
 
 	private static async Task<PurchaseClassification> AssignCoreAsync(ApplicationDbContext db, string actor, Guid itemId,
 		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared,
-		Action? onChanged, CategoryMappingReuseEvidence? mappingEvidence)
+		Action? onChanged, CategoryMappingReuseEvidence? mappingEvidence, JevAutoWriteEvidence? jevEvidence)
 	{
 		if (string.IsNullOrWhiteSpace(actor) || command.OperationId == Guid.Empty || command.TaxonomyRevisionId == Guid.Empty
 			|| string.IsNullOrWhiteSpace(command.Reason) || command.Reason.Contains('\0'))
@@ -59,10 +73,12 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		if (!enabled) { throw new TaxonomyException(409, WritesDisabledMessage); }
 		TaxonomyHeadEntity head = await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").AsNoTracking().SingleAsync(ct);
 		if (!prepared) { await RequireReadyAsync(db, ct); }
-		// Preserve the manual request hash and separate mapping operations from manual ones.
-		string hash = mappingEvidence == null
-			? Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command })))
-			: Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command, mappingEvidence })));
+		// Preserve the manual request hash and separate automatic operations from manual ones.
+		string hash = mappingEvidence != null
+			? Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command, mappingEvidence })))
+			: jevEvidence != null
+				? Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command, jevEvidence })))
+				: Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { itemId, command })));
 		ClassificationOperationEntity? replay = await db.ClassificationOperations.AsNoTracking().SingleOrDefaultAsync(x => x.Actor == actor && x.OperationId == command.OperationId, ct);
 		if (replay != null)
 		{
@@ -78,7 +94,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		db.ChangeTracker.DetectChanges();
 		bool dirtyCurrent = db.ChangeTracker.Entries<CurrentClassificationEntity>().Any(entry => entry.Entity.ReceiptItemId == itemId
 			&& entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted);
-		bool dirtySource = mappingEvidence != null && (db.ChangeTracker.Entries<ReceiptItemEntity>().Any(entry => entry.Entity.Id == itemId
+		bool dirtySource = (mappingEvidence != null || jevEvidence != null) && (db.ChangeTracker.Entries<ReceiptItemEntity>().Any(entry => entry.Entity.Id == itemId
 			&& entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
 			|| db.ChangeTracker.Entries<ReceiptEntity>().Any(entry => entry.Entity.Id == item.ReceiptId
 				&& entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted));
@@ -102,7 +118,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			{ throw new TaxonomyException(409, "Approved mapping evidence changed. Refresh before retrying."); }
 		}
 		PurchaseClassificationEntity assignment = await AppendAsync(db, actor, itemId, command.CategoryId, head.RevisionId,
-			current, command.OperationId, mappingEvidence == null ? "manual" : "approved_mapping", command.Reason, clock, ct);
+			current, command.OperationId, mappingEvidence != null ? "approved_mapping" : jevEvidence != null ? "jev" : "manual", command.Reason, clock, ct);
 		db.ClassificationOperations.Add(new() { Actor = actor, OperationId = command.OperationId, RequestHash = hash, AssignmentId = assignment.Id });
 		await db.SaveChangesAsync(ct);
 		onChanged?.Invoke();

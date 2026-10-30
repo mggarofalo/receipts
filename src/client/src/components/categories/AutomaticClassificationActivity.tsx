@@ -107,8 +107,9 @@ export function AutomaticClassificationActivity() {
       {open && (
         <div className="mt-3 space-y-3">
           <p className="text-sm text-muted-foreground">
-            Remembered choices classify matching past purchases automatically.
-            Undo restores earlier choices where purchases have not changed.
+            Remembered choices classify matching past purchases automatically,
+            and strong Jev matches fill items that had no category. Undo
+            restores earlier choices where purchases have not changed.
           </p>
           {activity.isPending && <p role="status">Loading activity…</p>}
           {activity.isError && (
@@ -156,10 +157,16 @@ export function AutomaticClassificationActivity() {
                         {choice.group.rawDescription} at {choice.group.store} ·{" "}
                         {paths.find(
                           (path) => path.node.id === choice.targetCategoryId,
-                        )?.label ?? "Remembered category"}
+                        )?.label ??
+                          (entry.source === "jev"
+                            ? "Jev category"
+                            : "Remembered category")}
                       </p>
                     ))}
                     <p className="text-xs text-muted-foreground">
+                      {entry.source === "jev"
+                        ? "Strong Jev match · "
+                        : "Remembered choice · "}
                       {new Date(entry.capturedAt).toLocaleDateString()} ·{" "}
                       {progress.applied} classified
                       {progress.pending > 0 ? " · In progress" : ""}

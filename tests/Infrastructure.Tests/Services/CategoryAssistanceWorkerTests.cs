@@ -1,6 +1,9 @@
 using Application.Classification;
+using Application.Taxonomy;
+using Infrastructure;
 using Infrastructure.Jev;
 using Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -61,6 +64,22 @@ public sealed class CategoryAssistanceWorkerTests
 		store.VerifyAll();
 	}
 
+	[Theory]
+	[InlineData(false, 0.9)]
+	[InlineData(true, 0.5)]
+	[InlineData(true, double.NaN)]
+	public async Task AutoWritePassFailsClosedWithoutOpeningTheDatabase(bool writesEnabled, double threshold)
+	{
+		var factory = new Mock<IDbContextFactory<ApplicationDbContext>>(MockBehavior.Strict);
+		var autoWrite = new Mock<IOptionsMonitor<CategoryAutoWriteOptions>>();
+		autoWrite.SetupGet(x => x.CurrentValue).Returns(new CategoryAutoWriteOptions { RootAutoWriteThreshold = threshold });
+		var writer = new CategoryAssistanceAutoWriter(factory.Object, Mock.Of<ICategoryAssistanceCapabilitySource>(),
+				Options.Create(new ClassificationOptions { WritesEnabled = writesEnabled }), autoWrite.Object, TimeProvider.System, new CategoryAssistanceAutoWriteCursor());
+
+		Assert.False(await writer.ApplyNextAsync());
+		factory.VerifyNoOtherCalls();
+	}
+
 	private static ServiceProvider Services(ICategoryAssistanceSettingsStore settings,
 			ICategoryAssistanceConnectionReconciler reconciler, ICategoryAssistanceDispatchStore store,
 			JevOptions options)
@@ -76,6 +95,12 @@ public sealed class CategoryAssistanceWorkerTests
 		services.AddSingleton<ICategoryAssistanceCapabilitySource>(Mock.Of<ICategoryAssistanceCapabilitySource>());
 		services.AddSingleton<ICategoryAssistanceSelectedProvider>(Mock.Of<ICategoryAssistanceSelectedProvider>());
 		services.AddScoped<CategoryAssistanceDispatcher>();
+		// Writes disabled: the auto-write pass returns before it opens a database context.
+		services.AddSingleton(Mock.Of<IDbContextFactory<ApplicationDbContext>>(MockBehavior.Strict));
+		services.AddSingleton(Options.Create(new ClassificationOptions { WritesEnabled = false }));
+		services.AddSingleton(Mock.Of<IOptionsMonitor<CategoryAutoWriteOptions>>(x => x.CurrentValue == new CategoryAutoWriteOptions()));
+		services.AddSingleton<CategoryAssistanceAutoWriteCursor>();
+		services.AddScoped<CategoryAssistanceAutoWriter>();
 		return services.BuildServiceProvider();
 	}
 }

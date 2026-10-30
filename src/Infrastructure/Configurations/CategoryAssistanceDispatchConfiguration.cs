@@ -8,7 +8,7 @@ public sealed class CategoryAssistanceAttemptConfiguration : IEntityTypeConfigur
 {
 	public void Configure(EntityTypeBuilder<CategoryAssistanceAttemptEntity> b)
 	{
-		b.ToTable("Attempts", "category_assistance", t => t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate','accepted','dismissed')"));
+		b.ToTable("Attempts", "category_assistance", t => t.HasCheckConstraint("CK_CategoryAssistance_AttemptState", "\"State\" IN ('queued','dispatching','suggested','abstained','failed','stale','indeterminate','accepted','dismissed','applied')"));
 		b.HasKey(x => x.Id);
 		b.HasIndex(x => x.RequestId).IsUnique();
 		b.HasIndex(x => new { x.DecisionActor, x.DecisionOperationId }).IsUnique();

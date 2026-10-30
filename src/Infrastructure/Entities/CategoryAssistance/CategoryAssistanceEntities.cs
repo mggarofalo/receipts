@@ -11,6 +11,7 @@ public sealed class CategoryAssistanceSettingsEntity
 	public int PendingLimit { get; set; } = 3;
 	public Guid Revision { get; set; }
 	public Guid RestoreGeneration { get; set; }
+	public bool AutoApply { get; set; } = true;
 }
 // Deployment-local transport binding. The fingerprint is an opaque, secret-free digest
 // supplied by the selected transport; neither credentials nor endpoints are stored here.
@@ -96,6 +97,8 @@ public sealed class CategoryAssistanceAttemptEntity
 	public DateOnly? SecondDebitUtcDay { get; set; }
 	public DateTimeOffset CreatedAt { get; set; }
 	public DateTimeOffset? CompletedAt { get; set; }
+	// Observations recorded after this were not yet considered for an automatic write.
+	public DateTimeOffset? AutoWriteCheckedAt { get; set; }
 }
 
 public sealed class CategoryAssistanceDailyUsageEntity

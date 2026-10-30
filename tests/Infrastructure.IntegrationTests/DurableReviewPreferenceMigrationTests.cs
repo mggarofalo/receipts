@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Infrastructure.Entities.CategoryAssistance;
 using Infrastructure.IntegrationTests.Fixtures;
@@ -32,8 +33,11 @@ public class DurableReviewPreferenceMigrationTests(PostgresFixture fixture)
 			ItemCodeKey = "code",
 			State = "suggested"
 		};
-		db.CategoryAssistanceAttempts.Add(attempt);
-		await db.SaveChangesAsync();
+		// This schema predates later attempt columns; populate only the columns it has.
+		await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO category_assistance."Attempts"
+            SELECT * FROM json_populate_record(NULL::category_assistance."Attempts", {JsonSerializer.Serialize(attempt)}::json)
+            """);
 		var revision = Guid.NewGuid();
 		var operation = Guid.NewGuid();
 		await db.Database.ExecuteSqlInterpolatedAsync($"""
