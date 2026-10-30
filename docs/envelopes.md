@@ -12,7 +12,7 @@ separate library.
 |---|---|---|
 | Envelope | `budget.Envelopes` | `Name`, `IsActive`. Archived (inactive) envelopes stay on past purchases but cannot be chosen. Soft delete and audit like other library rows. |
 | Occasion | `budget.Occasions` | An optional tag (an event, a holiday, a gift). Never required at entry. |
-| Item-type default | `budget.ItemTypeEnvelopeDefaults` | Taxonomy category → envelope. Resolved by the nearest mapped ancestor, like YNAB resolution used to be. |
+| Item-type default | `budget.ItemTypeEnvelopeDefaults` | Taxonomy category → envelope. Resolved by the nearest mapped ancestor, like YNAB resolution used to be. A default whose envelope is archived is skipped. |
 | YNAB link | `ynab.YnabEnvelopeMappings` | Envelope → YNAB category, one per envelope and budget. |
 | Item | `ReceiptItems.EnvelopeId`, `EnvelopeSource`, `OccasionId` | The envelope recorded when the item was saved. Null is unresolved. |
 | Receipt | `Receipts.PaidFromEnvelopeId`, `OccasionId` | Optional receipt-level choices applied to its items. |

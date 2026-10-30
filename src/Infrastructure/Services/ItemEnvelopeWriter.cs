@@ -115,8 +115,12 @@ internal static class ItemEnvelopeWriter
 		{
 			return null;
 		}
-		Dictionary<Guid, Guid> defaults = await db.ItemTypeEnvelopeDefaults.AsNoTracking()
-			.ToDictionaryAsync(row => row.CategoryId, row => row.EnvelopeId, ct);
+		// An archived envelope cannot be chosen, so its defaults are skipped (the item stays unresolved
+		// or falls back to a mapped ancestor) until the envelope is restored or the default changes.
+		Dictionary<Guid, Guid> defaults = await (from row in db.ItemTypeEnvelopeDefaults.AsNoTracking()
+												 join envelope in db.Envelopes on row.EnvelopeId equals envelope.Id
+												 where envelope.IsActive
+												 select row).ToDictionaryAsync(row => row.CategoryId, row => row.EnvelopeId, ct);
 		if (defaults.Count == 0)
 		{
 			return null;

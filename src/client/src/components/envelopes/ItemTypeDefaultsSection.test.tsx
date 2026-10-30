@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import "@/test/setup-combobox-polyfills";
 import { mockMutationResult, mockQueryResult } from "@/test/mock-hooks";
 import { ItemTypeDefaultsSection } from "./ItemTypeDefaultsSection";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 vi.mock("@/hooks/useCategoryTaxonomy", () => ({
   useCategoryTaxonomy: vi.fn(),
@@ -139,7 +140,9 @@ describe("ItemTypeDefaultsSection", () => {
     const user = userEvent.setup();
     render(<ItemTypeDefaultsSection envelopes={envelopes} />);
 
-    await user.click(screen.getByRole("combobox", { name: "Default envelope" }));
+    await user.click(
+      screen.getByRole("combobox", { name: "Default envelope" }),
+    );
 
     expect(screen.getByRole("option", { name: "Groceries" })).toBeVisible();
     expect(screen.getByRole("option", { name: "Fun money" })).toBeVisible();
@@ -155,9 +158,11 @@ describe("ItemTypeDefaultsSection", () => {
     expect(save).toBeDisabled();
 
     await user.click(screen.getByRole("combobox", { name: "Item type" }));
-    await user.click(screen.getByRole("option", { name: "Food / Groceries" }));
+    await chooseCategoryOption(user, "Food / Groceries");
     expect(save).toBeDisabled();
-    await user.click(screen.getByRole("combobox", { name: "Default envelope" }));
+    await user.click(
+      screen.getByRole("combobox", { name: "Default envelope" }),
+    );
     await user.click(screen.getByRole("option", { name: "Fun money" }));
     await user.click(save);
 
@@ -181,7 +186,9 @@ describe("ItemTypeDefaultsSection", () => {
     render(<ItemTypeDefaultsSection envelopes={envelopes} />);
 
     await user.click(
-      screen.getByRole("button", { name: "Remove default for Food / Groceries" }),
+      screen.getByRole("button", {
+        name: "Remove default for Food / Groceries",
+      }),
     );
 
     expect(deleteDefault).toHaveBeenCalledWith("groceries");

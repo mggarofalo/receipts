@@ -6,6 +6,7 @@ using Application.Models.Ynab;
 using Domain.Envelopes;
 using Infrastructure.Entities.Envelopes;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Infrastructure.Services;
 
@@ -34,7 +35,7 @@ public class EnvelopeService(IDbContextFactory<ApplicationDbContext> contextFact
 			throw new DuplicateEntityException($"An envelope named '{entity.Name}' already exists.");
 		}
 		db.Envelopes.Add(entity);
-		await db.SaveChangesAsync(cancellationToken);
+		await UniqueWrite.SaveAsync(db, $"An envelope named '{entity.Name}' already exists.", cancellationToken);
 		return new(entity.Id, entity.Name, entity.IsActive);
 	}
 
@@ -52,7 +53,7 @@ public class EnvelopeService(IDbContextFactory<ApplicationDbContext> contextFact
 		{
 			throw new DuplicateEntityException($"An envelope named '{entity.Name}' already exists.");
 		}
-		await db.SaveChangesAsync(cancellationToken);
+		await UniqueWrite.SaveAsync(db, $"An envelope named '{entity.Name}' already exists.", cancellationToken);
 		return true;
 	}
 
@@ -105,7 +106,7 @@ public class OccasionService(IDbContextFactory<ApplicationDbContext> contextFact
 			throw new DuplicateEntityException($"An occasion named '{entity.Name}' already exists.");
 		}
 		db.Occasions.Add(entity);
-		await db.SaveChangesAsync(cancellationToken);
+		await UniqueWrite.SaveAsync(db, $"An occasion named '{entity.Name}' already exists.", cancellationToken);
 		return new(entity.Id, entity.Name, entity.IsActive);
 	}
 
@@ -123,7 +124,7 @@ public class OccasionService(IDbContextFactory<ApplicationDbContext> contextFact
 		{
 			throw new DuplicateEntityException($"An occasion named '{entity.Name}' already exists.");
 		}
-		await db.SaveChangesAsync(cancellationToken);
+		await UniqueWrite.SaveAsync(db, $"An occasion named '{entity.Name}' already exists.", cancellationToken);
 		return true;
 	}
 
@@ -175,7 +176,7 @@ public class ItemTypeEnvelopeDefaultService(IDbContextFactory<ApplicationDbConte
 		}
 		entity.EnvelopeId = envelopeId;
 		entity.UpdatedAt = now;
-		await db.SaveChangesAsync(cancellationToken);
+		await UniqueWrite.SaveAsync(db, "A default for this item type was set concurrently. Refresh and retry.", cancellationToken);
 		return new(entity.CategoryId, entity.EnvelopeId, entity.UpdatedAt);
 	}
 
@@ -231,7 +232,7 @@ public class YnabEnvelopeMappingService(IDbContextFactory<ApplicationDbContext> 
 		{
 			await db.SaveChangesAsync(cancellationToken);
 		}
-		catch (DbUpdateException) when (created)
+		catch (DbUpdateException exception) when (created && UniqueWrite.IsViolation(exception))
 		{
 			throw new DuplicateEntityException("This envelope was linked to YNAB concurrently. Refresh and retry.");
 		}
@@ -284,5 +285,24 @@ public class YnabEnvelopeMappingService(IDbContextFactory<ApplicationDbContext> 
 			await committedChangePublisher.PublishAsync(new CommittedEntityChange(CommittedEntityType.YnabMapping, CommittedChangeType.Deleted));
 		}
 		return stale.Count;
+	}
+}
+
+/// <summary>Turns a lost check-then-insert race on a unique index into the same 409 the check gives.</summary>
+internal static class UniqueWrite
+{
+	public static bool IsViolation(DbUpdateException exception)
+		=> exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+
+	public static async Task SaveAsync(ApplicationDbContext db, string duplicateMessage, CancellationToken ct)
+	{
+		try
+		{
+			await db.SaveChangesAsync(ct);
+		}
+		catch (DbUpdateException exception) when (IsViolation(exception))
+		{
+			throw new DuplicateEntityException(duplicateMessage);
+		}
 	}
 }

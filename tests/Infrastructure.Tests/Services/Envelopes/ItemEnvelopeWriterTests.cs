@@ -376,10 +376,88 @@ public class ItemEnvelopeWriterTests
 		(await world.ReadItemAsync(created.Id)).OccasionId.Should().Be(occasion);
 	}
 
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task Create_ItemTypeDefaultEnvelopeArchivedOrDeleted_IsUnresolvedDefault(bool archived)
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		if (archived)
+		{
+			await ArchiveAsync(world, world.Food);
+		}
+		else
+		{
+			await SoftDeleteAsync(world, world.Food);
+		}
+
+		// Act
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().BeNull();
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
+	[Fact]
+	public async Task Create_ChildDefaultEnvelopeArchived_FallsBackToAncestorDefault()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
+		{
+			db.ItemTypeEnvelopeDefaults.Add(new() { Id = Guid.NewGuid(), CategoryId = world.Produce, EnvelopeId = world.Retired });
+			await db.SaveChangesAsync();
+		}
+
+		// Act
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", "Produce"));
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
+	[Fact]
+	public async Task Create_AfterDefaultEnvelopeRestored_GetsItAgain()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		await ArchiveAsync(world, world.Food);
+		ReceiptItemEntity whileArchived = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
+		{
+			(await db.Envelopes.SingleAsync(row => row.Id == world.Food)).IsActive = true;
+			await db.SaveChangesAsync();
+		}
+
+		// Act
+		ReceiptItemEntity afterRestore = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+
+		// Assert
+		(await world.ReadItemAsync(whileArchived.Id)).EnvelopeId.Should().BeNull("restoring does not move recorded history");
+		ReceiptItemEntity actual = await world.ReadItemAsync(afterRestore.Id);
+		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
 	private static async Task ArchiveAsync(EnvelopeWorld world, Guid envelopeId)
 	{
 		await using ApplicationDbContext db = world.Factory.CreateDbContext();
 		(await db.Envelopes.SingleAsync(row => row.Id == envelopeId)).IsActive = false;
+		await db.SaveChangesAsync();
+	}
+
+	private static async Task SoftDeleteAsync(EnvelopeWorld world, Guid envelopeId)
+	{
+		await using ApplicationDbContext db = world.Factory.CreateDbContext();
+		(await db.Envelopes.SingleAsync(row => row.Id == envelopeId)).DeletedAt = DateTimeOffset.UtcNow;
 		await db.SaveChangesAsync();
 	}
 }
