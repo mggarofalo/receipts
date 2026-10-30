@@ -19,18 +19,27 @@ public static class LiveCommand
 	public static string? ApprovalProblem(LiveApproval? approval, string freezeHash, EvaluationPolicy policy, DateTimeOffset now)
 	{
 		ArgumentNullException.ThrowIfNull(policy);
+		return ApprovalProblem(approval, freezeHash, policy.PriorCarryNanodollars, policy.CeilingNanodollars,
+			policy.MaximumReservationNanodollars, now);
+	}
+
+	/// <summary>
+	/// Budget-only form: the approval must restate the frozen carry and ceiling, and the carry plus the
+	/// packet's maximum new reservation (including any headroom) must fit within it.
+	/// </summary>
+	public static string? ApprovalProblem(LiveApproval? approval, string freezeHash, long priorCarryNanodollars,
+		long ceilingNanodollars, long maximumReservationNanodollars, DateTimeOffset now) =>
 		// Authorization is a cumulative spending ceiling, never an account balance assertion.
-		return approval is null ? "missing"
+		approval is null ? "missing"
 			: !approval.Authorized ? "not-authorized"
 			: !approval.PricingAndContextVerified ? "pricing-unverified"
 			: approval.FreezeSha256 != freezeHash ? "freeze-mismatch"
 			: approval.ExpiresUtc <= now ? "expired"
-			: approval.PriorCarryNanodollars != policy.PriorCarryNanodollars ||
-				approval.AuthorizedBudgetNanodollars != policy.CeilingNanodollars ||
-				checked(approval.PriorCarryNanodollars + policy.MaximumReservationNanodollars) > approval.AuthorizedBudgetNanodollars
+			: approval.PriorCarryNanodollars != priorCarryNanodollars ||
+				approval.AuthorizedBudgetNanodollars != ceilingNanodollars ||
+				checked(approval.PriorCarryNanodollars + maximumReservationNanodollars) > approval.AuthorizedBudgetNanodollars
 				? "budget-mismatch"
 			: null;
-	}
 
 	public static void ValidateApproval(LiveApproval? approval, string freezeHash, EvaluationPolicy policy, DateTimeOffset now)
 	{
@@ -157,48 +166,10 @@ public static class LiveCommand
 	private static async Task WriteDryRunAsync(string outputPath, EvaluationPolicy policy, OfflineCase[] cases, string freezeHash,
 		string approvalPath, string journalPath, string? key)
 	{
-		string? approvalHash = null;
-		string approvalStatus;
-		if (!File.Exists(approvalPath))
-		{
-			approvalStatus = "missing";
-		}
-		else
-		{
-			byte[] bytes = File.ReadAllBytes(approvalPath);
-			approvalHash = OfflinePairedEvaluation.Hash(bytes);
-			LiveApproval? approval;
-			try { approval = JsonSerializer.Deserialize<LiveApproval>(bytes, ProductionParity.JsonOptions); }
-			catch (JsonException) { approval = null; }
-			approvalStatus = approval is null ? "unreadable" : ApprovalProblem(approval, freezeHash, policy, DateTimeOffset.UtcNow) ?? "valid";
-		}
-
-		string journalStatus;
-		int completedExchanges = 0;
-		bool? identityMatches = null;
-		if (!File.Exists(journalPath))
-		{
-			journalStatus = "absent";
-		}
-		else
-		{
-			try
-			{
-				using FileStream journal = new(journalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-				LiveJournalState state = LiveJournalState.Read(journal);
-				completedExchanges = state.Exchanges.Count;
-				journalStatus = state.Identity is null ? "empty" : state.OutstandingIntent ? "outstanding-intent" : "resumable";
-				if (state.Identity is not null && approvalHash is not null && key is not null)
-				{
-					identityMatches = state.Identity == BindCredential(Identity(freezeHash, approvalHash, cases), key);
-				}
-			}
-			catch (IOException) { journalStatus = "locked-or-unreadable"; }
-			catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
-			{
-				journalStatus = "invalid";
-			}
-		}
+		(string? approvalHash, string approvalStatus) = ReadApprovalStatus(approvalPath,
+			approval => ApprovalProblem(approval, freezeHash, policy, DateTimeOffset.UtcNow));
+		(string journalStatus, int completedExchanges, bool? identityMatches) = ReadJournalStatus(journalPath,
+			approvalHash is not null && key is not null ? BindCredential(Identity(freezeHash, approvalHash, cases), key) : null);
 
 		byte[][] payloads = [.. cases.Select(c => JevSuggestionQuestions.Serialize(c.Request))];
 		object report = new
@@ -224,5 +195,43 @@ public static class LiveCommand
 		using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
 		await JsonSerializer.SerializeAsync(output, report, ProductionParity.JsonOptions);
 		output.Flush(flushToDisk: true);
+	}
+
+	/// <summary>Approval file hash and a non-sensitive status; a missing or unreadable file is reported, not fatal.</summary>
+	internal static (string? Hash, string Status) ReadApprovalStatus(string approvalPath, Func<LiveApproval, string?> problem)
+	{
+		if (!File.Exists(approvalPath))
+		{
+			return (null, "missing");
+		}
+
+		byte[] bytes = File.ReadAllBytes(approvalPath);
+		LiveApproval? approval;
+		try { approval = JsonSerializer.Deserialize<LiveApproval>(bytes, ProductionParity.JsonOptions); }
+		catch (JsonException) { approval = null; }
+		return (OfflinePairedEvaluation.Hash(bytes), approval is null ? "unreadable" : problem(approval) ?? "valid");
+	}
+
+	/// <summary>Reads the journal without creating, locking for write, or modifying it.</summary>
+	internal static (string Status, int CompletedExchanges, bool? IdentityMatches) ReadJournalStatus(string journalPath, string? expectedIdentity)
+	{
+		if (!File.Exists(journalPath))
+		{
+			return ("absent", 0, null);
+		}
+
+		try
+		{
+			using FileStream journal = new(journalPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+			LiveJournalState state = LiveJournalState.Read(journal);
+			string status = state.Identity is null ? "empty" : state.OutstandingIntent ? "outstanding-intent" : "resumable";
+			bool? matches = state.Identity is not null && expectedIdentity is not null ? state.Identity == expectedIdentity : null;
+			return (status, state.Exchanges.Count, matches);
+		}
+		catch (IOException) { return ("locked-or-unreadable", 0, null); }
+		catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+		{
+			return ("invalid", 0, null);
+		}
 	}
 }

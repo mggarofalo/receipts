@@ -113,6 +113,22 @@ public static class OfflineCommand
 	/// </summary>
 	public static EvaluationPolicy ValidateFreeze(string packet, string repository)
 	{
+		VerifyFrozenFiles(packet, "policy.private.json", "cases.private.json");
+		foreach (string source in ProductionSources)
+		{
+			if (OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(repository, source))) !=
+				OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(packet, "production-source", Path.GetFileName(source)))))
+			{
+				throw new ArgumentException("Production source drift.");
+			}
+		}
+
+		return LoadPolicy(Path.Combine(packet, "policy.private.json"));
+	}
+
+	/// <summary>Verifies the freeze's commit format and every frozen file hash, and that the required files are frozen.</summary>
+	public static void VerifyFrozenFiles(string packet, params string[] required)
+	{
 		using JsonDocument freeze = JsonDocument.Parse(File.ReadAllText(Path.Combine(packet, "freeze.private.json")));
 		string? commit = freeze.RootElement.GetProperty("sourceCommit").GetString();
 		if (commit is not { Length: 40 } || !commit.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')))
@@ -133,20 +149,18 @@ public static class OfflineCommand
 
 			frozen.Add(file.Name);
 		}
-		if (!frozen.Contains("policy.private.json") || !frozen.Contains("cases.private.json"))
+		if (!required.All(frozen.Contains))
 		{
 			throw new ArgumentException("Policy and membership must be frozen.");
 		}
+	}
 
-		foreach (string source in ProductionSources)
-		{
-			if (OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(repository, source))) !=
-				OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(packet, "production-source", Path.GetFileName(source)))))
-			{
-				throw new ArgumentException("Production source drift.");
-			}
-		}
-
-		return LoadPolicy(Path.Combine(packet, "policy.private.json"));
+	/// <summary>Reads the packet kind without validating the rest of the policy.</summary>
+	public static string? PacketKindOf(string packet)
+	{
+		using JsonDocument policy = JsonDocument.Parse(File.ReadAllText(Path.Combine(packet, "policy.private.json")));
+		return policy.RootElement.ValueKind == JsonValueKind.Object &&
+			policy.RootElement.TryGetProperty("packetKind", out JsonElement kind) && kind.ValueKind == JsonValueKind.String
+			? kind.GetString() : null;
 	}
 }

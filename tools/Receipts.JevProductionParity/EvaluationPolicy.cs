@@ -6,6 +6,7 @@ namespace Receipts.JevProductionParity;
 /// </summary>
 public sealed record EvaluationPolicy
 {
+	public const long ReservedInputTokens = 65_536;
 	public const long PerAttemptNanodollars = 2_752_512;
 	public const int MaximumCases = 48;
 	public const long MaximumCeilingNanodollars = 5_000_000_000;
