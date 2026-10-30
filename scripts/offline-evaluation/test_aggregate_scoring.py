@@ -121,7 +121,46 @@ class AggregateScoringTests(unittest.TestCase):
         self.assertEqual(result["arms"]["candidate"]["counts"], counts)
         self.assertEqual(result["oracle"], "synthetic oracle")
         self.assertNotIn("SYNTHETIC SECRET", json.dumps(result))
-        self.assertNotIn("leaf", json.dumps(result))
+        # Category ids never appear as values (metric names such as leaf_accuracy may).
+        self.assertNotIn('"leaf"', json.dumps(result))
+
+    def depth_two(self, gold, writes, placeholder_name="N/A"):
+        """Depth-2 synthetic tree: root r with leaves a, b and a placeholder; another root o."""
+        taxonomy = [{"id": k, "parentId": p, "name": n, "definition": "Synthetic " + k} for k, p, n in
+                    (("r", None, "R"), ("a", "r", "A"), ("b", "r", "B"),
+                     ("na", "r", placeholder_name), ("o", None, "O"))]
+        cases, labels, replay, freeze = fixture(len(writes))
+        paths = {"r": ["r"], "a": ["r", "a"], "b": ["r", "b"], "na": ["r", "na"], "o": ["o"]}
+        for case, label, outcome, key in zip(cases, labels["labels"], replay["outcomes"], writes):
+            case["request"]["categories"] = taxonomy
+            label.update(maximallySpecificAcceptablePaths=[{"categoryId": gold, "pathIds": paths[gold]}],
+                         validBroadAncestorIds=["r"])
+            for arm in ("baseline", "treatment"):
+                outcome[arm] = {"failure": None, "suggestion": {
+                    "categoryId": key, "path": paths[key], "abstentionReason": None,
+                    "fitProbability": 0.95, "selectedPathSupport": 0.9 if arm == "treatment" else None}}
+        account(replay)
+        return cases, labels, replay, freeze
+
+    def test_sibling_leaf_under_credited_root_is_its_own_incorrect_class(self):
+        cases, labels, replay, freeze = self.depth_two("a", ["b", "a", "o", "r"])
+        result = aggregate(cases, labels, replay, freeze)
+        arm = result["arms"]["treatment"]
+        counts = arm["counts"]
+        self.assertEqual([counts[k] for k in ("sibling_leaf_same_root", "most_specific", "wrong_branch",
+                                              "broad", "harmful_specificity")], [1, 1, 1, 1, 0])
+        self.assertEqual(result["gates"]["treatment"]["zero_incorrect_writes"], "fail")
+        # Root right for b, a and r; leaf right only for a.
+        self.assertEqual((arm["root_accuracy"]["numerator"], arm["root_accuracy"]["denominator"]), (3, 4))
+        self.assertEqual((arm["leaf_accuracy"]["numerator"], arm["leaf_accuracy"]["denominator"]), (1, 4))
+
+    def test_placeholder_gold_is_scored_at_the_root_only(self):
+        cases, labels, replay, freeze = self.depth_two("na", ["a", "o"])
+        arm = aggregate(cases, labels, replay, freeze, placeholder_leaves=["n/a"])["arms"]["treatment"]
+        self.assertEqual((arm["root_accuracy"]["numerator"], arm["root_accuracy"]["denominator"]), (1, 2))
+        self.assertEqual(arm["leaf_accuracy"]["denominator"], 0)
+        unmarked = aggregate(cases, labels, replay, freeze)["arms"]["treatment"]
+        self.assertEqual(unmarked["leaf_accuracy"]["denominator"], 2)
 
     def test_harmful_specificity_and_no_answer(self):
         cases, labels, replay, freeze = fixture()

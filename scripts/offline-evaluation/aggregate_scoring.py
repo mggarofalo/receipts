@@ -21,10 +21,13 @@ from evaluation import _load, _rate, score
 # Inherited reservation assumption: 65,536 input tokens at USD 0.042/million.
 PER_ATTEMPT_NANODOLLARS = 2_752_512
 MAXIMUM_COHORT = 48
-WRITES = ("most_specific", "broad", "harmful_specificity", "wrong_branch",
-          "other_unsupported", "unresolved_assignment")
+WRITES = ("most_specific", "broad", "sibling_leaf_same_root", "harmful_specificity",
+          "wrong_branch", "other_unsupported", "unresolved_assignment")
 USEFUL = ("most_specific", "broad")
-INCORRECT = ("harmful_specificity", "wrong_branch", "other_unsupported", "unresolved_assignment")
+# A sibling leaf under the owner's root is still not the owner's decision, so it
+# stays an incorrect write for the gates; it is reported as its own class.
+INCORRECT = ("sibling_leaf_same_root", "harmful_specificity", "wrong_branch",
+             "other_unsupported", "unresolved_assignment")
 UNTESTED_REASON = (
     "{gates} untested: the cohort has no cases in the corresponding gold stratum. "
     "Owner-derived labels (provenance owner-current-assignment) are always labelable "
@@ -226,12 +229,22 @@ def _outcome(result, status, paths, specific, broad, unresolved):
     if key in broad:
         return "broad", False, False
     accepted = specific | broad
-    # Explicit useful ancestors only: no mechanical credit for other ancestors.
-    harmful = any(parent != key and parent in paths[key] for parent in accepted)
-    wrong = bool(accepted) and not any(
-        key in paths[parent] or parent in paths[key] for parent in accepted)
-    return ("harmful_specificity" if harmful else "wrong_branch" if wrong
-            else "other_unsupported"), harmful, wrong
+    # Harmful specificity means deeper than the owner: below a specific gold, or
+    # below a broad gold that has no specific gold beneath it (a broad-only label).
+    # A broad gold credited only as the root of a specific gold does not make every
+    # leaf under that root "deeper"; such a leaf is a sibling of the owner's leaf.
+    harmful = any(parent != key and parent in paths[key] for parent in specific) or any(
+        parent != key and parent in paths[key]
+        and not any(parent in paths[s] for s in specific) for parent in broad)
+    if harmful:
+        return "harmful_specificity", True, False
+    if any(key in paths[parent] for parent in accepted):
+        # An uncredited ancestor of the gold: too coarse, not wrong.
+        return "other_unsupported", False, False
+    if any(paths[key][0] == paths[parent][0] for parent in accepted):
+        return "sibling_leaf_same_root", False, False
+    wrong = bool(accepted)
+    return ("wrong_branch" if wrong else "other_unsupported"), False, wrong
 
 
 def _candidate(outcome, treatment_state, freeze):
@@ -280,8 +293,27 @@ def evaluate_gates(arm, baseline, strata, freeze):
             "thresholds": {"minimumUseful": minimum, "maximumUsefulSuppressed": allowed}}
 
 
-def aggregate(cases, labels, replay, freeze):
-    """Return counts/rates only; retain failures and suffixes in the frozen denominator."""
+def _written(result):
+    if not isinstance(result, dict) or result.get("failure") is not None:
+        return None
+    suggestion = result.get("suggestion")
+    return suggestion.get("categoryId") if isinstance(suggestion, dict) else None
+
+
+def _root_leaf(key, gold, paths, leaf_scored):
+    """(root correct, leaf correct) for one write; leaf only counts when the gold leaf is scored."""
+    if key is None:
+        return False, False
+    return paths[key][0] == paths[gold][0], leaf_scored and key == gold
+
+
+def aggregate(cases, labels, replay, freeze, placeholder_leaves=()):
+    """Return counts/rates only; retain failures and suffixes in the frozen denominator.
+
+    Root and leaf accuracy are reported separately over cases with one specific
+    gold. A gold leaf whose name is a placeholder (for example "N/A") is scored at
+    its root only and leaves the leaf denominator.
+    """
     validate_freeze(freeze)
     size = freeze["cohortSize"]
     indexed = _index(cases, "id")
@@ -291,6 +323,9 @@ def aggregate(cases, labels, replay, freeze):
     gold = _index(labels["labels"], "caseId")
     _require(set(indexed) <= set(gold))
     paths = _paths(cases[0]["request"]["categories"])
+    names = {c["id"]: c["name"] for c in cases[0]["request"]["categories"]}
+    placeholders = {p.casefold() for p in placeholder_leaves}
+    root_leaf = {arm: Counter() for arm in ("baseline", "treatment", "candidate")}
     _require(all(c["request"]["categories"] == cases[0]["request"]["categories"]
                  and c["request"]["taxonomyRevision"] == cases[0]["request"]["taxonomyRevision"]
                  for c in cases))
@@ -325,6 +360,20 @@ def aggregate(cases, labels, replay, freeze):
         candidate = _candidate(outcome, judged["treatment"][0], freeze)
         judged["candidate"] = (judged["treatment"] if candidate == judged["treatment"][0]
                                else (candidate, False, False))
+        if len(specific) == 1:
+            (gold_leaf,) = specific
+            leaf_scored = len(paths[gold_leaf]) > 1 and names[gold_leaf].casefold() not in placeholders
+            for arm in arms:
+                # The candidate arm writes the treatment's category only when its gate passes.
+                source = "treatment" if arm == "candidate" else arm
+                written = (_written(outcome.get(source))
+                           if arm != "candidate" or judged[arm][0] in WRITES else None)
+                root_ok, leaf_ok = _root_leaf(written, gold_leaf, paths, leaf_scored)
+                root_leaf[arm]["cases"] += 1
+                root_leaf[arm]["leaf_scored_cases"] += leaf_scored
+                root_leaf[arm]["root_correct"] += root_ok
+                root_leaf[arm]["leaf_correct"] += leaf_ok
+                root_leaf[arm]["root_writes"] += written is not None
         for arm, (state, harmful, wrong) in judged.items():
             _require(status != "completed" or state not in ("failed", "unknown", "unattempted"))
             useful = state in USEFUL
@@ -359,14 +408,16 @@ def aggregate(cases, labels, replay, freeze):
             after = judged[arm][0]
             transitions[arm][before + " -> " + after] += 1
             counts[arm]["baseline_errors_suppressed"] += (
-                before in ("wrong_branch", "harmful_specificity", "other_unsupported")
+                before in ("wrong_branch", "harmful_specificity", "sibling_leaf_same_root",
+                           "other_unsupported")
                 and after == "abstained")
             counts[arm]["useful_baseline_suppressed"] += before in USEFUL and after == "abstained"
     _require(bool(replay["stopped"]) == stopped)
     reports = {}
     for arm in arms:
         c = counts[arm]
-        for name in ("most_specific", "broad", "wrong_branch", "harmful_specificity",
+        for name in ("most_specific", "broad", "sibling_leaf_same_root", "wrong_branch",
+                     "harmful_specificity",
                      "other_unsupported", "unresolved_assignment", "abstained", "failed",
                      "unknown", "unattempted", "accepted", "writes", "writes_on_no_answer",
                      "harmful_specificity_on_broad_only"):
@@ -376,7 +427,11 @@ def aggregate(cases, labels, replay, freeze):
             c.setdefault("useful_baseline_suppressed", 0)
         # Reuse existing cohort accounting; retain unknown separately above.
         base = score([{"id": k, "group": k, "expected": "accepted"} for k in indexed], states[arm])
+        r = root_leaf[arm]
         reports[arm] = {"counts": dict(c), "useful_coverage": base["accuracy"],
+                        "root_accuracy": _rate(r["root_correct"], r["cases"]),
+                        "root_selective_accuracy": _rate(r["root_correct"], r["root_writes"]),
+                        "leaf_accuracy": _rate(r["leaf_correct"], r["leaf_scored_cases"]),
                         "write_coverage": base["coverage"],
                         "selective_accuracy": base["selective_accuracy"],
                         "agreement_only_useful_coverage": _rate(c["accepted_initial_agreement"], size),
@@ -398,6 +453,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for field in ("cases", "labels", "policy", "replay", "freeze", "output", "exchanges", "runner"):
         parser.add_argument("--" + field, type=Path, required=True)
+    parser.add_argument("--placeholder-leaf", action="append", default=[],
+                        help="gold leaf name scored at its root only (repeatable)")
     args = parser.parse_args()
     try:
         freeze = validate_freeze(_load(args.freeze))
@@ -407,7 +464,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix="scoring-", dir=args.output.parent) as directory:
             verify_production_replay(args.policy, args.cases, args.exchanges, args.runner,
                                      replay, Path(directory))
-        report = aggregate(_load(args.cases), _load(args.labels), replay, freeze)
+        report = aggregate(_load(args.cases), _load(args.labels), replay, freeze,
+                           args.placeholder_leaf)
         with args.output.open("x", encoding="utf-8") as output:
             output.write(json.dumps(report, indent=2, allow_nan=False) + "\n")
     except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError,
