@@ -25,7 +25,6 @@ import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import { useYnabSplitComparison } from "@/hooks/useYnab";
 import YnabSettings from "./YnabSettings";
 import "@/test/setup-combobox-polyfills";
-import { chooseCategoryOption } from "@/test/category-picker";
 
 const reads = [
   ["connection", "ynab/connection-status", ["ynab", "connection-status"]],
@@ -34,11 +33,11 @@ const reads = [
   ["remote accounts", "ynab/accounts", ["ynab", "accounts"]],
   ["account mappings", "ynab/account-mappings", ["ynab", "account-mappings"]],
   ["remote categories", "ynab/categories", ["ynab", "categories"]],
-  ["receipt taxonomy", "taxonomy", ["taxonomy", "current"]],
+  ["envelopes", "envelopes", ["envelopes", "all"]],
   [
-    "category mappings",
-    "ynab/category-mappings",
-    ["ynab", "category-mappings"],
+    "envelope links",
+    "ynab/envelope-mappings",
+    ["ynab", "envelope-mappings"],
   ],
   ["rate limit", "ynab/rate-limit-status", ["ynab", "rate-limit-status"]],
   ["stale mappings", "ynab/stale-mappings", ["ynab", "stale-mappings"]],
@@ -59,14 +58,21 @@ const accountMapping = {
   ynabAccountName: "Remote account A",
   ynabBudgetId: "budget-a",
 };
-const categoryMapping = {
-  id: "mapping-category",
-  receiptsCategory: "Groceries",
-  receiptsCategoryId: "groceries",
+const groceriesEnvelope = {
+  id: "env-groceries",
+  name: "Groceries",
+  isActive: true,
+};
+const envelopeMapping = {
+  id: "mapping-envelope",
+  envelopeId: "env-groceries",
+  envelopeName: "Groceries",
   ynabCategoryId: "category-a",
   ynabCategoryName: "Food A",
   ynabCategoryGroupName: "Living",
   ynabBudgetId: "budget-a",
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
 };
 let selected: string | null;
 let empty: boolean;
@@ -112,15 +118,10 @@ function bodyFor(path: string) {
               { id: "category-b", name: "Food B", categoryGroupName: "Living" },
             ],
       };
-    case "ynab/category-mappings":
-      return { data: empty ? [] : [categoryMapping] };
-    case "taxonomy":
-      return {
-        id: "revision",
-        nodes: empty
-          ? []
-          : [{ id: "groceries", name: "Groceries", archived: false }],
-      };
+    case "ynab/envelope-mappings":
+      return { data: empty ? [] : [envelopeMapping] };
+    case "envelopes":
+      return { data: empty ? [] : [groceriesEnvelope] };
     case "ynab/rate-limit-status":
       return {
         requestsUsed: 10,
@@ -181,8 +182,8 @@ const server = setupServer(
     writes.push({ method: "DELETE", path: "ynab/account-mappings" });
     return new HttpResponse(null, { status: 204 });
   }),
-  http.delete("*/api/ynab/category-mappings/:id", () => {
-    writes.push({ method: "DELETE", path: "ynab/category-mappings" });
+  http.delete("*/api/ynab/envelope-mappings/:envelopeId", () => {
+    writes.push({ method: "DELETE", path: "ynab/envelope-mappings" });
     return new HttpResponse(null, { status: 204 });
   }),
   http.delete("*/api/ynab/stale-mappings", () => {
@@ -250,172 +251,26 @@ function renderSettings(queryClientFactory = () => queryClient) {
   );
 }
 
-async function selectReceiptCategory() {
-  const picker = await screen.findByRole("combobox", {
-    name: "Receipt category",
+const ENVELOPE_CARD = "Envelope Mapping";
+const GROCERIES_SELECT = "YNAB category for Groceries";
+
+// Wait until the envelope link row has its verified proof and accepts input.
+async function awaitEnvelopeRows() {
+  const selector = await screen.findByRole("combobox", {
+    name: GROCERIES_SELECT,
   });
-  await waitFor(() => expect(picker).toBeEnabled());
-  await userEvent.setup().click(picker);
-  await chooseCategoryOption(userEvent.setup(), "Groceries");
+  await waitFor(() => expect(selector).toBeEnabled());
 }
 
-it("distinguishes a direct mapping from an inherited ancestor mapping", async () => {
-  server.use(
-    http.get("*/api/taxonomy", () =>
-      HttpResponse.json({
-        id: "revision",
-        nodes: [
-          { id: "groceries", name: "Groceries", archived: false },
-          {
-            id: "produce",
-            name: "Produce",
-            parentId: "groceries",
-            archived: false,
-          },
-        ],
-      }),
-    ),
-  );
-  renderSettings();
-  await selectReceiptCategory();
-  expect(screen.getByText("Direct mapping")).toBeVisible();
-  const picker = screen.getByRole("combobox", { name: "Receipt category" });
-  await userEvent.setup().click(picker);
-  await chooseCategoryOption(userEvent.setup(), "Groceries / Produce");
-  expect(
-    screen.getByText("Inherited from Groceries: Living / Food A"),
-  ).toBeVisible();
-  const categorySection = screen
-    .getByText("Category Mapping")
-    .closest('[data-slot="card"]') as HTMLElement;
-  expect(
-    within(categorySection).queryByRole("button", { name: "Remove" }),
-  ).not.toBeInTheDocument();
-});
+function removeName(title: string) {
+  return title === ENVELOPE_CARD ? "Unlink Groceries" : "Remove";
+}
 
-it("shows the current path after a taxonomy revision and uses its current node name", async () => {
-  server.use(
-    http.get("*/api/taxonomy", () =>
-      HttpResponse.json({
-        id: "revision-one",
-        nodes: [
-          { id: "food", name: "Food", archived: false },
-          { id: "produce", name: "Produce", parentId: "food", archived: false },
-        ],
-      }),
-    ),
-    http.post("*/api/ynab/category-mappings", async ({ request }) => {
-      writes.push({
-        method: "POST",
-        path: "ynab/category-mappings",
-        body: await request.json(),
-      });
-      return HttpResponse.json({ id: "new-mapping" }, { status: 201 });
-    }),
-  );
-  renderSettings();
-  const picker = await screen.findByRole("combobox", {
-    name: "Receipt category",
-  });
-  await waitFor(() => expect(picker).toBeEnabled());
-  await userEvent.setup().click(picker);
-  await chooseCategoryOption(userEvent.setup(), "Food / Produce");
-  expect(picker).toHaveAttribute("title", "Food / Produce");
-  expect(picker).toHaveTextContent("Produce");
-  expect(picker).toHaveTextContent("Food");
-
-  act(() => {
-    queryClient.setQueryData(["taxonomy", "current"], {
-      id: "revision-two",
-      nodes: [
-        { id: "market", name: "Market", archived: false },
-        {
-          id: "produce",
-          name: "Fresh Produce",
-          parentId: "market",
-          archived: false,
-        },
-      ],
-    });
-  });
-  await waitFor(() =>
-    expect(picker).toHaveAttribute("title", "Market / Fresh Produce"),
-  );
-  expect(within(picker).getByText("Fresh Produce")).toBeVisible();
-  expect(within(picker).getByText("Market")).toBeVisible();
-  screen.getByRole("combobox", { name: "YNAB category" }).focus();
-  await userEvent.setup().keyboard("{Enter}");
-  await userEvent
-    .setup()
-    .click(await screen.findByRole("option", { name: "Food B" }));
-  await waitFor(() =>
-    expect(writes).toContainEqual({
-      method: "POST",
-      path: "ynab/category-mappings",
-      body: expect.objectContaining({
-        receiptsCategoryId: "produce",
-        receiptsCategory: "Fresh Produce",
-        ynabCategoryId: "category-b",
-      }),
-    }),
-  );
-});
-
-it("clears the active choice when its path becomes archived", async () => {
-  renderSettings();
-  await selectReceiptCategory();
-  const picker = screen.getByRole("combobox", { name: "Receipt category" });
-  expect(picker).toHaveTextContent("Groceries");
-  act(() => {
-    queryClient.setQueryData(["taxonomy", "current"], {
-      id: "archived-revision",
-      nodes: [{ id: "groceries", name: "Groceries", archived: true }],
-    });
-  });
-  await waitFor(() => expect(picker).toHaveTextContent("Choose category"));
-  expect(
-    screen.queryByRole("combobox", { name: "YNAB category" }),
-  ).not.toBeInTheDocument();
-  expect(writes).toEqual([]);
-});
-
-it.each([
-  ["Ambiguous", ["groceries", "produce"], "2 possible category IDs."],
-  ["Unresolved", [], "No stable category ID."],
-] as const)(
-  "shows %s legacy evidence without treating a name as identity",
-  async (resolution, candidates, detail) => {
-    server.use(
-      http.get("*/api/ynab/category-mappings", () =>
-        HttpResponse.json({
-          data: [
-            {
-              ...categoryMapping,
-              receiptsCategoryId: null,
-              legacyResolution: resolution,
-              legacyCandidateCategoryIds: candidates,
-            },
-          ],
-        }),
-      ),
-    );
-    renderSettings();
-    const remove = await screen.findByRole("button", {
-      name: "Remove legacy mapping",
-    });
-    expect(remove).toBeEnabled();
-    expect(
-      screen.getByText(new RegExp(`Legacy.*Groceries.*${resolution}`)),
-    ).toHaveTextContent(detail);
-    expect(
-      screen.getByText(
-        "Current YNAB mapping: Living / Food A. Budget: Budget A.",
-      ),
-    ).toBeVisible();
-    expect(screen.queryByText("Direct mapping")).not.toBeInTheDocument();
-    expect(writes).toEqual([]);
-  },
-);
+function mappingSelector(section: HTMLElement, title: string) {
+  return title === ENVELOPE_CARD
+    ? within(section).getByRole("combobox", { name: GROCERIES_SELECT })
+    : within(section).getByRole("combobox");
+}
 
 it("restarts the initial connection request after a committed budget change", async () => {
   heldPath = "ynab/connection-status";
@@ -691,20 +546,21 @@ it.each([
     ["ynab", "account-mappings"],
   ],
   [
-    "category",
-    "Category Mapping",
-    "ynab/category-mappings",
-    ["ynab", "category-mappings"],
+    "envelope",
+    ENVELOPE_CARD,
+    "ynab/envelope-mappings",
+    ["ynab", "envelope-mappings"],
   ],
+  ["envelope list", ENVELOPE_CARD, "envelopes", ["envelopes", "all"]],
 ] as const)(
   "does not delete a cached %s mapping while its proof is refetching",
   async (_kind, title, path, key) => {
     renderSettings();
-    await selectReceiptCategory();
+    await awaitEnvelopeRows();
     await screen.findByText("Everyday");
     const section = screen.getByText(title).closest('[data-slot="card"]')!;
     const remove = within(section as HTMLElement).getByRole("button", {
-      name: "Remove",
+      name: removeName(title),
     });
     heldPath = path;
     let refetch!: Promise<void>;
@@ -790,8 +646,8 @@ it.each([
     "Remote account A",
   ],
   [
-    "category",
-    "Category Mapping",
+    "envelope",
+    ENVELOPE_CARD,
     "ynab/categories",
     ["ynab", "categories"],
     "Food A",
@@ -800,16 +656,13 @@ it.each([
   "retains a cached %s choice through failure and held Retry without a deferred write",
   async (_kind, title, path, key, label) => {
     renderSettings();
-    await selectReceiptCategory();
+    await awaitEnvelopeRows();
     await screen.findByText("Everyday");
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     const section = screen
       .getByText(title)
       .closest('[data-slot="card"]') as HTMLElement;
-    const selector =
-      title === "Category Mapping"
-        ? within(section).getByRole("combobox", { name: "YNAB category" })
-        : within(section).getByRole("combobox");
+    const selector = mappingSelector(section, title);
     expect(selector).toHaveTextContent(label);
     failed = path;
     await act(async () => {
@@ -959,8 +812,8 @@ it.each(["connection failure", "invalid budget membership"])(
       ["ynab", "accounts"],
       ["ynab", "account-mappings"],
       ["ynab", "categories"],
-      ["taxonomy", "current"],
-      ["ynab", "category-mappings"],
+      ["envelopes", "all"],
+      ["ynab", "envelope-mappings"],
     ]) {
       expect(currentRead(key)?.state).toMatchObject({
         data: undefined,
@@ -972,7 +825,7 @@ it.each(["connection failure", "invalid budget membership"])(
       .getByText("Account Mapping")
       .closest('[data-slot="card"]')!;
     const categorySection = screen
-      .getByText("Category Mapping")
+      .getByText(ENVELOPE_CARD)
       .closest('[data-slot="card"]')!;
     expect
       .soft(within(accountSection as HTMLElement).queryByText("Not mapped"))
@@ -980,12 +833,13 @@ it.each(["connection failure", "invalid budget membership"])(
     expect
       .soft(
         within(categorySection as HTMLElement).queryByText(
-          "No active categories found. Create a category first.",
+          "No active envelopes found. Create an envelope first.",
         ),
       )
       .not.toBeInTheDocument();
     expect(readRequests).not.toContain("ynab/account-mappings");
-    expect(readRequests).not.toContain("ynab/category-mappings");
+    expect(readRequests).not.toContain("ynab/envelope-mappings");
+    expect(readRequests).not.toContain("envelopes");
     expect(writes).toEqual([]);
     expect(errorToast).not.toHaveBeenCalled();
     expect(router.state.location.pathname).toBe("/settings/ynab");
@@ -1002,7 +856,7 @@ it("shows successful empty receipt data without claiming an outage", async () =>
   ).toBeVisible();
   expect(
     await screen.findByText(
-      "No active categories found. Create a category first.",
+      "No active envelopes found. Create an envelope first.",
     ),
   ).toBeVisible();
   expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
@@ -1027,17 +881,19 @@ it("keeps independent rate telemetry available while the budget list is unavaila
   expect(writes).toEqual([]);
 });
 
-it.each(["Account Mapping", "Category Mapping"])(
+it.each(["Account Mapping", ENVELOPE_CARD])(
   "allows a deliberate verified %s removal",
   async (title) => {
     renderSettings();
-    await selectReceiptCategory();
+    await awaitEnvelopeRows();
     await screen.findByText("Everyday");
     const section = screen.getByText(title).closest('[data-slot="card"]')!;
     await userEvent
       .setup()
       .click(
-        within(section as HTMLElement).getByRole("button", { name: "Remove" }),
+        within(section as HTMLElement).getByRole("button", {
+          name: removeName(title),
+        }),
       );
     await waitFor(() => expect(writes).toHaveLength(1));
     expect(writes[0]).toEqual({
@@ -1045,94 +901,77 @@ it.each(["Account Mapping", "Category Mapping"])(
       path:
         title === "Account Mapping"
           ? "ynab/account-mappings"
-          : "ynab/category-mappings",
+          : "ynab/envelope-mappings",
     });
   },
 );
 
-it.each([
-  ["archived", [{ id: "groceries", name: "Groceries", archived: true }]],
-  ["absent", []],
-] as const)(
-  "keeps an %s stable mapping visible for a verified remap",
-  async (_status, nodes) => {
-    server.use(
-      http.get("*/api/taxonomy", () =>
-        HttpResponse.json({ id: "revision", nodes }),
-      ),
-      http.put("*/api/ynab/category-mappings/:id", async ({ request }) => {
+it("keeps an archived envelope that still pushes to YNAB listed for a verified remap", async () => {
+  server.use(
+    http.get("*/api/envelopes", () =>
+      HttpResponse.json({ data: [{ ...groceriesEnvelope, isActive: false }] }),
+    ),
+    http.put(
+      "*/api/ynab/envelope-mappings/:envelopeId",
+      async ({ params, request }) => {
         writes.push({
           method: "PUT",
-          path: "ynab/category-mappings",
+          path: `ynab/envelope-mappings/${String(params.envelopeId)}`,
           body: await request.json(),
         });
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    renderSettings();
-    const section = screen
-      .getByText("Category Mapping")
-      .closest('[data-slot="card"]') as HTMLElement;
-    const selector = await within(section).findByRole("combobox", {
-      name: "YNAB category for Groceries",
-    });
-    expect(
-      within(section).getByText(
-        `Stable category ID: groceries. Current YNAB mapping: Living / Food A.`,
-      ),
-    ).toBeVisible();
-    expect(
-      within(section).getByText(
-        _status === "archived"
-          ? /Archived category/
-          : /Category absent from taxonomy/,
-      ),
-    ).toBeVisible();
-    expect(
-      within(section).getByRole("button", { name: "Remove stable mapping" }),
-    ).toBeEnabled();
-    await waitFor(() => expect(selector).toBeEnabled());
-    const user = userEvent.setup();
-    selector.focus();
-    await user.keyboard("{Enter}");
-    await user.click(screen.getByRole("option", { name: "Food B" }));
-    await waitFor(() =>
-      expect(writes).toEqual([
-        {
-          method: "PUT",
-          path: "ynab/category-mappings",
-          body: {
-            ynabCategoryId: "category-b",
-            ynabCategoryName: "Food B",
-            ynabCategoryGroupName: "Living",
-            ynabBudgetId: "budget-a",
-          },
-        },
-      ]),
-    );
-  },
-);
-
-it("allows explicit removal of an absent stable mapping", async () => {
-  server.use(
-    http.get("*/api/taxonomy", () =>
-      HttpResponse.json({ id: "revision", nodes: [] }),
+        return HttpResponse.json(envelopeMapping);
+      },
     ),
   );
   renderSettings();
-  const remove = await screen.findByRole("button", {
-    name: "Remove stable mapping",
+  await awaitEnvelopeRows();
+  const section = screen
+    .getByText(ENVELOPE_CARD)
+    .closest('[data-slot="card"]') as HTMLElement;
+  expect(within(section).getByText("Archived")).toBeVisible();
+  const selector = within(section).getByRole("combobox", {
+    name: GROCERIES_SELECT,
   });
-  await waitFor(() => expect(remove).toBeEnabled());
-  await userEvent.setup().click(remove);
+  expect(selector).toHaveTextContent("Food A");
+  const user = userEvent.setup();
+  selector.focus();
+  await user.keyboard("{Enter}");
+  await user.click(screen.getByRole("option", { name: "Food B" }));
   await waitFor(() =>
     expect(writes).toEqual([
-      { method: "DELETE", path: "ynab/category-mappings" },
+      {
+        method: "PUT",
+        path: "ynab/envelope-mappings/env-groceries",
+        body: {
+          ynabCategoryId: "category-b",
+          ynabCategoryName: "Food B",
+          ynabCategoryGroupName: "Living",
+          ynabBudgetId: "budget-a",
+        },
+      },
     ]),
   );
 });
 
-it.each(["Account Mapping", "Category Mapping", "stale"])(
+it("hides an archived envelope with no YNAB link", async () => {
+  server.use(
+    http.get("*/api/envelopes", () =>
+      HttpResponse.json({
+        data: [
+          groceriesEnvelope,
+          { id: "env-travel", name: "Travel", isActive: false },
+        ],
+      }),
+    ),
+  );
+  renderSettings();
+  await awaitEnvelopeRows();
+  expect(
+    screen.queryByRole("combobox", { name: "YNAB category for Travel" }),
+  ).not.toBeInTheDocument();
+});
+
+it.each(["Account Mapping", ENVELOPE_CARD, "stale"])(
   "blocks %s deletion while a budget change is awaiting its response",
   async (title) => {
     const budgetWrite = deferred();
@@ -1148,7 +987,7 @@ it.each(["Account Mapping", "Category Mapping", "stale"])(
       }),
     );
     renderSettings();
-    await selectReceiptCategory();
+    await awaitEnvelopeRows();
     await screen.findByText("Everyday");
     const user = userEvent.setup();
     const budgetSection = screen
@@ -1168,7 +1007,7 @@ it.each(["Account Mapping", "Category Mapping", "stale"])(
               screen
                 .getByText(title)
                 .closest('[data-slot="card"]') as HTMLElement,
-            ).getByRole("button", { name: "Remove" });
+            ).getByRole("button", { name: removeName(title) });
       await user.click(remove);
       expect(remove).toBeDisabled();
       expect(writes.filter((write) => write.method === "DELETE")).toEqual([]);
@@ -1185,7 +1024,7 @@ it.each(["Account Mapping", "Category Mapping", "stale"])(
 
 it.each([
   ["account", "Account Mapping", "ynab/account-mappings", "Remote account B"],
-  ["category", "Category Mapping", "ynab/category-mappings", "Food B"],
+  ["envelope", ENVELOPE_CARD, "ynab/envelope-mappings", "Food B"],
 ] as const)(
   "blocks another %s choice and Remove while an update in that family is pending",
   async (kind, title, path, option) => {
@@ -1200,17 +1039,16 @@ it.each([
       }),
     );
     renderSettings();
-    await selectReceiptCategory();
+    await awaitEnvelopeRows();
     await screen.findByText("Everyday");
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     const section = screen
       .getByText(title)
       .closest('[data-slot="card"]') as HTMLElement;
-    const selector =
-      title === "Category Mapping"
-        ? within(section).getByRole("combobox", { name: "YNAB category" })
-        : within(section).getByRole("combobox");
-    const remove = within(section).getByRole("button", { name: "Remove" });
+    const selector = mappingSelector(section, title);
+    const remove = within(section).getByRole("button", {
+      name: removeName(title),
+    });
     const user = userEvent.setup();
     selector.focus();
     await user.keyboard("{Enter}");

@@ -3497,7 +3497,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/receipt-items/distinct-categories": {
+    "/api/envelopes": {
         parameters: {
             query?: never;
             header?: never;
@@ -3505,10 +3505,102 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get distinct receipt item categories
-         * @description Returns the distinct Category values from all non-deleted receipt items.
+         * List envelopes
+         * @description Returns live envelopes ordered by name. Archived envelopes are inactive and remain for history.
          */
-        get: operations["GetDistinctReceiptItemCategories"];
+        get: operations["GetEnvelopes"];
+        put?: never;
+        /** Create an envelope */
+        post: operations["CreateEnvelope"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/envelopes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an envelope */
+        get: operations["GetEnvelopeById"];
+        /**
+         * Rename or archive an envelope
+         * @description Setting isActive to false archives the envelope; purchases keep it.
+         */
+        put: operations["UpdateEnvelope"];
+        post?: never;
+        /**
+         * Delete an unused envelope
+         * @description Moves an unreferenced envelope to trash. A envelope that purchases use must be archived instead.
+         */
+        delete: operations["DeleteEnvelope"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/occasions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List occasions
+         * @description Returns live occasions ordered by name. Archived occasions are inactive and remain for history.
+         */
+        get: operations["GetOccasions"];
+        put?: never;
+        /** Create an occasion */
+        post: operations["CreateOccasion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/occasions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an occasion */
+        get: operations["GetOccasionById"];
+        /**
+         * Rename or archive an occasion
+         * @description Setting isActive to false archives the occasion; purchases keep it.
+         */
+        put: operations["UpdateOccasion"];
+        post?: never;
+        /**
+         * Delete an unused occasion
+         * @description Moves an unreferenced occasion to trash. A occasion that purchases use must be archived instead.
+         */
+        delete: operations["DeleteOccasion"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/item-type-envelope-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List item-type default envelopes
+         * @description An item without an override or receipt paid-from envelope takes the default of its nearest mapped item-type ancestor when it is saved.
+         */
+        get: operations["GetItemTypeEnvelopeDefaults"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3517,31 +3609,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/ynab/category-mappings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List all category mappings
-         * @description Returns receipts-to-YNAB category mappings for the selected budget.
-         */
-        get: operations["GetYnabCategoryMappings"];
-        put?: never;
-        /**
-         * Create a category mapping
-         * @description Creates a new mapping from a receipts category to a YNAB category.
-         */
-        post: operations["CreateYnabCategoryMapping"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ynab/category-mappings/{id}": {
+    "/api/item-type-envelope-defaults/{categoryId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -3550,22 +3618,19 @@ export interface paths {
         };
         get?: never;
         /**
-         * Update a category mapping
-         * @description Updates the YNAB category for an existing mapping.
+         * Set an item type's default envelope
+         * @description Applies to purchases saved or reclassified afterwards. Recorded envelopes never move.
          */
-        put: operations["UpdateYnabCategoryMapping"];
+        put: operations["SetItemTypeEnvelopeDefault"];
         post?: never;
-        /**
-         * Delete a category mapping
-         * @description Permanently deletes a category mapping.
-         */
-        delete: operations["DeleteYnabCategoryMapping"];
+        /** Remove an item type's default envelope */
+        delete: operations["DeleteItemTypeEnvelopeDefault"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/ynab/category-mappings/unmapped": {
+    "/api/ynab/envelope-mappings": {
         parameters: {
             query?: never;
             header?: never;
@@ -3573,13 +3638,54 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get unmapped receipt categories
-         * @description Returns receipts categories that do not yet have a YNAB category mapping.
+         * List envelope YNAB category links
+         * @description Returns envelope-to-YNAB-category links for the selected budget.
          */
-        get: operations["GetUnmappedCategories"];
+        get: operations["GetYnabEnvelopeMappings"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ynab/envelope-mappings/unmapped": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List envelopes without a YNAB category
+         * @description Returns active envelopes, and any envelope live purchases use, that have no YNAB category in the selected budget. Pushing an item in such an envelope is rejected.
+         */
+        get: operations["GetUnmappedEnvelopes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ynab/envelope-mappings/{envelopeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Link an envelope to a YNAB category
+         * @description Creates or replaces the envelope's YNAB category in the selected budget.
+         */
+        put: operations["SetYnabEnvelopeMapping"];
+        post?: never;
+        /** Unlink an envelope from YNAB */
+        delete: operations["DeleteYnabEnvelopeMapping"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5886,6 +5992,16 @@ export interface components {
             clearedMatchScoreCount: number;
         };
         CreateReceiptRequest: {
+            /**
+             * Format: uuid
+             * @description Optional "paid from" envelope applied to every item that has no per-item override. Omitted or null keeps the stored choice on update.
+             */
+            paidFromEnvelopeId?: string | null;
+            /**
+             * Format: uuid
+             * @description Optional occasion tag applied to items without their own. Omitted or null keeps the stored choice on update.
+             */
+            occasionId?: string | null;
             location: string;
             /** Format: date */
             date: string;
@@ -5893,6 +6009,16 @@ export interface components {
             taxAmount: number;
         };
         UpdateReceiptRequest: {
+            /**
+             * Format: uuid
+             * @description Optional "paid from" envelope applied to every item that has no per-item override. Omitted or null keeps the stored choice on update.
+             */
+            paidFromEnvelopeId?: string | null;
+            /**
+             * Format: uuid
+             * @description Optional occasion tag applied to items without their own. Omitted or null keeps the stored choice on update.
+             */
+            occasionId?: string | null;
             /** Format: uuid */
             id: string;
             location: string;
@@ -5902,6 +6028,10 @@ export interface components {
             taxAmount: number;
         };
         ReceiptResponse: {
+            /** Format: uuid */
+            paidFromEnvelopeId?: string | null;
+            /** Format: uuid */
+            occasionId?: string | null;
             /** Format: uuid */
             id: string;
             location: string;
@@ -6069,6 +6199,16 @@ export interface components {
             reason?: string | null;
         };
         CreateReceiptItemRequest: {
+            /**
+             * Format: uuid
+             * @description Optional per-item envelope override. Omitted or null derives the envelope (receipt paid-from, else the item type's default) on create and keeps the recorded envelope on update.
+             */
+            envelopeId?: string | null;
+            /**
+             * Format: uuid
+             * @description Optional occasion tag. Omitted or null takes the receipt's occasion on create and keeps the stored tag on update.
+             */
+            occasionId?: string | null;
             /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path. */
             classification?: components["schemas"]["ClassificationRequest"] | null;
             /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
@@ -6088,6 +6228,16 @@ export interface components {
             itemTemplateId?: string | null;
         };
         UpdateReceiptItemRequest: {
+            /**
+             * Format: uuid
+             * @description Optional per-item envelope override. Omitted or null derives the envelope (receipt paid-from, else the item type's default) on create and keeps the recorded envelope on update.
+             */
+            envelopeId?: string | null;
+            /**
+             * Format: uuid
+             * @description Optional occasion tag. Omitted or null takes the receipt's occasion on create and keeps the stored tag on update.
+             */
+            occasionId?: string | null;
             /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path. */
             classification?: components["schemas"]["ClassificationRequest"] | null;
             /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
@@ -6115,6 +6265,14 @@ export interface components {
             recordedPath: components["schemas"]["TaxonomyNodeResponse"][];
         };
         ReceiptItemResponse: {
+            /**
+             * Format: uuid
+             * @description Envelope recorded when the item was saved. Null is unresolved and cannot be pushed to YNAB.
+             */
+            envelopeId?: string | null;
+            envelopeSource: components["schemas"]["EnvelopeSource"];
+            /** Format: uuid */
+            occasionId?: string | null;
             /** @description Null when no assignment exists; an explicit unclassified assignment has a null categoryId and an empty recordedPath. Legacy category and subcategory strings are retained independently. */
             currentClassification?: components["schemas"]["CurrentClassificationResponse"] | null;
             /** Format: uuid */
@@ -6708,17 +6866,73 @@ export interface components {
         YnabCategoryListResponse: {
             data: components["schemas"]["YnabCategorySummary"][];
         };
-        DistinctCategoriesResponse: {
-            categories: string[];
-        };
-        YnabCategoryMappingResponse: {
+        EnvelopeResponse: {
             /** Format: uuid */
             id: string;
-            receiptsCategory: string;
+            name: string;
+            /** @description False when archived. Archived envelopes stay on past purchases but cannot be chosen. */
+            isActive: boolean;
+        };
+        EnvelopeListResponse: {
+            data: components["schemas"]["EnvelopeResponse"][];
+        };
+        CreateEnvelopeRequest: {
+            name: string;
+            /** @default true */
+            isActive: boolean;
+        };
+        UpdateEnvelopeRequest: {
+            name: string;
+            isActive: boolean;
+        };
+        OccasionResponse: {
             /** Format: uuid */
-            receiptsCategoryId?: string | null;
-            legacyResolution?: string;
-            legacyCandidateCategoryIds?: string[];
+            id: string;
+            name: string;
+            /** @description False when archived. Archived occasions stay on past purchases but cannot be chosen. */
+            isActive: boolean;
+        };
+        OccasionListResponse: {
+            data: components["schemas"]["OccasionResponse"][];
+        };
+        CreateOccasionRequest: {
+            name: string;
+            /** @default true */
+            isActive: boolean;
+        };
+        UpdateOccasionRequest: {
+            name: string;
+            isActive: boolean;
+        };
+        /**
+         * @description Why an item carries its envelope: its item type's default, the receipt's paid-from envelope, a per-item override, or the historical backfill. Only default-sourced (or unresolved) envelopes follow item-type changes.
+         * @enum {string}
+         */
+        EnvelopeSource: "default" | "receipt" | "item" | "historical";
+        ItemTypeEnvelopeDefaultResponse: {
+            /**
+             * Format: uuid
+             * @description Taxonomy category (item type) identity.
+             */
+            categoryId: string;
+            /** Format: uuid */
+            envelopeId: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ItemTypeEnvelopeDefaultListResponse: {
+            data: components["schemas"]["ItemTypeEnvelopeDefaultResponse"][];
+        };
+        SetItemTypeEnvelopeDefaultRequest: {
+            /** Format: uuid */
+            envelopeId: string;
+        };
+        YnabEnvelopeMappingResponse: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            envelopeId: string;
+            envelopeName: string;
             ynabCategoryId: string;
             ynabCategoryName: string;
             ynabCategoryGroupName: string;
@@ -6728,20 +6942,10 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
-        YnabCategoryMappingListResponse: {
-            data: components["schemas"]["YnabCategoryMappingResponse"][];
+        YnabEnvelopeMappingListResponse: {
+            data: components["schemas"]["YnabEnvelopeMappingResponse"][];
         };
-        CreateYnabCategoryMappingRequest: {
-            receiptsCategory: string;
-            /** Format: uuid */
-            receiptsCategoryId?: string | null;
-            ynabCategoryId: string;
-            ynabCategoryName: string;
-            ynabCategoryGroupName: string;
-            /** Format: uuid */
-            ynabBudgetId: string;
-        };
-        UpdateYnabCategoryMappingRequest: {
+        SetYnabEnvelopeMappingRequest: {
             ynabCategoryId: string;
             ynabCategoryName: string;
             ynabCategoryGroupName: string;
@@ -6760,9 +6964,6 @@ export interface components {
             deletedAccountMappings: number;
             /** Format: int32 */
             deletedCategoryMappings: number;
-        };
-        UnmappedCategoriesResponse: {
-            unmappedCategories: string[];
         };
         SyncYnabMemosRequest: {
             /** Format: uuid */
@@ -16232,9 +16433,11 @@ export interface operations {
             };
         };
     };
-    GetDistinctReceiptItemCategories: {
+    GetEnvelopes: {
         parameters: {
-            query?: never;
+            query?: {
+                isActive?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -16247,32 +16450,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DistinctCategoriesResponse"];
+                    "application/json": components["schemas"]["EnvelopeListResponse"];
                 };
             };
         };
     };
-    GetYnabCategoryMappings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["YnabCategoryMappingListResponse"];
-                };
-            };
-        };
-    };
-    CreateYnabCategoryMapping: {
+    CreateEnvelope: {
         parameters: {
             query?: never;
             header?: never;
@@ -16281,7 +16464,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateYnabCategoryMappingRequest"];
+                "application/json": components["schemas"]["CreateEnvelopeRequest"];
             };
         };
         responses: {
@@ -16291,19 +16474,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["YnabCategoryMappingResponse"];
+                    "application/json": components["schemas"]["EnvelopeResponse"];
                 };
             };
-            /** @description Mapping budget does not match the selected budget */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Conflict â€” mapping for this receipts category already exists in the selected budget */
+            /** @description A live envelope with this name already exists */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -16314,7 +16488,36 @@ export interface operations {
             };
         };
     };
-    UpdateYnabCategoryMapping: {
+    GetEnvelopeById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpdateEnvelope: {
         parameters: {
             query?: never;
             header?: never;
@@ -16325,7 +16528,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateYnabCategoryMappingRequest"];
+                "application/json": components["schemas"]["UpdateEnvelopeRequest"];
             };
         };
         responses: {
@@ -16336,8 +16539,15 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Mapping budget does not match the selected budget */
-            400: {
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A live envelope with this name already exists */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -16345,16 +16555,9 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
-            /** @description Mapping not found in the selected budget */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
         };
     };
-    DeleteYnabCategoryMapping: {
+    DeleteEnvelope: {
         parameters: {
             query?: never;
             header?: never;
@@ -16372,7 +16575,100 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Mapping not found */
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The envelope is in use; extensions carry the reference counts */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetOccasions: {
+        parameters: {
+            query?: {
+                isActive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccasionListResponse"];
+                };
+            };
+        };
+    };
+    CreateOccasion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOccasionRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccasionResponse"];
+                };
+            };
+            /** @description A live occasion with this name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetOccasionById: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OccasionResponse"];
+                };
+            };
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -16381,7 +16677,83 @@ export interface operations {
             };
         };
     };
-    GetUnmappedCategories: {
+    UpdateOccasion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOccasionRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A live occasion with this name already exists */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    DeleteOccasion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The occasion is in use; extensions carry the reference counts */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetItemTypeEnvelopeDefaults: {
         parameters: {
             query?: never;
             header?: never;
@@ -16396,8 +16768,181 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UnmappedCategoriesResponse"];
+                    "application/json": components["schemas"]["ItemTypeEnvelopeDefaultListResponse"];
                 };
+            };
+        };
+    };
+    SetItemTypeEnvelopeDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetItemTypeEnvelopeDefaultRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemTypeEnvelopeDefaultResponse"];
+                };
+            };
+            /** @description The item type is not selectable or the envelope is missing or archived */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    DeleteItemTypeEnvelopeDefault: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                categoryId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No default for this item type */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    GetYnabEnvelopeMappings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabEnvelopeMappingListResponse"];
+                };
+            };
+        };
+    };
+    GetUnmappedEnvelopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvelopeListResponse"];
+                };
+            };
+        };
+    };
+    SetYnabEnvelopeMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                envelopeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetYnabEnvelopeMappingRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabEnvelopeMappingResponse"];
+                };
+            };
+            /** @description Mapping budget does not match the selected budget */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Envelope not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    DeleteYnabEnvelopeMapping: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                envelopeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The envelope has no link in the selected budget */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

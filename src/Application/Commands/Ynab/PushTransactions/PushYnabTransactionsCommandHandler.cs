@@ -18,7 +18,8 @@ public class PushYnabTransactionsCommandHandler(
 	IReceiptItemService receiptItemService,
 	IAdjustmentService adjustmentService,
 	ITransactionService transactionService,
-	IYnabCategoryMappingService categoryMappingService,
+	IYnabEnvelopeMappingService envelopeMappingService,
+	IEnvelopeService envelopeService,
 	IYnabAccountMappingService accountMappingService,
 	IYnabBudgetSelectionService budgetSelectionService,
 	IYnabSyncRecordService syncRecordService,
@@ -110,12 +111,14 @@ public class PushYnabTransactionsCommandHandler(
 		if (!allTransactionsDurable)
 		{
 			// A new send still requires current classification and destination preflight.
-			List<YnabCategoryMappingDto> allMappings = await categoryMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
+			List<YnabEnvelopeMappingDto> allMappings = await envelopeMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
+			Dictionary<Guid, string> envelopeNames = (await envelopeService.GetAllAsync(null, cancellationToken))
+					.ToDictionary(envelope => envelope.Id, envelope => envelope.Name);
 			(categoryToYnabId, List<string> unmapped) =
-					YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings);
+					YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings, envelopeNames);
 			if (unmapped.Count > 0)
 			{
-				return new PushYnabTransactionsResult(false, [], UnmappedCategories: unmapped, Error: "Unmapped categories found.");
+				return new PushYnabTransactionsResult(false, [], UnmappedCategories: unmapped, Error: "Unmapped envelopes found.");
 			}
 
 			List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);

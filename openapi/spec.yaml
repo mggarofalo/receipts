@@ -8736,42 +8736,31 @@ paths:
         "503":
           description: YNAB integration is not configured
 
-  /api/receipt-items/distinct-categories:
+  /api/envelopes:
     get:
-      operationId: GetDistinctReceiptItemCategories
-      tags: [ReceiptItems]
-      summary: Get distinct receipt item categories
-      description: Returns the distinct Category values from all non-deleted receipt items.
+      operationId: GetEnvelopes
+      tags: [Envelopes]
+      summary: List envelopes
+      description: Returns live envelopes ordered by name. Archived envelopes are inactive and remain for history.
       security:
         - BearerAuth: []
+      parameters:
+        - name: isActive
+          in: query
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/DistinctCategoriesResponse"
-
-  /api/ynab/category-mappings:
-    get:
-      operationId: GetYnabCategoryMappings
-      tags: [YNAB]
-      summary: List all category mappings
-      description: Returns receipts-to-YNAB category mappings for the selected budget.
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/YnabCategoryMappingListResponse"
+                $ref: "#/components/schemas/EnvelopeListResponse"
     post:
-      operationId: CreateYnabCategoryMapping
-      tags: [YNAB]
-      summary: Create a category mapping
-      description: Creates a new mapping from a receipts category to a YNAB category.
+      operationId: CreateEnvelope
+      tags: [Envelopes]
+      summary: Create an envelope
       security:
         - BearerAuth: []
       requestBody:
@@ -8779,33 +8768,49 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateYnabCategoryMappingRequest"
+              $ref: "#/components/schemas/CreateEnvelopeRequest"
       responses:
         "201":
           description: Created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/YnabCategoryMappingResponse"
-        "400":
-          description: Mapping budget does not match the selected budget
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
+                $ref: "#/components/schemas/EnvelopeResponse"
         "409":
-          description: Conflict â€” mapping for this receipts category already exists in the selected budget
+          description: A live envelope with this name already exists
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  /api/ynab/category-mappings/{id}:
+  /api/envelopes/{id}:
+    get:
+      operationId: GetEnvelopeById
+      tags: [Envelopes]
+      summary: Get an envelope
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeResponse"
+        "404":
+          description: Not found
     put:
-      operationId: UpdateYnabCategoryMapping
-      tags: [YNAB]
-      summary: Update a category mapping
-      description: Updates the YNAB category for an existing mapping.
+      operationId: UpdateEnvelope
+      tags: [Envelopes]
+      summary: Rename or archive an envelope
+      description: Setting isActive to false archives the envelope; purchases keep it.
       security:
         - BearerAuth: []
       parameters:
@@ -8820,23 +8825,23 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UpdateYnabCategoryMappingRequest"
+              $ref: "#/components/schemas/UpdateEnvelopeRequest"
       responses:
         "204":
           description: No Content
-        "400":
-          description: Mapping budget does not match the selected budget
+        "404":
+          description: Not found
+        "409":
+          description: A live envelope with this name already exists
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-        "404":
-          description: Mapping not found in the selected budget
     delete:
-      operationId: DeleteYnabCategoryMapping
-      tags: [YNAB]
-      summary: Delete a category mapping
-      description: Permanently deletes a category mapping.
+      operationId: DeleteEnvelope
+      tags: [Envelopes]
+      summary: Delete an unused envelope
+      description: Moves an unreferenced envelope to trash. A envelope that purchases use must be archived instead.
       security:
         - BearerAuth: []
       parameters:
@@ -8850,14 +8855,147 @@ paths:
         "204":
           description: No Content
         "404":
-          description: Mapping not found
+          description: Not found
+        "409":
+          description: The envelope is in use; extensions carry the reference counts
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
-  /api/ynab/category-mappings/unmapped:
+  /api/occasions:
     get:
-      operationId: GetUnmappedCategories
-      tags: [YNAB]
-      summary: Get unmapped receipt categories
-      description: Returns receipts categories that do not yet have a YNAB category mapping.
+      operationId: GetOccasions
+      tags: [Envelopes]
+      summary: List occasions
+      description: Returns live occasions ordered by name. Archived occasions are inactive and remain for history.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: isActive
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccasionListResponse"
+    post:
+      operationId: CreateOccasion
+      tags: [Envelopes]
+      summary: Create an occasion
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOccasionRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccasionResponse"
+        "409":
+          description: A live occasion with this name already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /api/occasions/{id}:
+    get:
+      operationId: GetOccasionById
+      tags: [Envelopes]
+      summary: Get an occasion
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OccasionResponse"
+        "404":
+          description: Not found
+    put:
+      operationId: UpdateOccasion
+      tags: [Envelopes]
+      summary: Rename or archive an occasion
+      description: Setting isActive to false archives the occasion; purchases keep it.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOccasionRequest"
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not found
+        "409":
+          description: A live occasion with this name already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    delete:
+      operationId: DeleteOccasion
+      tags: [Envelopes]
+      summary: Delete an unused occasion
+      description: Moves an unreferenced occasion to trash. A occasion that purchases use must be archived instead.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not found
+        "409":
+          description: The occasion is in use; extensions carry the reference counts
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /api/item-type-envelope-defaults:
+    get:
+      operationId: GetItemTypeEnvelopeDefaults
+      tags: [Envelopes]
+      summary: List item-type default envelopes
+      description: An item without an override or receipt paid-from envelope takes the default of its nearest mapped item-type ancestor when it is saved.
       security:
         - BearerAuth: []
       responses:
@@ -8866,7 +9004,151 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UnmappedCategoriesResponse"
+                $ref: "#/components/schemas/ItemTypeEnvelopeDefaultListResponse"
+
+  /api/item-type-envelope-defaults/{categoryId}:
+    put:
+      operationId: SetItemTypeEnvelopeDefault
+      tags: [Envelopes]
+      summary: Set an item type's default envelope
+      description: Applies to purchases saved or reclassified afterwards. Recorded envelopes never move.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetItemTypeEnvelopeDefaultRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemTypeEnvelopeDefaultResponse"
+        "400":
+          description: The item type is not selectable or the envelope is missing or archived
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    delete:
+      operationId: DeleteItemTypeEnvelopeDefault
+      tags: [Envelopes]
+      summary: Remove an item type's default envelope
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: No default for this item type
+
+  /api/ynab/envelope-mappings:
+    get:
+      operationId: GetYnabEnvelopeMappings
+      tags: [YNAB]
+      summary: List envelope YNAB category links
+      description: Returns envelope-to-YNAB-category links for the selected budget.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabEnvelopeMappingListResponse"
+
+  /api/ynab/envelope-mappings/unmapped:
+    get:
+      operationId: GetUnmappedEnvelopes
+      tags: [YNAB]
+      summary: List envelopes without a YNAB category
+      description: Returns active envelopes, and any envelope live purchases use, that have no YNAB category in the selected budget. Pushing an item in such an envelope is rejected.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvelopeListResponse"
+
+  /api/ynab/envelope-mappings/{envelopeId}:
+    put:
+      operationId: SetYnabEnvelopeMapping
+      tags: [YNAB]
+      summary: Link an envelope to a YNAB category
+      description: Creates or replaces the envelope's YNAB category in the selected budget.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: envelopeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetYnabEnvelopeMappingRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabEnvelopeMappingResponse"
+        "400":
+          description: Mapping budget does not match the selected budget
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Envelope not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+    delete:
+      operationId: DeleteYnabEnvelopeMapping
+      tags: [YNAB]
+      summary: Unlink an envelope from YNAB
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: envelopeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: The envelope has no link in the selected budget
 
   /api/ynab/stale-mappings:
     get:
@@ -12938,6 +13220,14 @@ components:
       type: object
       required: [location, date, taxAmount]
       properties:
+        paidFromEnvelopeId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional "paid from" envelope applied to every item that has no per-item override. Omitted or null keeps the stored choice on update.
+        occasionId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional occasion tag applied to items without their own. Omitted or null keeps the stored choice on update.
         location:
           type: string
           minLength: 1
@@ -12953,6 +13243,14 @@ components:
       type: object
       required: [id, location, date, taxAmount]
       properties:
+        paidFromEnvelopeId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional "paid from" envelope applied to every item that has no per-item override. Omitted or null keeps the stored choice on update.
+        occasionId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional occasion tag applied to items without their own. Omitted or null keeps the stored choice on update.
         id:
           type: string
           format: uuid
@@ -12971,6 +13269,12 @@ components:
       type: object
       required: [id, location, date, taxAmount]
       properties:
+        paidFromEnvelopeId:
+          type: [string, "null"]
+          format: uuid
+        occasionId:
+          type: [string, "null"]
+          format: uuid
         id:
           type: string
           format: uuid
@@ -13280,6 +13584,14 @@ components:
       type: object
       required: [description, quantity, unitPrice, category]
       properties:
+        envelopeId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional per-item envelope override. Omitted or null derives the envelope (receipt paid-from, else the item type's default) on create and keeps the recorded envelope on update.
+        occasionId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional occasion tag. Omitted or null takes the receipt's occasion on create and keeps the stored tag on update.
         classification:
           oneOf:
             - $ref: "#/components/schemas/ClassificationRequest"
@@ -13313,6 +13625,14 @@ components:
       type: object
       required: [id, description, quantity, unitPrice, category]
       properties:
+        envelopeId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional per-item envelope override. Omitted or null derives the envelope (receipt paid-from, else the item type's default) on create and keeps the recorded envelope on update.
+        occasionId:
+          type: [string, "null"]
+          format: uuid
+          description: Optional occasion tag. Omitted or null takes the receipt's occasion on create and keeps the stored tag on update.
         classification:
           oneOf:
             - $ref: "#/components/schemas/ClassificationRequest"
@@ -13356,8 +13676,17 @@ components:
 
     ReceiptItemResponse:
       type: object
-      required: [id, receiptId, description, quantity, unitPrice, category]
+      required: [id, receiptId, description, quantity, unitPrice, category, envelopeSource]
       properties:
+        envelopeId:
+          type: [string, "null"]
+          format: uuid
+          description: Envelope recorded when the item was saved. Null is unresolved and cannot be pushed to YNAB.
+        envelopeSource:
+          $ref: "#/components/schemas/EnvelopeSource"
+        occasionId:
+          type: [string, "null"]
+          format: uuid
         currentClassification:
           description: Null when no assignment exists; an explicit unclassified assignment has a null categoryId and an empty recordedPath. Legacy category and subcategory strings are retained independently.
           oneOf:
@@ -14589,44 +14918,145 @@ components:
           items:
             $ref: "#/components/schemas/YnabCategorySummary"
 
-    DistinctCategoriesResponse:
+    EnvelopeResponse:
       type: object
-      required: [categories]
-      properties:
-        categories:
-          type: array
-          items:
-            type: string
-
-    YnabCategoryMappingResponse:
-      type: object
-      required:
-        [
-          id,
-          receiptsCategory,
-          ynabCategoryId,
-          ynabCategoryName,
-          ynabCategoryGroupName,
-          ynabBudgetId,
-          createdAt,
-          updatedAt,
-        ]
+      required: [id, name, isActive]
       properties:
         id:
           type: string
           format: uuid
-        receiptsCategory:
+        name:
           type: string
-        receiptsCategoryId:
-          type: [string, "null"]
-          format: uuid
-        legacyResolution:
-          type: string
-        legacyCandidateCategoryIds:
+        isActive:
+          type: boolean
+          description: False when archived. Archived envelopes stay on past purchases but cannot be chosen.
+
+    EnvelopeListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
           type: array
           items:
-            type: string
-            format: uuid
+            $ref: "#/components/schemas/EnvelopeResponse"
+
+    CreateEnvelopeRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        isActive:
+          type: boolean
+          default: true
+
+    UpdateEnvelopeRequest:
+      type: object
+      required: [name, isActive]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        isActive:
+          type: boolean
+
+    OccasionResponse:
+      type: object
+      required: [id, name, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        isActive:
+          type: boolean
+          description: False when archived. Archived occasions stay on past purchases but cannot be chosen.
+
+    OccasionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/OccasionResponse"
+
+    CreateOccasionRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        isActive:
+          type: boolean
+          default: true
+
+    UpdateOccasionRequest:
+      type: object
+      required: [name, isActive]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        isActive:
+          type: boolean
+
+    EnvelopeSource:
+      type: string
+      enum: [default, receipt, item, historical]
+      description: "Why an item carries its envelope: its item type's default, the receipt's paid-from envelope, a per-item override, or the historical backfill. Only default-sourced (or unresolved) envelopes follow item-type changes."
+
+    ItemTypeEnvelopeDefaultResponse:
+      type: object
+      required: [categoryId, envelopeId, updatedAt]
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+          description: Taxonomy category (item type) identity.
+        envelopeId:
+          type: string
+          format: uuid
+        updatedAt:
+          type: string
+          format: date-time
+
+    ItemTypeEnvelopeDefaultListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ItemTypeEnvelopeDefaultResponse"
+
+    SetItemTypeEnvelopeDefaultRequest:
+      type: object
+      required: [envelopeId]
+      properties:
+        envelopeId:
+          type: string
+          format: uuid
+
+    YnabEnvelopeMappingResponse:
+      type: object
+      required: [id, envelopeId, envelopeName, ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        envelopeId:
+          type: string
+          format: uuid
+        envelopeName:
+          type: string
         ynabCategoryId:
           type: string
         ynabCategoryName:
@@ -14642,52 +15072,29 @@ components:
           type: string
           format: date-time
 
-    YnabCategoryMappingListResponse:
+    YnabEnvelopeMappingListResponse:
       type: object
       required: [data]
       properties:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/YnabCategoryMappingResponse"
+            $ref: "#/components/schemas/YnabEnvelopeMappingResponse"
 
-    CreateYnabCategoryMappingRequest:
+    SetYnabEnvelopeMappingRequest:
       type: object
-      required:
-        [
-          receiptsCategory,
-          ynabCategoryId,
-          ynabCategoryName,
-          ynabCategoryGroupName,
-          ynabBudgetId,
-        ]
-      properties:
-        receiptsCategory:
-          type: string
-        receiptsCategoryId:
-          type: [string, "null"]
-          format: uuid
-        ynabCategoryId:
-          type: string
-        ynabCategoryName:
-          type: string
-        ynabCategoryGroupName:
-          type: string
-        ynabBudgetId:
-          type: string
-          format: uuid
-
-    UpdateYnabCategoryMappingRequest:
-      type: object
-      required:
-        [ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId]
+      required: [ynabCategoryId, ynabCategoryName, ynabCategoryGroupName, ynabBudgetId]
       properties:
         ynabCategoryId:
           type: string
+          minLength: 1
+          maxLength: 100
         ynabCategoryName:
           type: string
+          maxLength: 200
         ynabCategoryGroupName:
           type: string
+          maxLength: 200
         ynabBudgetId:
           type: string
           format: uuid
@@ -14717,15 +15124,6 @@ components:
         deletedCategoryMappings:
           type: integer
           format: int32
-
-    UnmappedCategoriesResponse:
-      type: object
-      required: [unmappedCategories]
-      properties:
-        unmappedCategories:
-          type: array
-          items:
-            type: string
 
     SyncYnabMemosRequest:
       type: object

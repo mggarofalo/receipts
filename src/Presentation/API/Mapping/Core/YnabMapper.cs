@@ -134,31 +134,14 @@ public partial class YnabMapper
 		};
 	}
 
-	[MapperIgnoreTarget(nameof(YnabCategoryMappingResponse.AdditionalProperties))]
-	public YnabCategoryMappingResponse ToCategoryMappingResponse(YnabCategoryMappingDto source)
-	{
-		return new YnabCategoryMappingResponse
-		{
-			Id = source.Id,
-			ReceiptsCategory = source.ReceiptsCategory,
-			ReceiptsCategoryId = source.ReceiptsCategoryId,
-			LegacyResolution = source.LegacyResolution,
-			LegacyCandidateCategoryIds = System.Text.Json.JsonSerializer.Deserialize<List<Guid>>(source.LegacyCandidateCategoryIds) ?? [],
-			YnabCategoryId = source.YnabCategoryId,
-			YnabCategoryName = source.YnabCategoryName,
-			YnabCategoryGroupName = source.YnabCategoryGroupName,
-			YnabBudgetId = source.YnabBudgetId,
-			CreatedAt = source.CreatedAt,
-			UpdatedAt = source.UpdatedAt,
-		};
-	}
+	[MapperIgnoreTarget(nameof(YnabEnvelopeMappingResponse.AdditionalProperties))]
+	public partial YnabEnvelopeMappingResponse ToEnvelopeMappingResponse(YnabEnvelopeMappingDto source);
 
-	[MapperIgnoreTarget(nameof(YnabCategoryMappingListResponse.AdditionalProperties))]
-	public YnabCategoryMappingListResponse ToCategoryMappingListResponse(List<YnabCategoryMappingDto> mappings)
+	public YnabEnvelopeMappingListResponse ToEnvelopeMappingListResponse(List<YnabEnvelopeMappingDto> mappings)
 	{
-		return new YnabCategoryMappingListResponse
+		return new YnabEnvelopeMappingListResponse
 		{
-			Data = mappings.Select(ToCategoryMappingResponse).ToList(),
+			Data = mappings.Select(ToEnvelopeMappingResponse).ToList(),
 		};
 	}
 

@@ -1,5 +1,5 @@
 import { RequestFailure } from "@/components/RequestFailure";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useAllAccounts } from "@/hooks/useAccounts";
 import {
@@ -13,10 +13,9 @@ import {
   useUpdateYnabAccountMapping,
   useDeleteYnabAccountMapping,
   useYnabCategories,
-  useYnabCategoryMappings,
-  useCreateYnabCategoryMapping,
-  useUpdateYnabCategoryMapping,
-  useDeleteYnabCategoryMapping,
+  useYnabEnvelopeMappings,
+  useSetYnabEnvelopeMapping,
+  useDeleteYnabEnvelopeMapping,
   useYnabRateLimitStatus,
   useStaleMappings,
   useClearStaleMappings,
@@ -43,9 +42,8 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { PageHead } from "@/components/primitives";
 import { Badge } from "@/components/ui/badge";
-import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
-import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
-import { categoryPaths, type CategoryChoice } from "@/lib/category-paths";
+import { useEnvelopes } from "@/hooks/useEnvelopes";
+import { Link } from "react-router";
 
 const UNMAPPED_VALUE = "__unmapped__";
 
@@ -65,7 +63,6 @@ function formatRelativeTime(dateStr: string): string {
 
 export default function YnabSettings() {
   usePageTitle("YNAB Settings");
-  const [categoryChoice, setCategoryChoice] = useState<CategoryChoice>();
 
   const {
     isConfigured: connectionConfigured,
@@ -135,17 +132,16 @@ export default function YnabSettings() {
   );
   const { categories: ynabCategories, isLoading: ynabCatsLoading } =
     ynabCategoriesQuery;
-  const taxonomyQuery = useCategoryTaxonomy(mappingReadsEnabled);
-  const categoryMappingsQuery = useYnabCategoryMappings(
+  const envelopesQuery = useEnvelopes(mappingReadsEnabled);
+  const envelopeMappingsQuery = useYnabEnvelopeMappings(
     mappingReadsEnabled,
     selectedBudgetId,
   );
-  const { mappings: categoryMappings, isLoading: categoryMappingsLoading } =
-    categoryMappingsQuery;
+  const { mappings: envelopeMappings, isLoading: envelopeMappingsLoading } =
+    envelopeMappingsQuery;
 
-  const createCategoryMapping = useCreateYnabCategoryMapping();
-  const updateCategoryMapping = useUpdateYnabCategoryMapping();
-  const deleteCategoryMapping = useDeleteYnabCategoryMapping();
+  const setEnvelopeMapping = useSetYnabEnvelopeMapping();
+  const deleteEnvelopeMapping = useDeleteYnabEnvelopeMapping();
 
   const {
     rateLimitStatus,
@@ -189,24 +185,22 @@ export default function YnabSettings() {
 
   const categoryReadError =
     ynabCategoriesQuery.isError ||
-    taxonomyQuery.isError ||
-    categoryMappingsQuery.isError;
+    envelopesQuery.isError ||
+    envelopeMappingsQuery.isError;
   const categoryReadUnavailable =
     !selectedBudgetVerified ||
     !ynabCategoriesQuery.isSuccess ||
     ynabCategoriesQuery.isFetching ||
-    !taxonomyQuery.isSuccess ||
-    taxonomyQuery.isFetching ||
-    !categoryMappingsQuery.isSuccess ||
-    categoryMappingsQuery.isFetching;
+    !envelopesQuery.isSuccess ||
+    envelopesQuery.isFetching ||
+    !envelopeMappingsQuery.isSuccess ||
+    envelopeMappingsQuery.isFetching;
   const categoryReadHasNoProof =
     !ynabCategoriesQuery.data ||
-    !taxonomyQuery.data ||
-    !categoryMappingsQuery.data;
+    !envelopesQuery.data ||
+    !envelopeMappingsQuery.data;
   const categoryMutationPending =
-    createCategoryMapping.isPending ||
-    updateCategoryMapping.isPending ||
-    deleteCategoryMapping.isPending;
+    setEnvelopeMapping.isPending || deleteEnvelopeMapping.isPending;
 
   // Group YNAB categories by category group for grouped dropdown
   const groupedCategories = useMemo(() => {
@@ -221,41 +215,15 @@ export default function YnabSettings() {
     return groups;
   }, [ynabCategories]);
 
-  const mappingsByCategoryId = useMemo(() => {
-    const map = new Map<string, (typeof categoryMappings)[number]>();
-    for (const m of categoryMappings) {
-      if (m.receiptsCategoryId) map.set(m.receiptsCategoryId, m);
-    }
-    return map;
-  }, [categoryMappings]);
-  const categoryRows = useMemo(
-    () => categoryPaths(taxonomyQuery.data?.nodes ?? []),
-    [taxonomyQuery.data],
+  const mappingsByEnvelopeId = useMemo(
+    () =>
+      new Map(envelopeMappings.map((mapping) => [mapping.envelopeId, mapping])),
+    [envelopeMappings],
   );
-  const inactiveCategoryMappings = categoryMappings.filter(
-    (mapping) =>
-      mapping.receiptsCategoryId &&
-      !categoryRows.some((row) => row.node.id === mapping.receiptsCategoryId),
+  // Archived envelopes stay listed while they still push to YNAB.
+  const envelopeRows = envelopesQuery.envelopes.filter(
+    (envelope) => envelope.isActive || mappingsByEnvelopeId.has(envelope.id),
   );
-  const selectedRow = categoryRows.find(
-    (row) => row.node.id === categoryChoice?.categoryId,
-  );
-  const currentCategoryChoice: CategoryChoice | undefined =
-    selectedRow && taxonomyQuery.data
-      ? {
-          categoryId: selectedRow.node.id,
-          taxonomyRevisionId: taxonomyQuery.data.id,
-          path: selectedRow.path,
-        }
-      : undefined;
-  const selectedMapping = selectedRow
-    ? mappingsByCategoryId.get(selectedRow.node.id)
-    : undefined;
-  const inheritedMapping = selectedRow?.path
-    .slice(0, -1)
-    .reverse()
-    .map((node) => mappingsByCategoryId.get(node.id))
-    .find((mapping) => mapping !== undefined);
 
   function handleBudgetChange(budgetId: string) {
     if (
@@ -312,40 +280,31 @@ export default function YnabSettings() {
     }
   }
 
-  function handleCategoryMappingChange(ynabCategoryId: string) {
+  function handleEnvelopeMappingChange(
+    envelopeId: string,
+    ynabCategoryId: string,
+  ) {
     if (categoryReadUnavailable || categoryMutationPending) return;
     const ynabCat = ynabCategories.find((c) => c.id === ynabCategoryId);
     if (!ynabCat || !selectedBudgetId) return;
-
-    if (!selectedRow) return;
-    const existingMapping = mappingsByCategoryId.get(selectedRow.node.id);
-    if (existingMapping) {
-      updateCategoryMapping.mutate({
-        id: existingMapping.id,
-        ynabCategoryId: ynabCat.id,
-        ynabCategoryName: ynabCat.name,
-        ynabCategoryGroupName: ynabCat.categoryGroupName,
-        ynabBudgetId: selectedBudgetId,
-      });
-    } else {
-      createCategoryMapping.mutate({
-        receiptsCategory: selectedRow.node.name,
-        receiptsCategoryId: selectedRow.node.id,
-        ynabCategoryId: ynabCat.id,
-        ynabCategoryName: ynabCat.name,
-        ynabCategoryGroupName: ynabCat.categoryGroupName,
-        ynabBudgetId: selectedBudgetId,
-      });
-    }
+    if (mappingsByEnvelopeId.get(envelopeId)?.ynabCategoryId === ynabCat.id)
+      return;
+    setEnvelopeMapping.mutate({
+      envelopeId,
+      ynabCategoryId: ynabCat.id,
+      ynabCategoryName: ynabCat.name,
+      ynabCategoryGroupName: ynabCat.categoryGroupName,
+      ynabBudgetId: selectedBudgetId,
+    });
   }
 
-  function handleDeleteMapping(mappingId: string) {
+  function handleDeleteMapping(envelopeId: string) {
     if (categoryReadUnavailable || categoryMutationPending) return;
-    deleteCategoryMapping.mutate(mappingId);
+    deleteEnvelopeMapping.mutate(envelopeId);
   }
 
   const categoryMappingLoading =
-    ynabCatsLoading || taxonomyQuery.isLoading || categoryMappingsLoading;
+    ynabCatsLoading || envelopesQuery.isLoading || envelopeMappingsLoading;
 
   return (
     <>
@@ -432,7 +391,7 @@ export default function YnabSettings() {
                   staleCategoryMappingCount > 0 &&
                   " and "}
                 {staleCategoryMappingCount > 0 &&
-                  `${staleCategoryMappingCount} category mapping(s)`}{" "}
+                  `${staleCategoryMappingCount} envelope link(s)`}{" "}
                 belong to another budget. They are preserved and ignored while
                 this budget is selected. Create mappings for the current budget
                 before syncing; transactions exported elsewhere are eligible for
@@ -686,27 +645,32 @@ export default function YnabSettings() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Category Mapping</CardTitle>
+                <CardTitle>Envelope Mapping</CardTitle>
                 <CardDescription>
-                  Map your receipt categories to YNAB categories for automatic
-                  categorization during sync.
+                  Link each envelope to the YNAB category it pushes to. Items
+                  record their envelope when saved; manage envelopes and item
+                  type defaults in{" "}
+                  <Link to="/settings/envelopes" className="underline">
+                    Envelopes
+                  </Link>
+                  .
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {categoryReadError && (
                   <RequestFailure
-                    message="YNAB category mappings are unavailable. Any mappings shown are last known."
+                    message="YNAB envelope links are unavailable. Any links shown are last known."
                     retry={() => {
                       void Promise.all([
                         ynabCategoriesQuery.refetch(),
-                        taxonomyQuery.refetch(),
-                        categoryMappingsQuery.refetch(),
+                        envelopesQuery.refetch(),
+                        envelopeMappingsQuery.refetch(),
                       ]);
                     }}
                     isRetrying={
                       ynabCategoriesQuery.isFetching ||
-                      taxonomyQuery.isFetching ||
-                      categoryMappingsQuery.isFetching
+                      envelopesQuery.isFetching ||
+                      envelopeMappingsQuery.isFetching
                     }
                   />
                 )}
@@ -714,7 +678,7 @@ export default function YnabSettings() {
                   <div className="flex items-center gap-2">
                     <Spinner className="h-4 w-4" />
                     <span className="text-sm text-muted-foreground">
-                      Loading categories...
+                      Loading envelopes...
                     </span>
                   </div>
                 ) : settingsError || budgetsError ? (
@@ -723,51 +687,47 @@ export default function YnabSettings() {
                   </p>
                 ) : !selectedBudgetId ? (
                   <p className="text-sm text-muted-foreground">
-                    Select a budget above to map categories.
+                    Select a budget above to link envelopes.
                   </p>
-                ) : categoryReadHasNoProof ? null : categoryRows.length === 0 &&
-                  categoryMappings.length === 0 ? (
+                ) : categoryReadHasNoProof ? null : envelopeRows.length ===
+                  0 ? (
                   <p className="text-sm text-muted-foreground">
-                    No active categories found. Create a category first.
+                    No active envelopes found. Create an envelope first.
                   </p>
                 ) : (
                   <div className="space-y-3">
-                    <div className="max-w-sm">
-                      <span className="text-sm font-medium">
-                        Receipt category
-                      </span>
-                      <CategoryPathPicker
-                        revision={taxonomyQuery.data}
-                        value={currentCategoryChoice}
-                        onValueChange={setCategoryChoice}
-                        disabled={
-                          categoryReadUnavailable || categoryMutationPending
-                        }
-                        aria-label="Receipt category"
-                      />
-                    </div>
-                    {selectedRow && (
-                      <div className="space-y-2">
-                        <p className="text-sm">
-                          {selectedMapping
-                            ? "Direct mapping"
-                            : inheritedMapping
-                              ? `Inherited from ${categoryRows.find((row) => row.node.id === inheritedMapping.receiptsCategoryId)?.label ?? "an ancestor"}: ${inheritedMapping.ynabCategoryGroupName} / ${inheritedMapping.ynabCategoryName}`
-                              : "Unmapped"}
-                        </p>
-                        <div className="flex items-center gap-3">
+                    {envelopeRows.map((envelope) => {
+                      const mapping = mappingsByEnvelopeId.get(envelope.id);
+                      return (
+                        <div
+                          key={envelope.id}
+                          className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                        >
+                          <span className="min-w-0 break-words text-sm font-medium sm:w-48">
+                            {envelope.name}
+                            {!envelope.isActive && (
+                              <Badge variant="outline" className="ml-2">
+                                Archived
+                              </Badge>
+                            )}
+                          </span>
                           <Select
-                            value={selectedMapping?.ynabCategoryId ?? ""}
-                            onValueChange={handleCategoryMappingChange}
+                            value={mapping?.ynabCategoryId ?? ""}
+                            onValueChange={(ynabCategoryId) =>
+                              handleEnvelopeMappingChange(
+                                envelope.id,
+                                ynabCategoryId,
+                              )
+                            }
                             disabled={
                               categoryReadUnavailable || categoryMutationPending
                             }
                           >
                             <SelectTrigger
-                              className="w-full max-w-sm"
-                              aria-label="YNAB category"
+                              className="w-full min-w-0 sm:max-w-sm"
+                              aria-label={`YNAB category for ${envelope.name}`}
                             >
-                              <SelectValue placeholder="Select YNAB category" />
+                              <SelectValue placeholder="Not linked" />
                             </SelectTrigger>
                             <SelectContent>
                               {Object.entries(groupedCategories).map(
@@ -784,152 +744,23 @@ export default function YnabSettings() {
                               )}
                             </SelectContent>
                           </Select>
-                          {selectedMapping && (
+                          {mapping && (
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() =>
-                                handleDeleteMapping(selectedMapping.id)
-                              }
+                              onClick={() => handleDeleteMapping(envelope.id)}
                               disabled={
                                 categoryReadUnavailable ||
                                 categoryMutationPending
                               }
+                              aria-label={`Unlink ${envelope.name}`}
                             >
                               Remove
                             </Button>
                           )}
                         </div>
-                      </div>
-                    )}
-                    {inactiveCategoryMappings.map((mapping) => {
-                      const category = taxonomyQuery.data?.nodes.find(
-                        (node) => node.id === mapping.receiptsCategoryId,
-                      );
-                      return (
-                        <div
-                          key={mapping.id}
-                          className="space-y-2 rounded-md border p-3 text-sm"
-                        >
-                          <p className="font-medium">
-                            {category?.name ?? mapping.receiptsCategory} —{" "}
-                            {category
-                              ? "Archived category"
-                              : "Category absent from taxonomy"}
-                          </p>
-                          <p className="break-words text-muted-foreground">
-                            Stable category ID: {mapping.receiptsCategoryId}.
-                            Current YNAB mapping:{" "}
-                            {mapping.ynabCategoryGroupName} /{" "}
-                            {mapping.ynabCategoryName}.
-                          </p>
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                            <Select
-                              value={mapping.ynabCategoryId}
-                              onValueChange={(ynabCategoryId) => {
-                                if (
-                                  categoryReadUnavailable ||
-                                  categoryMutationPending
-                                )
-                                  return;
-                                const ynabCat = ynabCategories.find(
-                                  (candidate) =>
-                                    candidate.id === ynabCategoryId,
-                                );
-                                if (
-                                  !ynabCat ||
-                                  ynabCat.id === mapping.ynabCategoryId
-                                )
-                                  return;
-                                updateCategoryMapping.mutate({
-                                  id: mapping.id,
-                                  ynabCategoryId: ynabCat.id,
-                                  ynabCategoryName: ynabCat.name,
-                                  ynabCategoryGroupName:
-                                    ynabCat.categoryGroupName,
-                                  ynabBudgetId: selectedBudgetId!,
-                                });
-                              }}
-                              disabled={
-                                categoryReadUnavailable ||
-                                categoryMutationPending
-                              }
-                            >
-                              <SelectTrigger
-                                className="w-full min-w-0 sm:max-w-sm"
-                                aria-label={`YNAB category for ${category?.name ?? mapping.receiptsCategory}`}
-                              >
-                                <SelectValue placeholder="Select YNAB category" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {Object.entries(groupedCategories).map(
-                                  ([groupName, cats]) => (
-                                    <SelectGroup key={groupName}>
-                                      <SelectLabel>{groupName}</SelectLabel>
-                                      {cats.map((cat) => (
-                                        <SelectItem key={cat.id} value={cat.id}>
-                                          {cat.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  ),
-                                )}
-                              </SelectContent>
-                            </Select>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="w-full sm:w-auto"
-                              onClick={() => handleDeleteMapping(mapping.id)}
-                              disabled={
-                                categoryReadUnavailable ||
-                                categoryMutationPending
-                              }
-                            >
-                              Remove stable mapping
-                            </Button>
-                          </div>
-                        </div>
                       );
                     })}
-                    {categoryMappings
-                      .filter((mapping) => !mapping.receiptsCategoryId)
-                      .map((mapping) => (
-                        <div
-                          key={mapping.id}
-                          className="space-y-2 rounded-md border p-3 text-sm"
-                        >
-                          <p className="break-words">
-                            Legacy “{mapping.receiptsCategory}” —{" "}
-                            {mapping.legacyResolution ?? "Unresolved"}.
-                            {mapping.legacyCandidateCategoryIds?.length
-                              ? ` ${mapping.legacyCandidateCategoryIds.length} possible category IDs.`
-                              : " No stable category ID."}{" "}
-                            Remove this mapping and create one for a selected
-                            category path.
-                          </p>
-                          <p className="break-words text-muted-foreground">
-                            Current YNAB mapping:{" "}
-                            {mapping.ynabCategoryGroupName ?? "Other"} /{" "}
-                            {mapping.ynabCategoryName}. Budget:{" "}
-                            {budgets.find(
-                              (budget) => budget.id === mapping.ynabBudgetId,
-                            )?.name ?? mapping.ynabBudgetId}
-                            .
-                          </p>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="w-full sm:w-auto"
-                            onClick={() => handleDeleteMapping(mapping.id)}
-                            disabled={
-                              categoryReadUnavailable || categoryMutationPending
-                            }
-                          >
-                            Remove legacy mapping
-                          </Button>
-                        </div>
-                      ))}
                   </div>
                 )}
               </CardContent>

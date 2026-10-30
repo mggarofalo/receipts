@@ -117,7 +117,7 @@ describe("YnabSplitComparisonContent", () => {
     expect(screen.getByText(/Boom/)).toBeInTheDocument();
   });
 
-  it("renders an unavailable state with unmapped categories and a settings link", async () => {
+  it("renders an unavailable state with unmapped envelopes and a settings link", async () => {
     const ynab = await import("@/hooks/useYnab");
     vi.mocked(ynab.useYnabSplitComparison).mockReturnValue(
       mockQueryResult({
@@ -126,7 +126,7 @@ describe("YnabSplitComparisonContent", () => {
         isSuccess: true,
         data: {
           canComputeExpected: false,
-          expectedUnavailableReason: "Unmapped categories found.",
+          expectedUnavailableReason: "Unmapped envelopes found.",
           unmappedCategories: ["Gas", "Dining"],
           transactionComparisons: [],
         },
@@ -135,8 +135,10 @@ describe("YnabSplitComparisonContent", () => {
 
     renderWithProviders(<YnabSplitComparisonContent receiptId="r1" />);
 
-    expect(screen.getByText(/Unmapped categories found\./)).toBeInTheDocument();
-    expect(screen.getByText(/Gas, Dining/)).toBeInTheDocument();
+    expect(screen.getByText("Unmapped envelopes found.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Unmapped envelopes: Gas, Dining\. Link them in/),
+    ).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /YNAB Settings/ });
     expect(link).toHaveAttribute("href", "/settings/ynab");
   });

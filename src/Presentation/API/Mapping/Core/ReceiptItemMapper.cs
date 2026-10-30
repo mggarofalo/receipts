@@ -13,6 +13,7 @@ public partial class ReceiptItemMapper
 	[MapperIgnoreSource(nameof(ReceiptItem.TotalAmount))]
 	[MapperIgnoreSource(nameof(ReceiptItem.Classification))]
 	[MapperIgnoreSource(nameof(ReceiptItem.NormalizationIntent))]
+	[MapperIgnoreSource(nameof(ReceiptItem.EnvelopeOverrideId))]
 	[MapperIgnoreTarget(nameof(ReceiptItemResponse.AdditionalProperties))]
 	public partial ReceiptItemResponse ToResponse(ReceiptItem source);
 
@@ -33,7 +34,12 @@ public partial class ReceiptItemMapper
 			source.Category,
 			source.Subcategory
 		)
-		{ NormalizationIntent = MapIntent(source.NormalizationIntent), Classification = MapClassification(source.Classification) };
+		{
+			NormalizationIntent = MapIntent(source.NormalizationIntent),
+			Classification = MapClassification(source.Classification),
+			EnvelopeOverrideId = source.EnvelopeId,
+			OccasionId = source.OccasionId,
+		};
 	}
 
 	public ReceiptItem ToDomain(UpdateReceiptItemRequest source)
@@ -53,7 +59,12 @@ public partial class ReceiptItemMapper
 			source.Category,
 			source.Subcategory
 		)
-		{ NormalizationIntent = MapIntent(source.NormalizationIntent), Classification = MapClassification(source.Classification) };
+		{
+			NormalizationIntent = MapIntent(source.NormalizationIntent),
+			Classification = MapClassification(source.Classification),
+			EnvelopeOverrideId = source.EnvelopeId,
+			OccasionId = source.OccasionId,
+		};
 	}
 
 	private static Domain.Taxonomy.ClassificationIntent? MapClassification(ClassificationRequest? value)

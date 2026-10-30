@@ -102,7 +102,10 @@ const eventCacheKeys = [
   ["ynab", "split-comparison"],
   ["ynab", "receipt-sync-statuses"],
   ["ynab", "account-mappings"],
-  ["ynab", "category-mappings"],
+  ["ynab", "envelope-mappings"],
+  ["envelopes", "all"],
+  ["occasions", "all"],
+  ["item-type-envelope-defaults"],
   ["ynab", "stale-mappings"],
   ["ynab", "sync-status"],
   ["ynab", "connection-status"],
@@ -510,7 +513,11 @@ describe("useSignalR", () => {
     it.each([
       ["taxonomy", ["taxonomy", "current"]],
       ["taxonomy", ["dashboard", "spending-by-category", "currentHierarchy"]],
-      ["ynab-mapping", ["ynab", "category-mappings"]],
+      ["ynab-mapping", ["ynab", "envelope-mappings"]],
+      ["envelope", ["envelopes", "all"]],
+      ["envelope", ["ynab", "envelope-mappings"]],
+      ["occasion", ["occasions", "all"]],
+      ["item-type-envelope-default", ["item-type-envelope-defaults"]],
       ["ynab-sync-record", ["ynab", "receipt-sync-statuses"]],
       ["ynab-sync-record", ["ynab", "connection-status"]],
       ["ynab-sync-event", ["ynab", "events"]],
@@ -674,6 +681,37 @@ describe("useSignalR", () => {
       );
       expect(toast.info).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ["envelope", "envelope"],
+      ["occasion", "occasion"],
+      ["item-type-envelope-default", "item-type envelope default"],
+    ])(
+      "buffers toast with display name for %s",
+      async (entityType, displayName) => {
+        await renderEnabled();
+        const handler = getOnHandler("EntityChanged");
+
+        act(() => {
+          handler!({
+            entityType,
+            changeType: "updated",
+            id: "abc",
+            count: 1,
+            userId: "other-user-id",
+            authMethod: "jwt",
+            connectionId: "other-conn",
+          });
+        });
+
+        expect(bufferToast).toHaveBeenCalledWith(
+          displayName,
+          "updated",
+          1,
+          "other-user",
+        );
+      },
+    );
 
     it("suppresses toast when notification.connectionId matches own connectionId", async () => {
       const mockQueryClient = vi.mocked(useQueryClient)();

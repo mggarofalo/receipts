@@ -35,12 +35,10 @@ import {
   useUpdateYnabAccountMapping,
   useDeleteYnabAccountMapping,
   useYnabCategories,
-  useDistinctReceiptItemCategories,
-  useYnabCategoryMappings,
-  useUnmappedCategories,
-  useCreateYnabCategoryMapping,
-  useUpdateYnabCategoryMapping,
-  useDeleteYnabCategoryMapping,
+  useYnabEnvelopeMappings,
+  useUnmappedEnvelopes,
+  useSetYnabEnvelopeMapping,
+  useDeleteYnabEnvelopeMapping,
   useSyncYnabMemos,
   useSyncYnabMemosBulk,
   useResolveYnabMemoSync,
@@ -609,38 +607,12 @@ describe("useYnab", () => {
     expect(result.current.categories).toEqual([]);
   });
 
-  it("useDistinctReceiptItemCategories returns categories on success", async () => {
-    const categories = ["Electronics", "Groceries", "Pharmacy"];
-    (client.GET as Mock).mockResolvedValue({
-      data: { categories },
-      error: undefined,
-    });
-
-    const { result } = renderHook(() => useDistinctReceiptItemCategories(), {
-      wrapper: createWrapper(),
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.categories).toEqual(categories);
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/receipt-items/distinct-categories",
-      expect.objectContaining({
-        middleware: expect.any(Array),
-        signal: expect.any(AbortSignal),
-      }),
-    );
-    await expectRequestOwnership(
-      client.GET as Mock,
-      "/api/receipt-items/distinct-categories",
-      "local",
-    );
-  });
-
-  it("useYnabCategoryMappings returns mappings on success", async () => {
+  it("useYnabEnvelopeMappings returns mappings on success", async () => {
     const mappings = [
       {
         id: "m-1",
-        receiptsCategory: "Groceries",
+        envelopeId: "env-groceries",
+        envelopeName: "Groceries",
         ynabCategoryId: "cat-1",
         ynabCategoryName: "Groceries",
         ynabCategoryGroupName: "Needs",
@@ -654,165 +626,122 @@ describe("useYnab", () => {
       error: undefined,
     });
 
-    const { result } = renderHook(() => useYnabCategoryMappings(), {
+    const { result } = renderHook(() => useYnabEnvelopeMappings(), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.mappings).toEqual(mappings);
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/ynab/category-mappings",
-      expect.objectContaining({
-        middleware: expect.any(Array),
-        signal: expect.any(AbortSignal),
-      }),
-    );
     await expectRequestOwnership(
       client.GET as Mock,
-      "/api/ynab/category-mappings",
+      "/api/ynab/envelope-mappings",
       "local",
     );
   });
 
-  it("useUnmappedCategories returns unmapped list on success", async () => {
-    const unmappedCategories = ["Electronics", "Pharmacy"];
+  it("useYnabEnvelopeMappings does not request while disabled", async () => {
+    const { result } = renderHook(() => useYnabEnvelopeMappings(false), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.mappings).toEqual([]);
+    expect(client.GET).not.toHaveBeenCalled();
+  });
+
+  it("useUnmappedEnvelopes returns the unlinked envelopes on success", async () => {
+    const envelopes = [
+      { id: "env-gifts", name: "Gifts", isActive: true },
+      { id: "env-travel", name: "Travel", isActive: false },
+    ];
     (client.GET as Mock).mockResolvedValue({
-      data: { unmappedCategories },
+      data: { data: envelopes },
       error: undefined,
     });
 
-    const { result } = renderHook(() => useUnmappedCategories(), {
+    const { result } = renderHook(() => useUnmappedEnvelopes(), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.unmappedCategories).toEqual(unmappedCategories);
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/ynab/category-mappings/unmapped",
-      expect.objectContaining({
-        middleware: expect.any(Array),
-        signal: expect.any(AbortSignal),
-      }),
-    );
+    expect(result.current.unmappedEnvelopes).toEqual(envelopes);
     await expectRequestOwnership(
       client.GET as Mock,
-      "/api/ynab/category-mappings/unmapped",
+      "/api/ynab/envelope-mappings/unmapped",
       "local",
     );
   });
 
-  it("useCreateYnabCategoryMapping calls POST and shows toast on success", async () => {
-    (client.POST as Mock).mockResolvedValue({
-      data: { id: "m-1", receiptsCategory: "Groceries" },
+  it("useSetYnabEnvelopeMapping PUTs the link for the envelope and shows toast on success", async () => {
+    (client.PUT as Mock).mockResolvedValue({
+      data: { id: "m-1", envelopeId: "env-groceries" },
       error: undefined,
     });
 
-    const { result } = renderHook(() => useCreateYnabCategoryMapping(), {
+    const { result } = renderHook(() => useSetYnabEnvelopeMapping(), {
       wrapper: createWrapper(),
     });
 
     await result.current.mutateAsync({
-      receiptsCategory: "Groceries",
-      receiptsCategoryId: "stable-groceries",
+      envelopeId: "env-groceries",
       ynabCategoryId: "cat-1",
       ynabCategoryName: "Groceries",
       ynabCategoryGroupName: "Needs",
       ynabBudgetId: "budget-1",
     });
 
-    expect(client.POST).toHaveBeenCalledWith(
-      "/api/ynab/category-mappings",
+    expect(client.PUT).toHaveBeenCalledWith(
+      "/api/ynab/envelope-mappings/{envelopeId}",
       expect.objectContaining({
+        params: { path: { envelopeId: "env-groceries" } },
         body: {
-          receiptsCategory: "Groceries",
-          receiptsCategoryId: "stable-groceries",
           ynabCategoryId: "cat-1",
           ynabCategoryName: "Groceries",
           ynabCategoryGroupName: "Needs",
           ynabBudgetId: "budget-1",
         },
-        middleware: expect.any(Array),
-      }),
-    );
-    await expectRequestOwnership(
-      client.POST as Mock,
-      "/api/ynab/category-mappings",
-      "toast",
-    );
-    expect(toast.success).toHaveBeenCalledWith("Category mapping created");
-  });
-
-  it("useUpdateYnabCategoryMapping calls PUT and shows toast on success", async () => {
-    (client.PUT as Mock).mockResolvedValue({ error: undefined });
-
-    const { result } = renderHook(() => useUpdateYnabCategoryMapping(), {
-      wrapper: createWrapper(),
-    });
-
-    await result.current.mutateAsync({
-      id: "m-1",
-      ynabCategoryId: "cat-2",
-      ynabCategoryName: "Rent",
-      ynabCategoryGroupName: "Needs",
-      ynabBudgetId: "budget-1",
-    });
-
-    expect(client.PUT).toHaveBeenCalledWith(
-      "/api/ynab/category-mappings/{id}",
-      expect.objectContaining({
-        params: { path: { id: "m-1" } },
-        body: {
-          ynabCategoryId: "cat-2",
-          ynabCategoryName: "Rent",
-          ynabCategoryGroupName: "Needs",
-          ynabBudgetId: "budget-1",
-        },
-        middleware: expect.any(Array),
       }),
     );
     await expectRequestOwnership(
       client.PUT as Mock,
-      "/api/ynab/category-mappings/{id}",
+      "/api/ynab/envelope-mappings/{envelopeId}",
       "toast",
     );
-    expect(toast.success).toHaveBeenCalledWith("Category mapping updated");
+    expect(toast.success).toHaveBeenCalledWith("Envelope linked to YNAB");
   });
 
-  it("useDeleteYnabCategoryMapping calls DELETE and shows toast on success", async () => {
+  it("useDeleteYnabEnvelopeMapping DELETEs by envelope id and shows toast on success", async () => {
     (client.DELETE as Mock).mockResolvedValue({ error: undefined });
 
-    const { result } = renderHook(() => useDeleteYnabCategoryMapping(), {
+    const { result } = renderHook(() => useDeleteYnabEnvelopeMapping(), {
       wrapper: createWrapper(),
     });
 
-    await result.current.mutateAsync("m-1");
+    await result.current.mutateAsync("env-groceries");
 
     expect(client.DELETE).toHaveBeenCalledWith(
-      "/api/ynab/category-mappings/{id}",
+      "/api/ynab/envelope-mappings/{envelopeId}",
       expect.objectContaining({
-        params: { path: { id: "m-1" } },
-        middleware: expect.any(Array),
+        params: { path: { envelopeId: "env-groceries" } },
       }),
     );
     await expectRequestOwnership(
       client.DELETE as Mock,
-      "/api/ynab/category-mappings/{id}",
+      "/api/ynab/envelope-mappings/{envelopeId}",
       "toast",
     );
-    expect(toast.success).toHaveBeenCalledWith("Category mapping deleted");
+    expect(toast.success).toHaveBeenCalledWith("Envelope unlinked from YNAB");
   });
 
-  it("useCreateYnabCategoryMapping does not add a hook toast on failure (owned by the mutation cache)", async () => {
-    (client.POST as Mock).mockResolvedValue({ error: "Conflict" });
+  it("useSetYnabEnvelopeMapping does not add a hook toast on failure (owned by the mutation cache)", async () => {
+    (client.PUT as Mock).mockResolvedValue({ error: "Conflict" });
 
-    const { result } = renderHook(() => useCreateYnabCategoryMapping(), {
+    const { result } = renderHook(() => useSetYnabEnvelopeMapping(), {
       wrapper: createWrapper(),
     });
 
     await expect(
       result.current.mutateAsync({
-        receiptsCategory: "Groceries",
-        receiptsCategoryId: "stable-groceries",
+        envelopeId: "env-groceries",
         ynabCategoryId: "cat-1",
         ynabCategoryName: "Groceries",
         ynabCategoryGroupName: "Needs",
@@ -823,6 +752,7 @@ describe("useYnab", () => {
     await waitFor(() => {
       expect(toast.error).not.toHaveBeenCalled();
     });
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("useSyncYnabMemos calls POST and shows toast on success", async () => {
@@ -1143,7 +1073,7 @@ describe("useYnab", () => {
       operationStatus: "failed" as const,
       pushedTransactions: [],
       unmappedCategories: ["Electronics"],
-      error: "Unmapped categories found.",
+      error: "Unmapped envelopes found.",
     };
     (client.POST as Mock).mockResolvedValue({
       data: pushResult,
@@ -1156,7 +1086,7 @@ describe("useYnab", () => {
 
     await result.current.mutateAsync("receipt-123");
 
-    expect(toast.error).toHaveBeenCalledWith("Unmapped categories found.");
+    expect(toast.error).toHaveBeenCalledWith("Unmapped envelopes found.");
   });
 
   it.each(["unknown", "pending"] as const)(
@@ -1220,7 +1150,7 @@ describe("useYnab", () => {
             success: false,
             operationStatus: "failed" as const,
             pushedTransactions: [],
-            error: "Unmapped categories",
+            error: "Unmapped envelopes found.",
             unmappedCategories: ["Gas", "Dining"],
           },
         },
@@ -1253,7 +1183,7 @@ describe("useYnab", () => {
     // Partial success must NOT read as a plain success (RECEIPTS-783).
     expect(toast.success).not.toHaveBeenCalled();
     expect(toast.warning).toHaveBeenCalledWith(
-      "Pushed 1/2 receipt(s); 1 failed. Unmapped categories: Gas, Dining. Map them in YNAB Settings.",
+      "Pushed 1/2 receipt(s); 1 failed. Unmapped envelopes: Gas, Dining. Link their envelopes in YNAB Settings.",
     );
   });
 
@@ -1266,7 +1196,7 @@ describe("useYnab", () => {
             success: false,
             operationStatus: "failed" as const,
             pushedTransactions: [],
-            error: "Unmapped categories",
+            error: "Unmapped envelopes found.",
             unmappedCategories: ["Gas"],
           },
         },
@@ -1276,7 +1206,7 @@ describe("useYnab", () => {
             success: false,
             operationStatus: "failed" as const,
             pushedTransactions: [],
-            error: "Unmapped categories",
+            error: "Unmapped envelopes found.",
             unmappedCategories: ["Gas", "Fuel"],
           },
         },
@@ -1297,7 +1227,7 @@ describe("useYnab", () => {
     expect(toast.warning).not.toHaveBeenCalled();
     // Distinct unmapped categories aggregated across all failed receipts.
     expect(toast.error).toHaveBeenCalledWith(
-      "Failed to push 2 receipt(s) to YNAB. Unmapped categories: Gas, Fuel. Map them in YNAB Settings.",
+      "Failed to push 2 receipt(s) to YNAB. Unmapped envelopes: Gas, Fuel. Link their envelopes in YNAB Settings.",
     );
   });
 
@@ -1823,8 +1753,8 @@ describe("useYnab", () => {
     });
     const keys = [
       ["ynab", "account-mappings"],
-      ["ynab", "category-mappings"],
-      ["ynab", "category-mappings", "unmapped"],
+      ["ynab", "envelope-mappings"],
+      ["ynab", "envelope-mappings", "unmapped"],
       ["ynab", "stale-mappings"],
       ["ynab", "split-comparison"],
     ];
@@ -1840,6 +1770,39 @@ describe("useYnab", () => {
 
     keys.forEach((key) =>
       expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true),
+    );
+  });
+
+  it("repairs mapping projections after an envelope link request rejects", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const keys = [
+      ["ynab", "account-mappings"],
+      ["ynab", "envelope-mappings", "budget-1"],
+      ["ynab", "stale-mappings"],
+      ["ynab", "split-comparison"],
+    ];
+    keys.forEach((key) => queryClient.setQueryData(key, { cached: true }));
+    (client.PUT as Mock).mockResolvedValue({ error: "failed after write" });
+    const { result } = renderHook(() => useSetYnabEnvelopeMapping(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(
+      result.current.mutateAsync({
+        envelopeId: "env-groceries",
+        ynabCategoryId: "cat-1",
+        ynabCategoryName: "Groceries",
+        ynabCategoryGroupName: "Needs",
+        ynabBudgetId: "budget-1",
+      }),
+    ).rejects.toThrow();
+
+    await waitFor(() =>
+      keys.forEach((key) =>
+        expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true),
+      ),
     );
   });
 

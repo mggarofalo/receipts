@@ -59,6 +59,12 @@ public class ReceiptItemEntityConfiguration : IEntityTypeConfiguration<ReceiptIt
 		// similarity at resolve time and remains NULL for unresolved / newly-created items.
 		builder.HasIndex(e => e.NormalizedDescriptionMatchScore);
 
+		builder.Property(e => e.EnvelopeSource).HasConversion<string>().HasMaxLength(16);
+		builder.HasOne<Entities.Envelopes.EnvelopeEntity>().WithMany().HasForeignKey(e => e.EnvelopeId).OnDelete(DeleteBehavior.Restrict);
+		builder.HasOne<Entities.Envelopes.OccasionEntity>().WithMany().HasForeignKey(e => e.OccasionId).OnDelete(DeleteBehavior.Restrict);
+		builder.HasIndex(e => e.EnvelopeId);
+		builder.HasIndex(e => e.OccasionId);
+
 		builder.HasQueryFilter(e => e.DeletedAt == null);
 	}
 }

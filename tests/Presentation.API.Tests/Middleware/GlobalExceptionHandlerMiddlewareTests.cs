@@ -122,6 +122,35 @@ public class GlobalExceptionHandlerMiddlewareTests
 		problemDetails.Detail.Should().Be("Category 'Food' already exists");
 	}
 
+	[Theory]
+	[InlineData(400, "Bad Request")]
+	[InlineData(404, "Not Found")]
+	[InlineData(409, "Conflict")]
+	public async Task InvokeAsync_EnvelopeException_ReturnsItsStatusWithExtensions(int status, string expectedTitle)
+	{
+		// Arrange
+		DefaultHttpContext context = new();
+		context.Response.Body = new MemoryStream();
+
+		GlobalExceptionHandlerMiddleware middleware = new(
+			_ => throw new Application.Envelopes.EnvelopeException(status, "Envelope must exist and be active.",
+				new Dictionary<string, object?> { ["itemCount"] = 3 }),
+			_loggerMock.Object,
+			ProblemDetailsService);
+
+		// Act
+		await middleware.InvokeAsync(context);
+
+		// Assert
+		context.Response.StatusCode.Should().Be(status);
+		context.Response.ContentType.Should().Be("application/problem+json");
+		ProblemDetails? problemDetails = await DeserializeProblemDetails(context.Response);
+		problemDetails!.Status.Should().Be(status);
+		problemDetails.Title.Should().Be(expectedTitle);
+		problemDetails.Detail.Should().Be("Envelope must exist and be active.");
+		problemDetails.Extensions["itemCount"]!.ToString().Should().Be("3");
+	}
+
 	[Fact]
 	public async Task InvokeAsync_ConcurrencyConflictException_Returns409ProblemDetails()
 	{

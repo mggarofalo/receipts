@@ -27,3 +27,7 @@ dotnet ef migrations add MigrationName \
 The migration locks transactions and cards in its transaction, counts disagreements including trash, and logs the observed count through `DatabaseMigratorService`. Any nonzero count aborts before the column is dropped. Investigate and reconcile those rows deliberately, then rerun the tool. The migration never silently chooses a value. Downgrading reconstructs transaction accounts from the cards' current parents, including trashed history.
 
 The guard uses [PostgreSQL transaction-scoped table locks](https://www.postgresql.org/docs/current/explicit-locking.html) and [EF Core custom migration SQL](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/managing). The tool subscribes to [Npgsql notices](https://www.npgsql.org/doc/diagnostics/exceptions_notices.html) so successful precondition counts appear at the normal information log level.
+
+## Envelope backfill
+
+After migrating, the tool runs the one-time envelope data step (`20261030134404_AddEnvelopes`) in its own transaction: historical purchases get the envelope their current YNAB resolution reaches, and node mappings seed item-type defaults. It runs once per database that has historical purchases or node-keyed YNAB mappings and logs counts only. Check the result with `tools/Receipts.EnvelopeParity`. See [the migration note](../../../docs/migrations/20261030134404_AddEnvelopes.md).

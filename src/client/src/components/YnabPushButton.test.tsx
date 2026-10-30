@@ -163,6 +163,34 @@ describe("YnabPushButton", () => {
     expect(screen.getByText(/YNAB 500/)).toBeInTheDocument();
   });
 
+  it("lists unmapped envelopes with a link to YNAB Settings when a push is refused", async () => {
+    const ynab = await import("@/hooks/useYnab");
+    vi.mocked(ynab.usePushYnabTransactions).mockReturnValue(
+      mockMutationResult({
+        mutate: mockPushMutate,
+        data: {
+          success: false,
+          operationStatus: "failed",
+          pushedTransactions: [],
+          error: "Unmapped envelopes found.",
+          unmappedCategories: ["Gas", "Dining"],
+        },
+      }),
+    );
+
+    renderWithProviders(
+      <YnabPushButton receiptId="r1" hasTransactions={true} />,
+    );
+
+    expect(
+      screen.getByText(/Unmapped envelopes: Gas, Dining\. Link them in/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "YNAB Settings" })).toHaveAttribute(
+      "href",
+      "/settings/ynab",
+    );
+  });
+
   it("shows a Pending spinner during an in-flight push mutation", async () => {
     const ynab = await import("@/hooks/useYnab");
     vi.mocked(ynab.usePushYnabTransactions).mockReturnValue(

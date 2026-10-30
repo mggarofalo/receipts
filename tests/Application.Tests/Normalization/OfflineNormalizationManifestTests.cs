@@ -46,6 +46,7 @@ public class OfflineNormalizationManifestTests
 	[InlineData(12)]
 	[InlineData(13)]
 	[InlineData(14)]
+	[InlineData(15)]
 	public void Read_SupportedSourceFormat_PreservesReviewedAuthority(int sourceVersion)
 	{
 		var manifest = Reviewed() with { SourceFormatVersion = sourceVersion };
@@ -57,7 +58,7 @@ public class OfflineNormalizationManifestTests
 	[Theory]
 	[InlineData(5)]
 	[InlineData(7)]
-	[InlineData(15)]
+	[InlineData(16)]
 	public void Read_UnsupportedSourceFormat_Rejects(int sourceVersion)
 	{
 		var manifest = Reviewed() with { SourceFormatVersion = sourceVersion };

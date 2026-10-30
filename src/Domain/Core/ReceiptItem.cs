@@ -33,6 +33,13 @@ public class ReceiptItem
 	public string? NormalizedDescriptionName { get; set; }
 	public double? NormalizedDescriptionMatchScore { get; set; }
 
+	// The envelope recorded at save time; persistence derives it, so reads never recompute it.
+	public Guid? EnvelopeId { get; set; }
+	public Domain.Envelopes.EnvelopeSource EnvelopeSource { get; set; }
+	// Write intent only: an explicit per-item envelope override. Null requests no override.
+	public Guid? EnvelopeOverrideId { get; set; }
+	public Guid? OccasionId { get; set; }
+
 	public const string DescriptionCannotBeEmpty = "Description cannot be empty";
 	public const string QuantityMustBePositive = "Quantity must be positive";
 	public const string CategoryCannotBeEmpty = "Category cannot be empty";

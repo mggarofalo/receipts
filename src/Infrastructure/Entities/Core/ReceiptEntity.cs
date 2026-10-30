@@ -11,6 +11,8 @@ public class ReceiptEntity : ISoftDeletable
 	public DateOnly Date { get; set; }
 	public decimal TaxAmount { get; set; }
 	public Currency TaxAmountCurrency { get; set; }
+	public Guid? PaidFromEnvelopeId { get; set; }
+	public Guid? OccasionId { get; set; }
 	// Inert legacy metadata retained solely for portable-backup archival compatibility.
 	// Receipts no longer reads, writes, serves, or cleans up image files.
 	public string? OriginalImagePath { get; set; }

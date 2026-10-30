@@ -88,7 +88,8 @@ public class BackupService(
 			await ExportAcceptedDuplicatePairsAsync(source, sqlite, cancellationToken);
 			await PortableCatalogArchive.ExportAsync(source, sqlite, cancellationToken);
 			await PortableTaxonomyArchive.ExportAsync(source, sqlite, cancellationToken, candidate);
-			await WriteMetadataAsync(sqlite, cancellationToken, candidate);
+			await PortableEnvelopeArchive.ExportAsync(source, sqlite, cancellationToken);
+			await WriteMetadataAsync(sqlite, cancellationToken);
 
 
 			await transaction.CommitAsync(cancellationToken);
@@ -321,6 +322,10 @@ public class BackupService(
 					.Replace("\t\t\t\treceipts_category_id TEXT,\n", "", StringComparison.Ordinal)
 					.Replace("\t\t\t\tlegacy_resolution TEXT NOT NULL,\n", "", StringComparison.Ordinal)
 					.Replace("\t\t\t\tlegacy_candidate_category_ids TEXT NOT NULL,\n", "", StringComparison.Ordinal);
+		}
+		if (exportVersion >= PortableEnvelopeArchive.Version)
+		{
+			ddl = [.. ddl, .. PortableEnvelopeArchive.Ddl];
 		}
 		foreach (string sql in ddl)
 		{
@@ -722,11 +727,12 @@ public class BackupService(
 		}
 	}
 
-	private static async Task WriteMetadataAsync(SqliteConnection sqlite, CancellationToken cancellationToken, bool candidate)
+	private static async Task WriteMetadataAsync(SqliteConnection sqlite, CancellationToken cancellationToken)
 	{
 		Dictionary<string, string> metadata = new()
 		{
-			["export_version"] = (candidate ? PortableAutomaticHistoricalV14.Version : PortableBackupFormat.CurrentVersion).ToString(CultureInfo.InvariantCulture),
+			// The v14 taxonomy codec ("candidate") is carried unchanged inside the current format.
+			["export_version"] = PortableBackupFormat.CurrentVersion.ToString(CultureInfo.InvariantCulture),
 			["exported_at"] = DateTimeOffset.UtcNow.ToString("O"),
 			["format"] = "receipts-sqlite-backup",
 		};

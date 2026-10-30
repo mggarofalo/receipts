@@ -48,8 +48,11 @@ export const queryKeys = {
   ynabSplitComparison: ["ynab", "split-comparison"],
   ynabReceiptSyncStatuses: ["ynab", "receipt-sync-statuses"],
   ynabSyncStatus: ["ynab", "sync-status"],
-  ynabCategoryMappings: ["ynab", "category-mappings"],
-  ynabUnmappedCategories: ["ynab", "category-mappings", "unmapped"],
+  ynabEnvelopeMappings: ["ynab", "envelope-mappings"],
+  ynabUnmappedEnvelopes: ["ynab", "envelope-mappings", "unmapped"],
+  envelopes: ["envelopes"],
+  occasions: ["occasions"],
+  itemTypeEnvelopeDefaults: ["item-type-envelope-defaults"],
   ynabStaleMappings: ["ynab", "stale-mappings"],
   ynabAccountMappings: ["ynab", "account-mappings"],
   ynabEvents: ["ynab", "events"],
@@ -78,7 +81,7 @@ const LEDGER_CHANGE_QUERY_KEYS = [
   queryKeys.ynabSplitComparison,
   queryKeys.ynabReceiptSyncStatuses,
   queryKeys.ynabSyncStatus,
-  queryKeys.ynabUnmappedCategories,
+  queryKeys.ynabUnmappedEnvelopes,
   queryKeys.ynabStaleMappings,
 ] as const;
 
@@ -132,7 +135,7 @@ const DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS = [
 
 const YNAB_MAPPING_CHANGE_QUERY_KEYS = [
   queryKeys.ynabAccountMappings,
-  queryKeys.ynabCategoryMappings,
+  queryKeys.ynabEnvelopeMappings,
   queryKeys.ynabStaleMappings,
   queryKeys.ynabSplitComparison,
 ] as const;
@@ -163,6 +166,17 @@ const BACKUP_IMPORT_QUERY_KEYS = [
   queryKeys.subcategories,
   ...TEMPLATE_CHANGE_QUERY_KEYS,
   queryKeys.ynab,
+  queryKeys.envelopes,
+  queryKeys.occasions,
+  queryKeys.itemTypeEnvelopeDefaults,
+] as const;
+
+// Envelope names and archive state appear in YNAB links and defaults.
+const ENVELOPE_CHANGE_QUERY_KEYS = [
+  queryKeys.envelopes,
+  queryKeys.itemTypeEnvelopeDefaults,
+  queryKeys.ynabEnvelopeMappings,
+  queryKeys.ynabUnmappedEnvelopes,
 ] as const;
 
 const DOMAIN_CHANGE_QUERY_KEYS = {
@@ -179,6 +193,9 @@ const DOMAIN_CHANGE_QUERY_KEYS = {
   card: CARD_CHANGE_QUERY_KEYS,
   category: [queryKeys.categories, queryKeys.subcategories],
   subcategory: [queryKeys.subcategories],
+  envelope: ENVELOPE_CHANGE_QUERY_KEYS,
+  occasion: [queryKeys.occasions],
+  "item-type-envelope-default": [queryKeys.itemTypeEnvelopeDefaults],
   "item-template": TEMPLATE_CHANGE_QUERY_KEYS,
   "item-embedding": ITEM_EMBEDDING_CHANGE_QUERY_KEYS,
   "normalized-description": NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS,

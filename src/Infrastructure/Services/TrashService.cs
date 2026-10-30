@@ -86,6 +86,23 @@ public class TrashService(ApplicationDbContext context) : ITrashService
 			.Where(e => e.DeletedAt != null)
 			.ExecuteDeleteAsync(cancellationToken);
 
+		// Envelopes and occasions are only soft-deleted while unreferenced; the reference guards keep
+		// the Restrict FKs from failing the whole purge should a reference appear after deletion.
+		await context.Envelopes
+			.IgnoreQueryFilters()
+			.Where(e => e.DeletedAt != null
+				&& !context.ReceiptItems.IgnoreQueryFilters().Any(item => item.EnvelopeId == e.Id)
+				&& !context.Receipts.IgnoreQueryFilters().Any(receipt => receipt.PaidFromEnvelopeId == e.Id)
+				&& !context.ItemTypeEnvelopeDefaults.Any(row => row.EnvelopeId == e.Id))
+			.ExecuteDeleteAsync(cancellationToken);
+
+		await context.Occasions
+			.IgnoreQueryFilters()
+			.Where(e => e.DeletedAt != null
+				&& !context.ReceiptItems.IgnoreQueryFilters().Any(item => item.OccasionId == e.Id)
+				&& !context.Receipts.IgnoreQueryFilters().Any(receipt => receipt.OccasionId == e.Id))
+			.ExecuteDeleteAsync(cancellationToken);
+
 		// Delete both soft-deleted subcategories AND active subcategories
 		// whose parent Category is about to be purged. The Subcategory → Category
 		// FK is configured OnDelete(Cascade), so without this explicit step the

@@ -45,7 +45,9 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 				Location = r.Location,
 				Date = r.Date,
 				TaxAmount = r.TaxAmount,
-				TaxAmountCurrency = r.TaxAmountCurrency
+				TaxAmountCurrency = r.TaxAmountCurrency,
+				PaidFromEnvelopeId = r.PaidFromEnvelopeId,
+				OccasionId = r.OccasionId
 			})
 			.ToListAsync(cancellationToken);
 	}
@@ -236,6 +238,8 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 				Date = r.Date,
 				TaxAmount = r.TaxAmount,
 				TaxAmountCurrency = r.TaxAmountCurrency,
+				PaidFromEnvelopeId = r.PaidFromEnvelopeId,
+				OccasionId = r.OccasionId,
 				DeletedAt = r.DeletedAt
 			})
 			.Skip(offset)
@@ -254,6 +258,8 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 	public async Task<List<ReceiptEntity>> CreateAsync(List<ReceiptEntity> entities, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await ItemEnvelopeWriter.RequireChoicesAsync(context, entities.Select(e => e.PaidFromEnvelopeId),
+			entities.Select(e => e.OccasionId), cancellationToken);
 		context.Receipts.AddRange(entities);
 		await context.SaveChangesAsync(cancellationToken);
 		return entities;
@@ -275,6 +281,16 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			existingEntity.Date = entity.Date;
 			existingEntity.TaxAmount = entity.TaxAmount;
 			existingEntity.TaxAmountCurrency = entity.TaxAmountCurrency;
+			// Omitted choices keep the stored ones; a new choice applies to the receipt's items.
+			Guid? previousPaidFrom = existingEntity.PaidFromEnvelopeId;
+			Guid? previousOccasion = existingEntity.OccasionId;
+			existingEntity.PaidFromEnvelopeId = entity.PaidFromEnvelopeId ?? previousPaidFrom;
+			existingEntity.OccasionId = entity.OccasionId ?? previousOccasion;
+			// Only new choices must be selectable; keeping an archived envelope or occasion is allowed.
+			await ItemEnvelopeWriter.RequireChoicesAsync(context,
+				[existingEntity.PaidFromEnvelopeId != previousPaidFrom ? existingEntity.PaidFromEnvelopeId : null],
+				[existingEntity.OccasionId != previousOccasion ? existingEntity.OccasionId : null], cancellationToken);
+			await ItemEnvelopeWriter.AfterReceiptChoiceChangeAsync(context, existingEntity, previousPaidFrom, previousOccasion, cancellationToken);
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

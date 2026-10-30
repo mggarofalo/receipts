@@ -16,7 +16,7 @@ const budgetDependentYnabQueryKeys = [
   ["ynab", "accounts"],
   ["ynab", "account-mappings"],
   ["ynab", "categories"],
-  ["ynab", "category-mappings"],
+  ["ynab", "envelope-mappings"],
   ["ynab", "stale-mappings"],
   ["ynab", "split-comparison"],
   ["ynab", "receipt-sync-statuses"],
@@ -299,38 +299,20 @@ export function useYnabCategories(enabled = true, budgetId?: string | null) {
   );
 }
 
-export function useDistinctReceiptItemCategories(enabled = true) {
-  const query = useQuery({
-    ...localErrorPolicy.query,
-    queryKey: ["receipt-items", "distinct-categories"],
-    queryFn: async ({ signal }) => {
-      const { data, error } = await client.GET(
-        "/api/receipt-items/distinct-categories",
-        { ...localErrorPolicy.request, signal },
-      );
-      if (error) throw error;
-      return data;
-    },
-    enabled,
-  });
-  const base = useStableQuery(query);
-  return useMemo(
-    () => ({ ...base, categories: query.data?.categories ?? [] }),
-    [base, query.data],
-  );
-}
+export type YnabEnvelopeMapping =
+  components["schemas"]["YnabEnvelopeMappingResponse"];
 
-export function useYnabCategoryMappings(
+export function useYnabEnvelopeMappings(
   enabled = true,
   budgetId?: string | null,
 ) {
   const query = useQuery({
     ...localErrorPolicy.query,
     queryKey: budgetId
-      ? ["ynab", "category-mappings", budgetId]
-      : ["ynab", "category-mappings"],
+      ? ["ynab", "envelope-mappings", budgetId]
+      : ["ynab", "envelope-mappings"],
     queryFn: async ({ signal }) => {
-      const { data, error } = await client.GET("/api/ynab/category-mappings", {
+      const { data, error } = await client.GET("/api/ynab/envelope-mappings", {
         ...localErrorPolicy.request,
         signal,
       });
@@ -346,18 +328,18 @@ export function useYnabCategoryMappings(
   );
 }
 
-export function useUnmappedCategories(
+export function useUnmappedEnvelopes(
   enabled = true,
   budgetId?: string | null,
 ) {
   const query = useQuery({
     ...localErrorPolicy.query,
     queryKey: budgetId
-      ? ["ynab", "category-mappings", "unmapped", budgetId]
-      : ["ynab", "category-mappings", "unmapped"],
+      ? ["ynab", "envelope-mappings", "unmapped", budgetId]
+      : ["ynab", "envelope-mappings", "unmapped"],
     queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
-        "/api/ynab/category-mappings/unmapped",
+        "/api/ynab/envelope-mappings/unmapped",
         { ...localErrorPolicy.request, signal },
       );
       if (error) throw error;
@@ -367,63 +349,56 @@ export function useUnmappedCategories(
   });
   const base = useStableQuery(query);
   return useMemo(
-    () => ({
-      ...base,
-      unmappedCategories: query.data?.unmappedCategories ?? [],
-    }),
+    () => ({ ...base, unmappedEnvelopes: query.data?.data ?? [] }),
     [base, query.data],
   );
 }
 
-export function useCreateYnabCategoryMapping() {
+export function useSetYnabEnvelopeMapping() {
   const repairOnSettled = useYnabSettlementRepair(ynabMappingChanges);
   return useSessionMutation({
     ...toastErrorPolicy.mutation,
-    mutationFn: async (body: {
-      receiptsCategory: string;
-      receiptsCategoryId: string;
+    mutationFn: async ({
+      envelopeId,
+      ...body
+    }: {
+      envelopeId: string;
       ynabCategoryId: string;
       ynabCategoryName: string;
       ynabCategoryGroupName: string;
       ynabBudgetId: string;
     }) => {
-      const { data, error } = await client.POST("/api/ynab/category-mappings", {
-        ...toastErrorPolicy.request,
-        body,
-      });
+      const { data, error } = await client.PUT(
+        "/api/ynab/envelope-mappings/{envelopeId}",
+        {
+          ...toastErrorPolicy.request,
+          params: { path: { envelopeId } },
+          body,
+        },
+      );
       if (error) throw error;
       return data;
     },
     onSuccess: () => {
-      toast.success("Category mapping created");
+      toast.success("Envelope linked to YNAB");
     },
     onSettled: repairOnSettled,
   });
 }
 
-export function useUpdateYnabCategoryMapping() {
+export function useDeleteYnabEnvelopeMapping() {
   const repairOnSettled = useYnabSettlementRepair(ynabMappingChanges);
   return useSessionMutation({
     ...toastErrorPolicy.mutation,
-    mutationFn: async ({
-      id,
-      ...body
-    }: {
-      id: string;
-      ynabCategoryId: string;
-      ynabCategoryName: string;
-      ynabCategoryGroupName: string;
-      ynabBudgetId: string;
-    }) => {
-      const { error } = await client.PUT("/api/ynab/category-mappings/{id}", {
-        ...toastErrorPolicy.request,
-        params: { path: { id } },
-        body,
-      });
+    mutationFn: async (envelopeId: string) => {
+      const { error } = await client.DELETE(
+        "/api/ynab/envelope-mappings/{envelopeId}",
+        { ...toastErrorPolicy.request, params: { path: { envelopeId } } },
+      );
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Category mapping updated");
+      toast.success("Envelope unlinked from YNAB");
     },
     onSettled: repairOnSettled,
   });
@@ -476,24 +451,6 @@ export function useClearStaleMappings() {
         (data?.deletedAccountMappings ?? 0) +
         (data?.deletedCategoryMappings ?? 0);
       toast.success(`Cleared ${total} stale mapping(s)`);
-    },
-    onSettled: repairOnSettled,
-  });
-}
-
-export function useDeleteYnabCategoryMapping() {
-  const repairOnSettled = useYnabSettlementRepair(ynabMappingChanges);
-  return useSessionMutation({
-    ...toastErrorPolicy.mutation,
-    mutationFn: async (id: string) => {
-      const { error } = await client.DELETE(
-        "/api/ynab/category-mappings/{id}",
-        { ...toastErrorPolicy.request, params: { path: { id } } },
-      );
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Category mapping deleted");
     },
     onSettled: repairOnSettled,
   });
@@ -753,7 +710,7 @@ export function useBulkPushYnabTransactions() {
         new Set(results.flatMap((r) => r.result.unmappedCategories ?? [])),
       );
       const unmappedSuffix = unmapped.length
-        ? ` Unmapped categories: ${unmapped.join(", ")}. Map them in YNAB Settings.`
+        ? ` Unmapped envelopes: ${unmapped.join(", ")}. Link their envelopes in YNAB Settings.`
         : "";
 
       if (needsReview > 0) {

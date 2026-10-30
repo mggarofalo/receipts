@@ -7,7 +7,7 @@ namespace Application.Commands.Ynab.StaleMappings;
 public class ClearStaleMappingsCommandHandler(
 	IYnabBudgetSelectionService budgetSelectionService,
 	IYnabAccountMappingService accountMappingService,
-	IYnabCategoryMappingService categoryMappingService) : IRequestHandler<ClearStaleMappingsCommand, ClearStaleMappingsResult>
+	IYnabEnvelopeMappingService envelopeMappingService) : IRequestHandler<ClearStaleMappingsCommand, ClearStaleMappingsResult>
 {
 	public async ValueTask<ClearStaleMappingsResult> Handle(ClearStaleMappingsCommand request, CancellationToken cancellationToken)
 	{
@@ -19,7 +19,7 @@ public class ClearStaleMappingsCommandHandler(
 		}
 
 		int deletedAccounts = await accountMappingService.DeleteStaleMappingsAsync(currentBudgetId, cancellationToken);
-		int deletedCategories = await categoryMappingService.DeleteStaleMappingsAsync(currentBudgetId, cancellationToken);
+		int deletedCategories = await envelopeMappingService.DeleteStaleMappingsAsync(currentBudgetId, cancellationToken);
 
 		return new ClearStaleMappingsResult(deletedAccounts, deletedCategories);
 	}

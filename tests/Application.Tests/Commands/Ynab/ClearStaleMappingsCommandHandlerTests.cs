@@ -10,7 +10,7 @@ public class ClearStaleMappingsCommandHandlerTests
 {
 	private readonly Mock<IYnabBudgetSelectionService> _budgetSelectionMock = new();
 	private readonly Mock<IYnabAccountMappingService> _accountMappingMock = new();
-	private readonly Mock<IYnabCategoryMappingService> _categoryMappingMock = new();
+	private readonly Mock<IYnabEnvelopeMappingService> _envelopeMappingMock = new();
 	private readonly ClearStaleMappingsCommandHandler _handler;
 
 	public ClearStaleMappingsCommandHandlerTests()
@@ -18,7 +18,7 @@ public class ClearStaleMappingsCommandHandlerTests
 		_handler = new ClearStaleMappingsCommandHandler(
 			_budgetSelectionMock.Object,
 			_accountMappingMock.Object,
-			_categoryMappingMock.Object);
+			_envelopeMappingMock.Object);
 	}
 
 	[Fact]
@@ -30,7 +30,7 @@ public class ClearStaleMappingsCommandHandlerTests
 			.ReturnsAsync(budgetId);
 		_accountMappingMock.Setup(s => s.DeleteStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(2);
-		_categoryMappingMock.Setup(s => s.DeleteStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
+		_envelopeMappingMock.Setup(s => s.DeleteStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(4);
 
 		// Act
@@ -55,7 +55,7 @@ public class ClearStaleMappingsCommandHandlerTests
 		result.DeletedAccountMappings.Should().Be(0);
 		result.DeletedCategoryMappings.Should().Be(0);
 		_accountMappingMock.Verify(s => s.DeleteStaleMappingsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
-		_categoryMappingMock.Verify(s => s.DeleteStaleMappingsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+		_envelopeMappingMock.Verify(s => s.DeleteStaleMappingsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
@@ -83,7 +83,7 @@ public class ClearStaleMappingsCommandHandlerTests
 			.ReturnsAsync(budgetId);
 		_accountMappingMock.Setup(s => s.DeleteStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
-		_categoryMappingMock.Setup(s => s.DeleteStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
+		_envelopeMappingMock.Setup(s => s.DeleteStaleMappingsAsync(budgetId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(0);
 
 		// Act

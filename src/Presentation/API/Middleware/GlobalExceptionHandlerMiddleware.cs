@@ -57,6 +57,14 @@ public class GlobalExceptionHandlerMiddleware(
 		{
 			case Application.Taxonomy.TaxonomyException taxonomy:
 				return new ProblemDetails { Status = taxonomy.Status, Title = taxonomy.Status switch { 400 => "Bad Request", 404 => "Not Found", _ => "Conflict" }, Detail = taxonomy.Message };
+			case Application.Envelopes.EnvelopeException envelope:
+				return new ProblemDetails
+				{
+					Status = envelope.Status,
+					Title = envelope.Status switch { 400 => "Bad Request", 404 => "Not Found", _ => "Conflict" },
+					Detail = envelope.Message,
+					Extensions = new Dictionary<string, object?>(envelope.Extensions),
+				};
 			case NormalizationCatalogException normalization:
 				return new ProblemDetails
 				{

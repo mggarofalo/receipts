@@ -126,6 +126,9 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			Subcategory = ri.Subcategory,
 			NormalizedDescriptionId = ri.NormalizedDescriptionId,
 			NormalizedDescriptionMatchScore = ri.NormalizedDescriptionMatchScore,
+			EnvelopeId = ri.EnvelopeId,
+			EnvelopeSource = ri.EnvelopeSource,
+			OccasionId = ri.OccasionId,
 
 			// A correlated subquery rather than a navigation access. The queries above run under
 			// IgnoreAutoIncludes, which leaves ri.NormalizedDescription unpopulated — reading it
@@ -239,6 +242,9 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 				TotalAmountCurrency = ri.TotalAmountCurrency,
 				Category = ri.Category,
 				Subcategory = ri.Subcategory,
+				EnvelopeId = ri.EnvelopeId,
+				EnvelopeSource = ri.EnvelopeSource,
+				OccasionId = ri.OccasionId,
 				DeletedAt = ri.DeletedAt
 			})
 			.Skip(offset)
@@ -292,7 +298,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			if (clientRequestId is Guid requestId)
 			{
 				request = await Infrastructure.Services.ReceiptWriteIdempotency.FindOrCreateAsync(context, requestId, "item-create",
-					new { ReceiptId = entities[0].ReceiptId, templates = templateIds, items = entities.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.UnitPriceCurrency, value.TotalAmountCurrency, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification }) }, cancellationToken);
+					new { ReceiptId = entities[0].ReceiptId, templates = templateIds, items = entities.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.UnitPriceCurrency, value.TotalAmountCurrency, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification, value.EnvelopeOverrideId, value.OccasionId }) }, cancellationToken);
 				if (request.ReceiptId != Guid.Empty)
 				{
 					var saved = await context.ReceiptItems.Where(value => request.ItemIds.Contains(value.Id)).ToListAsync(cancellationToken);
@@ -338,6 +344,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 
 			// Stale/unknown/deleted/unlinked hints are convenience fallbacks. Even repeated
 			// concurrent relinking must not prevent the receipt itself from being saved.
+			await ItemEnvelopeWriter.PrepareNewItemsAsync(context, entities, null, cancellationToken);
 			context.ReceiptItems.AddRange(entities);
 			if (request is not null) { request.ReceiptId = entities[0].ReceiptId; request.ItemIds = entities.Select(value => value.Id).ToArray(); }
 			await context.SaveChangesAsync(cancellationToken);
@@ -387,7 +394,9 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 					value.Category,
 					value.Subcategory,
 					value.NormalizationIntent,
-					value.Classification
+					value.Classification,
+					value.EnvelopeOverrideId,
+					value.OccasionId
 				}), cancellationToken);
 			if (request.ReceiptId != Guid.Empty) { return; }
 			request.ReceiptId = entities[0].ReceiptId;
@@ -425,6 +434,8 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			existingEntity.Category = entity.Category;
 			existingEntity.Subcategory = entity.Subcategory;
 		}
+		await ItemEnvelopeWriter.ApplyEditsAsync(context,
+			entities.Select(entity => (entity, existingEntities.Single(e => e.Id == entity.Id))).ToList(), cancellationToken);
 
 		await context.SaveChangesAsync(cancellationToken);
 		await ClassificationService.ApplyAggregateAsync(context, entities, classificationOptions?.Value.WritesEnabled == true, cancellationToken);

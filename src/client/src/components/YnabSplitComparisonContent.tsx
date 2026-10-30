@@ -172,7 +172,7 @@ function UnavailableState({
       {isUnmapped && (
         <Alert variant="destructive">
           <AlertDescription>
-            Unmapped categories: {unmapped.join(", ")}. Map them in{" "}
+            Unmapped envelopes: {unmapped.join(", ")}. Link them in{" "}
             <Link to="/settings/ynab" className="underline">
               YNAB Settings
             </Link>

@@ -2,7 +2,7 @@ using API.Filters;
 using API.Generated.Dtos;
 using API.Mapping.Core;
 using Application.Commands.Ynab.AccountMapping;
-using Application.Commands.Ynab.CategoryMapping;
+using Application.Commands.Ynab.EnvelopeMapping;
 using Application.Commands.Ynab.MemoSync;
 using Application.Commands.Ynab.PushTransactions;
 using Application.Commands.Ynab.SelectBudget;
@@ -26,7 +26,7 @@ namespace API.Controllers;
 [ApiController]
 [Route("api/ynab")]
 [Authorize]
-public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnabBudgetSelectionService budgetSelectionService, YnabMapper mapper, ILogger<YnabController> logger) : ControllerBase
+public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnabBudgetSelectionService budgetSelectionService, YnabMapper mapper, EnvelopeMapper envelopeMapper, ILogger<YnabController> logger) : ControllerBase
 {
 	[HttpGet("connection-status")]
 	[EndpointSummary("Get YNAB connection status")]
@@ -274,38 +274,42 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		return TypedResults.NoContent();
 	}
 
-	[HttpGet("category-mappings")]
-	[EndpointSummary("List all category mappings")]
-	[EndpointDescription("Returns receipts-to-YNAB category mappings for the selected budget.")]
-	public async Task<Ok<YnabCategoryMappingListResponse>> GetCategoryMappings(CancellationToken cancellationToken)
+	[HttpGet("envelope-mappings")]
+	[EndpointSummary("List envelope YNAB category links")]
+	[EndpointDescription("Returns envelope-to-YNAB-category links for the selected budget.")]
+	public async Task<Ok<YnabEnvelopeMappingListResponse>> GetEnvelopeMappings(CancellationToken cancellationToken)
 	{
-		List<YnabCategoryMappingDto> mappings = await mediator.Send(new GetAllYnabCategoryMappingsQuery(), cancellationToken);
-		return TypedResults.Ok(mapper.ToCategoryMappingListResponse(mappings));
+		List<YnabEnvelopeMappingDto> mappings = await mediator.Send(new GetYnabEnvelopeMappingsQuery(), cancellationToken);
+		return TypedResults.Ok(mapper.ToEnvelopeMappingListResponse(mappings));
 	}
 
-	[HttpPost("category-mappings")]
-	[EndpointSummary("Create a category mapping")]
-	[EndpointDescription("Creates a new mapping from a receipts category to a YNAB category.")]
-	public async Task<Results<Created<YnabCategoryMappingResponse>, ConflictProblem, BadRequestProblem>> CreateCategoryMapping(
-		[FromBody] CreateYnabCategoryMappingRequest request,
+	[HttpGet("envelope-mappings/unmapped")]
+	[EndpointSummary("List envelopes without a YNAB category")]
+	[EndpointDescription("Returns active envelopes, and any envelope live purchases use, that have no YNAB category in the selected budget. Pushing an item in such an envelope is rejected.")]
+	public async Task<Ok<EnvelopeListResponse>> GetUnmappedEnvelopes(CancellationToken cancellationToken)
+	{
+		List<Domain.Envelopes.Envelope> envelopes = await mediator.Send(new GetUnmappedEnvelopesQuery(), cancellationToken);
+		return TypedResults.Ok(new EnvelopeListResponse { Data = envelopes.Select(envelopeMapper.ToResponse).ToList() });
+	}
+
+	[HttpPut("envelope-mappings/{envelopeId}")]
+	[EndpointSummary("Link an envelope to a YNAB category")]
+	[EndpointDescription("Creates or replaces the envelope's YNAB category in the selected budget.")]
+	public async Task<Results<Ok<YnabEnvelopeMappingResponse>, BadRequestProblem, NotFoundProblem>> SetEnvelopeMapping(
+		[FromRoute] Guid envelopeId,
+		[FromBody] SetYnabEnvelopeMappingRequest request,
 		CancellationToken cancellationToken)
 	{
 		try
 		{
-			YnabCategoryMappingDto mapping = await mediator.Send(new CreateYnabCategoryMappingCommand(
-				request.ReceiptsCategory,
-				request.YnabCategoryId,
-				request.YnabCategoryName,
-				request.YnabCategoryGroupName,
-				request.YnabBudgetId.ToString("D"),
-				request.ReceiptsCategoryId), cancellationToken);
-
-			YnabCategoryMappingResponse response = mapper.ToCategoryMappingResponse(mapping);
-			return TypedResults.Created($"/api/ynab/category-mappings/{mapping.Id}", response);
+			YnabEnvelopeMappingDto mapping = await mediator.Send(new SetYnabEnvelopeMappingCommand(envelopeId,
+				request.YnabBudgetId.ToString("D"), request.YnabCategoryId, request.YnabCategoryName,
+				request.YnabCategoryGroupName), cancellationToken);
+			return TypedResults.Ok(mapper.ToEnvelopeMappingResponse(mapping));
 		}
-		catch (DuplicateEntityException ex)
+		catch (KeyNotFoundException)
 		{
-			return ApiProblem.Conflict(ex.Message);
+			return ApiProblem.NotFound($"Envelope {envelopeId} not found");
 		}
 		catch (ArgumentException ex)
 		{
@@ -313,61 +317,12 @@ public class YnabController(IMediator mediator, IYnabApiClient ynabClient, IYnab
 		}
 	}
 
-	[HttpPut("category-mappings/{id}")]
-	[EndpointSummary("Update a category mapping")]
-	[EndpointDescription("Updates the YNAB category for an existing mapping.")]
-	public async Task<Results<NoContent, NotFound, BadRequestProblem>> UpdateCategoryMapping(
-		[FromRoute] Guid id,
-		[FromBody] UpdateYnabCategoryMappingRequest request,
-		CancellationToken cancellationToken)
+	[HttpDelete("envelope-mappings/{envelopeId}")]
+	[EndpointSummary("Unlink an envelope from YNAB")]
+	public async Task<Results<NoContent, NotFound>> DeleteEnvelopeMapping([FromRoute] Guid envelopeId, CancellationToken cancellationToken)
 	{
-		YnabCategoryMappingDto? existing = await mediator.Send(new GetYnabCategoryMappingByIdQuery(id), cancellationToken);
-		string? selectedBudgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
-		if (existing is null || !string.Equals(existing.YnabBudgetId, selectedBudgetId, StringComparison.Ordinal))
-		{
-			return TypedResults.NotFound();
-		}
-
-		try
-		{
-			await mediator.Send(new UpdateYnabCategoryMappingCommand(
-				id,
-				request.YnabCategoryId,
-				request.YnabCategoryName,
-				request.YnabCategoryGroupName,
-				request.YnabBudgetId.ToString("D")), cancellationToken);
-		}
-		catch (ArgumentException ex)
-		{
-			return ApiProblem.BadRequest(ex.Message);
-		}
-
-		return TypedResults.NoContent();
-	}
-
-	[HttpDelete("category-mappings/{id}")]
-	[EndpointSummary("Delete a category mapping")]
-	[EndpointDescription("Permanently deletes a category mapping.")]
-	public async Task<Results<NoContent, NotFound>> DeleteCategoryMapping([FromRoute] Guid id, CancellationToken cancellationToken)
-	{
-		YnabCategoryMappingDto? existing = await mediator.Send(new GetYnabCategoryMappingByIdQuery(id), cancellationToken);
-		string? selectedBudgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
-		if (existing is null || !string.Equals(existing.YnabBudgetId, selectedBudgetId, StringComparison.Ordinal))
-		{
-			return TypedResults.NotFound();
-		}
-
-		await mediator.Send(new DeleteYnabCategoryMappingCommand(id), cancellationToken);
-		return TypedResults.NoContent();
-	}
-
-	[HttpGet("category-mappings/unmapped")]
-	[EndpointSummary("Get unmapped receipt categories")]
-	[EndpointDescription("Returns receipts categories that do not yet have a YNAB category mapping.")]
-	public async Task<Ok<UnmappedCategoriesResponse>> GetUnmappedCategories(CancellationToken cancellationToken)
-	{
-		List<string> unmapped = await mediator.Send(new GetUnmappedCategoriesQuery(), cancellationToken);
-		return TypedResults.Ok(new UnmappedCategoriesResponse { UnmappedCategories = unmapped.ToList() });
+		bool deleted = await mediator.Send(new DeleteYnabEnvelopeMappingCommand(envelopeId), cancellationToken);
+		return deleted ? TypedResults.NoContent() : TypedResults.NotFound();
 	}
 
 	[HttpGet("stale-mappings")]

@@ -45,8 +45,10 @@ public class CompleteReceiptWriter(
 				receipt.Location,
 				receipt.Date,
 				receipt.TaxAmount,
+				receipt.PaidFromEnvelopeId,
+				receipt.OccasionId,
 				transactions = transactions.Select(value => new { value.CardId, value.Amount, value.Date }),
-				items = items.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification }),
+				items = items.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification, value.EnvelopeOverrideId, value.OccasionId }),
 				adjustments = adjustments.Select(value => new { value.Type, value.Amount, value.Description })
 			}, cancellationToken);
 			if (request.ReceiptId != Guid.Empty)
@@ -97,6 +99,9 @@ public class CompleteReceiptWriter(
 			request.ReceiptId = receiptEntity.Id;
 			request.ItemIds = itemEntities.Select(item => item.Id).ToArray();
 		}
+
+		await ItemEnvelopeWriter.RequireChoicesAsync(context, [receiptEntity.PaidFromEnvelopeId], [receiptEntity.OccasionId], cancellationToken);
+		await ItemEnvelopeWriter.PrepareNewItemsAsync(context, itemEntities, receiptEntity, cancellationToken);
 
 		// Add all to context and persist in a single SaveChangesAsync (implicit transaction)
 		context.Set<ReceiptEntity>().Add(receiptEntity);

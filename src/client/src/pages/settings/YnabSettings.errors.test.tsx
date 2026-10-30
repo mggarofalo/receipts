@@ -52,17 +52,13 @@ const server = setupServer(
     "ynab/accounts",
     "ynab/account-mappings",
     "ynab/categories",
-    "ynab/category-mappings",
   ].map((path) =>
     http.get(`*/api/${path}`, () =>
       HttpResponse.json({ data: [], total: 0, offset: 0, limit: 500 }),
     ),
   ),
-  http.get("*/api/receipt-items/distinct-categories", () =>
-    HttpResponse.json({ categories: [] }),
-  ),
-  http.get("*/api/ynab/category-mappings/unmapped", () =>
-    HttpResponse.json({ categories: [] }),
+  ...["envelopes", "ynab/envelope-mappings", "ynab/envelope-mappings/unmapped"].map(
+    (path) => http.get(`*/api/${path}`, () => HttpResponse.json({ data: [] })),
   ),
   http.get("*/api/ynab/rate-limit-status", () =>
     HttpResponse.json({ requestsUsed: 0, requestsRemaining: 200 }),
