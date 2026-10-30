@@ -12,6 +12,7 @@ import { createAppQueryClient } from "@/lib/query-client";
 import { clearTokens, setTokens } from "@/lib/auth";
 import { LineItemsSection } from "./LineItemsSection";
 import "@/test/setup-combobox-polyfills";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 function deferred() {
   let resolve!: () => void;
@@ -123,7 +124,7 @@ async function prepare() {
   );
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-  await user.click(await screen.findByRole("option", { name: "Food" }));
+  await chooseCategoryOption(user, "Food");
   const description = screen.getByPlaceholderText("Item description");
   await user.type(description, "Manual milk");
   await waitFor(() => expect(requestStarted).toBe(true)); // The real debounced request is already pending.

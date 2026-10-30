@@ -143,6 +143,7 @@ for (const width of [1280, 900, 375, 320]) {
       await page.getByPlaceholder("MM/DD/YYYY").first().fill("10/23/2026");
       await page.getByPlaceholder("Item description").fill("MILK");
       await page.getByRole("combobox", { name: /^Category/ }).click();
+      await page.getByPlaceholder("Search category paths…").fill("Food Dairy");
       await page
         .getByRole("option", { name: "Food / Dairy", exact: true })
         .click();

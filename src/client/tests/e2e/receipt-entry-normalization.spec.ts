@@ -120,6 +120,7 @@ test("creates a product and purchase in one receipt save, preserving the draft a
   await page.getByPlaceholder("MM/DD/YYYY").first().fill("10/23/2026");
   await page.getByPlaceholder("Item description").fill("MILK");
   await page.getByRole("combobox", { name: /^Category/ }).click();
+  await page.getByPlaceholder("Search category paths…").fill("Food Dairy");
   await page.getByRole("option", { name: "Food / Dairy", exact: true }).click();
   await page.getByLabel("Unit Price", { exact: false }).fill("5");
   await page
@@ -389,6 +390,7 @@ for (const selection of ["click", "keyboard"] as const) {
     await expect(page.getByRole("dialog", { name: "Choose a product" })).toHaveCount(0);
     await expect(page.getByText(/Selected for this purchase:/)).toContainText(product.canonicalName);
     await page.getByRole("combobox", { name: /^Category/ }).click();
+    await page.getByPlaceholder("Search category paths…").fill("Food Dairy");
     await page.getByRole("option", { name: "Food / Dairy", exact: true }).click();
     await page.getByLabel("Unit Price", { exact: false }).fill("5");
     await page.getByRole("button", { name: "Add Item", exact: true }).click();

@@ -92,6 +92,10 @@ import {
   useItemDescriptions,
   useItemCostOverTime,
 } from "@/hooks/useItemCostOverTime";
+import {
+  chooseCategoryOption,
+  findCategoryOption,
+} from "@/test/category-picker";
 const mockDescriptionsHook = vi.mocked(useItemDescriptions);
 const mockCostHook = vi.mocked(useItemCostOverTime);
 
@@ -230,7 +234,7 @@ describe("ItemCostOverTime", () => {
     expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("combobox", { name: "Category path" }));
-    await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
+    await chooseCategoryOption(user, "Food / Dairy");
 
     expect(screen.getByText("Category: Food / Dairy")).toBeInTheDocument();
     expect(
@@ -252,9 +256,17 @@ describe("ItemCostOverTime", () => {
     expect(
       screen.queryByRole("option", { name: "Unclassified" }),
     ).not.toBeInTheDocument();
+    expect(await findCategoryOption(user, "Food / Dairy")).toBeInTheDocument();
+    await user.clear(
+      screen.getByRole("combobox", { name: "Search category paths" }),
+    );
+    await user.type(
+      screen.getByRole("combobox", { name: "Search category paths" }),
+      "Unclassified",
+    );
     expect(
-      screen.getByRole("option", { name: "Food / Dairy" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("option", { name: "Unclassified" }),
+    ).not.toBeInTheDocument();
   });
 
   it("changes granularity via button click", async () => {
@@ -404,7 +416,7 @@ describe("ItemCostOverTime", () => {
       ).toBeInTheDocument();
 
       await user.click(screen.getByRole("combobox", { name: "Category path" }));
-      await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
+      await chooseCategoryOption(user, "Food / Dairy");
 
       expect(
         screen.queryByRole("heading", { name: /^normalized:/i }),

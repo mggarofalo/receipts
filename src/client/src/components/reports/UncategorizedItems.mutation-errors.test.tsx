@@ -11,6 +11,7 @@ import { clearTokens, setTokens } from "@/lib/auth";
 import UncategorizedItems from "./UncategorizedItems";
 import "@/test/setup-combobox-polyfills";
 import { taxonomyFixture } from "@/test/taxonomy-fixture";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 const items = [
@@ -102,7 +103,7 @@ it.each([true, false])(
         name: "Category for selected items",
       }),
     );
-    await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
+    await chooseCategoryOption(user, "Food / Dairy");
     await user.click(screen.getByRole("button", { name: "Apply to Selected" }));
     await waitFor(() => expect(writes).toHaveLength(2));
     expect(writes).toEqual(

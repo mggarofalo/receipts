@@ -84,7 +84,13 @@ for (const width of [1280, 375]) {
     );
     expect(posted[0].changes[0].parentId).toBeNull();
     await page.getByRole("combobox", { name: /^Category/ }).click();
+    // Pantry is a leaf, so the picker opens beside it at the root level and
+    // offers that level as the parent; nest beneath Pantry explicitly.
     await page.getByRole("button", { name: "Create category" }).click();
+    await expect(page.getByLabel("Parent")).toHaveValue("");
+    await page
+      .getByLabel("Parent")
+      .selectOption(posted[0].changes[0].categoryId);
     await expect(page.getByLabel("Parent")).toHaveValue(
       posted[0].changes[0].categoryId,
     );
@@ -138,6 +144,7 @@ for (const width of [1280, 375]) {
     await signInAs(page, FIXTURE_USER);
     await page.goto("/receipts/new", { waitUntil: "domcontentloaded" });
     await page.getByRole("combobox", { name: /^Category/ }).click();
+    await page.getByPlaceholder("Search category paths…").fill("Food Dairy");
     await expect(
       page.getByRole("button", { name: "Create category" }),
     ).toHaveCount(0);

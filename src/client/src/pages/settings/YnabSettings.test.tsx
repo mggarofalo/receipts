@@ -11,6 +11,7 @@ beforeAll(() => {
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import YnabSettings from "./YnabSettings";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 const taxonomy = {
   id: "revision-1",
@@ -545,7 +546,7 @@ describe("YnabSettings – Category Mapping", () => {
     await user.click(
       screen.getByRole("combobox", { name: "Receipt category" }),
     );
-    await user.click(screen.getByRole("option", { name: "Food / Groceries" }));
+    await chooseCategoryOption(user, "Food / Groceries");
     expect(screen.getByText("Unmapped")).toBeInTheDocument();
     await user.click(screen.getByRole("combobox", { name: "YNAB category" }));
     await user.click(screen.getByRole("option", { name: "Food" }));

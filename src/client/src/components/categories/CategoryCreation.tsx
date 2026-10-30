@@ -20,11 +20,14 @@ type Request = components["schemas"]["TaxonomyChangeRequest"];
 export function CategoryCreation({
   revision,
   suggestedParentId,
+  initialName = "",
   onCreated,
   onCancel,
 }: {
   revision: CategoryRevision;
   suggestedParentId: string | null;
+  /** What the person was searching for when nothing matched. */
+  initialName?: string;
   onCreated: (choice: CategoryChoice) => void;
   onCancel: () => void;
 }) {
@@ -35,7 +38,7 @@ export function CategoryCreation({
   }, []);
   const [latest, setLatest] = useState(revision);
   const [parentId, setParentId] = useState(suggestedParentId ?? "");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [request, setRequest] = useState<Request>();
   const [review, setReview] = useState(false);
   const [refreshing, setRefreshing] = useState(false);

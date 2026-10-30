@@ -26,6 +26,7 @@ import { useReceipt } from "@/hooks/useReceipts";
 import { Combobox } from "@/components/ui/combobox";
 import type { ComponentProps } from "react";
 import type { ReceiptPicker } from "./ReceiptPicker";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 const templateFixture = vi.hoisted(() => ({ unitPrice: 3.99 }));
 
@@ -781,7 +782,7 @@ describe("classification submissions", () => {
         />,
       );
       await user.click(screen.getByRole("combobox", { name: /Category/ }));
-      await user.click(screen.getByRole("option", { name: label }));
+      await chooseCategoryOption(user, label);
       await user.click(screen.getByRole("button", { name: "Update Item" }));
       await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
       const first = submit.mock.calls[0][0];

@@ -84,8 +84,17 @@ for (const width of [1280, 375]) {
     });
     await picker.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByPlaceholder("Search category paths…")).toBeFocused();
-    await page.getByPlaceholder("Search category paths…").fill("Food");
+    const search = page.getByPlaceholder("Search category paths…");
+    if (width === 375) {
+      // The phone sheet browses first; the keyboard opens only on request.
+      await expect(
+        page.getByRole("dialog", { name: "Choose category" }),
+      ).toBeVisible();
+      await expect(search).not.toBeFocused();
+      await search.focus();
+    }
+    await expect(search).toBeFocused();
+    await search.fill("Food");
     await expect(
       page.getByRole("option", { name: /Food \/ Dairy/ }),
     ).toBeVisible();

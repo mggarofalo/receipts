@@ -109,7 +109,6 @@ for (const width of [1280, 375]) {
     await picker.focus();
     await page.keyboard.press("Enter");
     await page.getByPlaceholder("Search category paths…").fill("Dairy");
-    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     const dialog = page.getByRole("dialog", {
       name: "Remember category",

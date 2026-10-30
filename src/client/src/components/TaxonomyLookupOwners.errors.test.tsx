@@ -16,6 +16,7 @@ import { clearTokens, setTokens } from "@/lib/auth";
 import { clearServerErrorPageFlag } from "@/lib/server-error-bus";
 import { taxonomyFixture } from "@/test/taxonomy-fixture";
 import "@/test/setup-combobox-polyfills";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 let taxonomyFailure: boolean;
 let taxonomyReads: number;
@@ -138,7 +139,7 @@ it("keeps report selection and restores nested category choices after taxonomy r
   });
   expect(picker).toBeEnabled();
   await user.click(picker);
-  await user.click(screen.getByRole("option", { name: "Food / Dairy" }));
+  await chooseCategoryOption(user, "Food / Dairy");
   expect(picker).toHaveAttribute("title", "Food / Dairy");
   expect(picker).toHaveTextContent("Dairy");
   expect(picker).toHaveTextContent("Food");

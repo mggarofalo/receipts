@@ -21,6 +21,7 @@ import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
 import { useSimilarItems } from "@/hooks/useSimilarItems";
 import { LineItemsSection, type ReceiptLineItem } from "./LineItemsSection";
+import { chooseCategoryOption } from "@/test/category-picker";
 
 vi.mock("@/hooks/useReceiptNormalizationPreview", () => ({
   useReceiptNormalizationPreview: () => ({
@@ -292,7 +293,7 @@ describe("LineItemsSection", () => {
       "Gasoline",
     );
     await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-    await user.click(screen.getByRole("option", { name: "Food" }));
+    await chooseCategoryOption(user, "Food");
     await user.click(screen.getByLabelText(/^Unit Price/));
     await user.paste("3.459");
     await user.tab();
@@ -526,7 +527,7 @@ it("normalizes equivalent add and edit drafts identically while preserving item 
   await user.type(screen.getByPlaceholderText("Item description"), "  Milk  ");
   await user.type(screen.getByPlaceholderText("e.g. MILK-GAL"), " CODE ");
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-  await user.click(await screen.findByRole("option", { name: "Food" }));
+  await chooseCategoryOption(user, "Food");
   await user.click(screen.getByRole("button", { name: /add item/i }));
   await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
   const added = onChange.mock.calls[0][0][0] as ReceiptLineItem;
@@ -555,7 +556,7 @@ it("retains an explicit nested category identity and operation while editing unr
   );
   await user.type(screen.getByPlaceholderText("Item description"), "Apple");
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-  await user.click(screen.getByRole("option", { name: "Food / Fruit" }));
+  await chooseCategoryOption(user, "Food / Fruit");
   await user.click(screen.getByRole("button", { name: /add item/i }));
   await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
   const added = onChange.mock.calls[0][0][0] as ReceiptLineItem;
@@ -599,7 +600,7 @@ it("selects a product in the optional dialog while retaining the raw receipt des
   );
   expect(screen.queryByRole("dialog", { name: "Choose a product" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
-  await user.click(screen.getByRole("option", { name: "Food" }));
+  await chooseCategoryOption(user, "Food");
   await user.click(screen.getByRole("button", { name: /add item/i }));
   await waitFor(() =>
     expect(onChange).toHaveBeenCalledWith([
