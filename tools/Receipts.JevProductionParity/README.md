@@ -210,3 +210,50 @@ was created. No exception text, receipt data, response body or key is emitted to
 the console. Tests inject synthetic transport, environments and secrets roots and
 make no inference calls. Preparation adds no account/authorization binding to
 the production application and does not authorize automatic classification.
+
+## Round-4 two-stage packets (`owner-labels-v4`)
+
+An evaluation-only request shape, `two-stage-v1`, built in this tool
+(`TwoStageQuestions.cs` holds all wording). Production code is not called or
+changed. A packet holds `policy.private.json`, `cases.private.json`
+(`id`, `description`, nullable `store`) and `taxonomy.private.json` (item roots
+only, placeholder leaves removed), all three bound by `freeze.private.json`.
+`offline-plan` and `live-run` recognise the packet kind; there are no production
+source snapshots to pin.
+
+- **Stage 1:** state `purchase.receiptText` and `purchase.store`; one Choice
+  over the item roots keyed by name, and a "does one of these categories
+  describe it?" Noul.
+- **Stage 2:** one Choice over the leaves of the stage-1 top three roots, keyed
+  `Root / Leaf`, in taxonomy order. Back-off to the root is left to the scorer.
+
+```bash
+dotnet <dll> offline-plan <packet-directory> <repository-root> <new-private-plan.json>
+dotnet <dll> offline-replay-v4 <packet-directory> <exchanges.json> <new-private-replay.json>
+dotnet <dll> live-run <packet-directory> <repository-root> <approval.json> <packet-directory>/live.journal.jsonl <new-output.json> --dry-run
+```
+
+Policy (all fields required; extra fields ignored):
+
+```json
+{"packetKind":"owner-labels-v4","model":"jev-1.14.0","questionPolicy":"two-stage-v1","cases":60,"maximumAttempts":120,"approvedMaximumAttempts":120,"approvedReservationCapNanodollars":350000000,"reservationBasis":"utf8-request-bytes","inputNanodollarsPerToken":42,"headroomInputTokens":65536,"conservativePriorCarryNanodollars":250000000,"cumulativeCeilingNanodollars":5000000000,"liveAuthorized":false}
+```
+
+**Reservation.** Each attempt reserves one input token per UTF-8 byte of its
+exact request, at 42 nanodollars per token (USD 0.042 per million). Byte-level
+tokenizers produce at most one token per byte, and every round-3 request used
+0.41 to 0.57 tokens per byte, including the small single-question ones, so the
+server's own framing did not push usage past the byte count. Because that is an
+empirical bound, not a provider guarantee, the packet also holds back one
+65,536-token attempt as headroom. A reported usage above an attempt's
+reservation stops the run before the next send, so at most one attempt can
+exceed its reservation, and a request over the provider's 64k context is
+rejected. The packet's maximum reservation is every stage-1 request's bytes,
+each case's largest possible stage-2 request, and the headroom. The largest
+stage-2 request uses the three roots whose options take the most bytes: the
+request size is a fixed part plus each chosen root's option bytes. The runner
+refuses a packet whose maximum exceeds `approvedReservationCapNanodollars`, or
+whose carry plus maximum exceeds the ceiling, and an approval must restate the
+same carry and ceiling. Every other live safeguard (pinned model, durable intent
+before each send, no retries, ten-second deadline, key bound to the journal) is
+the shared journalled loop used by round 3.

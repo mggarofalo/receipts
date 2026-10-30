@@ -107,6 +107,12 @@ public static class LiveCommand
 				throw new ArgumentException("Use the single packet journal.");
 			}
 
+			if (OfflineCommand.PacketKindOf(packet) == TwoStagePolicy.PacketKind)
+			{
+				return await RunTwoStageAsync(packet, repository, approvalPath, journalPath, outputPath, dryRun, apiUserSecrets,
+					environment, isWindows);
+			}
+
 			EvaluationPolicy policy = OfflineCommand.ValidateFreeze(packet, repository);
 			string freezeHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(packet, "freeze.private.json")));
 			OfflineCase[] cases = JsonSerializer.Deserialize<OfflineCase[]>(File.ReadAllText(Path.Combine(packet, "cases.private.json")), ProductionParity.JsonOptions)!;
@@ -126,22 +132,13 @@ public static class LiveCommand
 			}
 
 			string approvalHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(approvalPath));
-			void Authorize()
-			{
-				byte[] bytes = File.ReadAllBytes(approvalPath);
-				LiveApproval approval = JsonSerializer.Deserialize<LiveApproval>(bytes, ProductionParity.JsonOptions)!;
-				if (OfflinePairedEvaluation.Hash(bytes) != approvalHash ||
-					ApiCredential.Resolve(repository, apiUserSecrets, environment, isWindows) != key)
-				{
-					throw new InvalidOperationException("Authorization stale or insufficient.");
-				}
-				ValidateApproval(approval, freezeHash, policy, DateTimeOffset.UtcNow);
-			}
-			Authorize();
+			Action authorize = Authorizer(approvalPath, approvalHash, repository, apiUserSecrets, environment, isWindows, key,
+				approval => ApprovalProblem(approval, freezeHash, policy, DateTimeOffset.UtcNow));
+			authorize();
 			using SocketsHttpHandler handler = new() { AllowAutoRedirect = false, UseCookies = false, PooledConnectionLifetime = TimeSpan.Zero };
 			using HttpClient client = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
 			OfflineReplay result = await LiveEvaluation.RunAsync(cases, policy, journalPath, BindCredential(Identity(freezeHash, approvalHash, cases), key),
-				(payload, ct) => SendAsync(client, payload, key, ct), Authorize);
+				(payload, ct) => SendAsync(client, payload, key, ct), authorize);
 			using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
 			await JsonSerializer.SerializeAsync(output, result, ProductionParity.JsonOptions);
 			output.Flush(flushToDisk: true);
@@ -155,6 +152,56 @@ public static class LiveCommand
 			return 2;
 		}
 	}
+
+	/// <summary>Round 4: the same credential, approval, journal and transport safeguards around the two-stage replay.</summary>
+	private static async Task<int> RunTwoStageAsync(string packet, string repository, string approvalPath, string journalPath,
+		string outputPath, bool dryRun, bool apiUserSecrets, Func<string, string?> environment, bool isWindows)
+	{
+		TwoStagePacket twoStage = TwoStagePacket.Load(packet);
+		string freezeHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(packet, "freeze.private.json")));
+		string? key = ApiCredential.Resolve(repository, apiUserSecrets, environment, isWindows);
+		if (dryRun)
+		{
+			await TwoStageCommand.WriteDryRunAsync(outputPath, twoStage, freezeHash, approvalPath, journalPath, key);
+			Console.WriteLine("Dry run report created. No provider request was sent.");
+			return 0;
+		}
+
+		if (key is null)
+		{
+			throw new InvalidOperationException("Missing key.");
+		}
+
+		string approvalHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(approvalPath));
+		Action authorize = Authorizer(approvalPath, approvalHash, repository, apiUserSecrets, environment, isWindows, key,
+			approval => TwoStageCommand.ApprovalProblem(approval, twoStage, freezeHash, DateTimeOffset.UtcNow));
+		authorize();
+		using SocketsHttpHandler handler = new() { AllowAutoRedirect = false, UseCookies = false, PooledConnectionLifetime = TimeSpan.Zero };
+		using HttpClient client = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
+		TwoStageReplay result = await JournalledRun.RunAsync(new TwoStageProtocol(twoStage), journalPath,
+			BindCredential(TwoStageCommand.Identity(freezeHash, approvalHash), key), (payload, ct) => SendAsync(client, payload, key, ct), authorize);
+		using FileStream output = new(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+		await JsonSerializer.SerializeAsync(output, result, ProductionParity.JsonOptions);
+		output.Flush(flushToDisk: true);
+		Console.WriteLine(result.Stopped ? "Evaluation stopped. Inspect private evidence." : "Evaluation completed. Private evidence saved.");
+		return result.Stopped ? 3 : 0;
+	}
+
+	/// <summary>
+	/// Re-checks before every send that the approval bytes and the credential are unchanged and the approval still
+	/// authorizes this packet. Expiry, revocation, credential change or any approval edit blocks dispatch.
+	/// </summary>
+	private static Action Authorizer(string approvalPath, string approvalHash, string repository, bool apiUserSecrets,
+		Func<string, string?> environment, bool isWindows, string key, Func<LiveApproval, string?> problem) => () =>
+	{
+		byte[] bytes = File.ReadAllBytes(approvalPath);
+		LiveApproval approval = JsonSerializer.Deserialize<LiveApproval>(bytes, ProductionParity.JsonOptions)!;
+		if (OfflinePairedEvaluation.Hash(bytes) != approvalHash ||
+			ApiCredential.Resolve(repository, apiUserSecrets, environment, isWindows) != key || problem(approval) is not null)
+		{
+			throw new InvalidOperationException("Authorization stale or insufficient.");
+		}
+	};
 
 	private static string Identity(string freezeHash, string approvalHash, OfflineCase[] cases) =>
 		freezeHash + ":" + approvalHash + ":" + OfflinePairedEvaluation.Hash(JsonSerializer.SerializeToUtf8Bytes(cases, ProductionParity.JsonOptions)) + ":" +

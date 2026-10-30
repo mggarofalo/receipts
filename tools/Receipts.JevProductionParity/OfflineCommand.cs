@@ -19,7 +19,25 @@ public static class OfflineCommand
 		{
 			object result;
 			string output;
-			if (args is ["offline-plan", var packet, var repository, var planOutput])
+			if (args is ["offline-plan", var v4Packet, _, var v4Output] && PacketKindOf(v4Packet) == TwoStagePolicy.PacketKind)
+			{
+				// Round 4 builds its own requests; there is no production source to pin.
+				result = TwoStageCommand.Plan(TwoStagePacket.Load(v4Packet));
+				output = v4Output;
+			}
+			else if (args is ["offline-replay-v4", var replayPacket, var v4Exchanges, var v4ReplayOutput])
+			{
+				ReplayExchange[] exchanges = Load<ReplayExchange[]>(v4Exchanges);
+				if (exchanges.Any(e => e is null || e.Body is null || e.StatusCode is < 100 or > 599 ||
+					e.RequestSha256 is null || e.RequestSha256.Length != 64 || !e.RequestSha256.All(Uri.IsHexDigit)))
+				{
+					throw new ArgumentException("Replay exchanges must bind exact requests.");
+				}
+
+				result = TwoStageEvaluation.Replay(TwoStagePacket.Load(replayPacket), exchanges);
+				output = v4ReplayOutput;
+			}
+			else if (args is ["offline-plan", var packet, var repository, var planOutput])
 			{
 				EvaluationPolicy policy = ValidateFreeze(packet, repository);
 				OfflineCase[] cases = Load<OfflineCase[]>(Path.Combine(packet, "cases.private.json"));
@@ -63,7 +81,7 @@ public static class OfflineCommand
 			}
 			else
 			{
-				Console.Error.WriteLine("Usage: offline-plan <packet-directory> <repository-root> <new-private-output.json> | offline-replay <policy.private.json> <cases.json> <exchanges.json> <new-private-output.json>");
+				Console.Error.WriteLine("Usage: offline-plan <packet-directory> <repository-root> <new-private-output.json> | offline-replay <policy.private.json> <cases.json> <exchanges.json> <new-private-output.json> | offline-replay-v4 <packet-directory> <exchanges.json> <new-private-output.json>");
 				return 2;
 			}
 			// Never write request bodies or identifiers to the console, or overwrite evidence.
