@@ -1,5 +1,57 @@
 # Offline evaluation primitives
 
+Jev classification evaluation on real data uses the tools below together with
+the C# runner in [`tools/Receipts.JevProductionParity`](../../tools/Receipts.JevProductionParity/README.md).
+The current protocol is [round 4](AUTO-EVAL-NEXT-V4.md); rounds
+[1](AUTO-EVAL-NEXT.md), [2](AUTO-EVAL-NEXT-V2.md) and [3](AUTO-EVAL-NEXT-V3.md)
+are historical.
+
+Round 4 (two-stage request, corrected scoring):
+
+- `round4_cohort.py` builds the round-4 packet. Root roles (`item`, `envelope`,
+  `person-item`) come from a private JSON file, `{"roots": {"<root name>":
+  {"role": "item"}, ...}}`, which must name exactly the taxonomy's roots; no
+  category name is in this repository. Budget numbers are inputs:
+
+  ```bash
+  python3 scripts/offline-evaluation/round4_cohort.py --backup <backup.db> \
+    --root-roles <root-roles.private.json> --placeholder-leaf N/A --placeholder-leaf Unknown \
+    --repository . --output-dir <private-dir> --seed <seed> --size 60 \
+    --envelope-cases 6 --probes 4 --root-cap 12 \
+    --prior-carry-nanodollars 250000000 --ceiling-nanodollars 5000000000 \
+    --approved-maximum-attempts 120 --approved-reservation-cap-nanodollars 350000000 \
+    --exclude <round-3 membership.private.json>
+  ```
+
+  Every directory it creates is mode 700 and every file 600.
+- `round4_scoring.py` scores a round-4 replay: root and leaf accuracy
+  separately, the envelope stratum and injection probes apart, and accuracy
+  against coverage at the frozen thresholds. It regenerates the replay with the
+  runner's `offline-replay-v4` before scoring.
+- `aggregate_scoring.py` (round 3) now reports `sibling_leaf_same_root` instead of
+  calling a sibling leaf under the owner's root "harmful specificity", reports
+  root and leaf accuracy per arm, and scores golds named by `--placeholder-leaf`
+  at the root only. Gate verdicts are unchanged: a sibling leaf is still an
+  incorrect write.
+
+- `backup_cohort.py` builds a private packet from a portable SQLite backup,
+  opened read-only. Labels are the owner's existing category decisions; see
+  round 3 for the derivation. It writes a runner packet (no labels) and a
+  separate label directory, outside any git checkout:
+
+  ```bash
+  python3 scripts/offline-evaluation/backup_cohort.py --backup <backup.db> \
+    --repository . --output-dir <private-dir> --seed <seed> --size 20 \
+    --prior-carry-nanodollars 4873863040 [--exclude <earlier membership.private.json>]
+  ```
+
+- `journal_exchanges.py` converts a live journal into recorded exchanges.
+- `aggregate_scoring.py` regenerates the production replay from those
+  exchanges, joins the frozen labels and reports aggregate counts and gates.
+
+`campaign_ledger.py` (below) is a Windows-only reservation journal. The C#
+live runner keeps its own durable journal and does not use it.
+
 The separate [campaign reservation foundation](CAMPAIGN-LEDGER.md) provides
 offline durable attempted-call accounting for a future provider adapter. It
 contains no dispatch integration and makes no provider billing guarantee.
