@@ -95,6 +95,8 @@ public sealed class CategoryAssistanceAttemptEntity
 	public DateTimeOffset? SecondStageDecidedAt { get; set; }
 	public DateTimeOffset? SecondSendStartedAt { get; set; }
 	public DateOnly? SecondDebitUtcDay { get; set; }
+	public long? SecondStageInputTokens { get; set; }
+	public long? SecondStageOutputTokens { get; set; }
 	public DateTimeOffset CreatedAt { get; set; }
 	public DateTimeOffset? CompletedAt { get; set; }
 	// Observations recorded after this were not yet considered for an automatic write.

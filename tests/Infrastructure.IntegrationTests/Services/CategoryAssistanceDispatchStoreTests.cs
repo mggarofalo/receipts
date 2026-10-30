@@ -555,10 +555,13 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		await using var db = fixture.CreateDbContext();
 		var row = await db.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.ItemId == seed.ItemId);
 		row.State.Should().Be(state);
-		// A revocation during stage 1 discards its answer after the send, so no stage-2 decision records its usage.
-		long? firstTokens = scenario == "revoked" ? null : 1;
-		row.FirstStageInputTokens.Should().Be(firstTokens);
-		row.FirstStageOutputTokens.Should().Be(firstTokens);
+		// A revocation during stage 1 discards its answer after the send, but the response was billed, so its usage is
+		// still recorded on completion even though the result itself is stale.
+		row.FirstStageInputTokens.Should().Be(1);
+		row.FirstStageOutputTokens.Should().Be(1);
+		// The failed second send returned no response body, so it reported no usage.
+		row.SecondStageInputTokens.Should().BeNull();
+		row.SecondStageOutputTokens.Should().BeNull();
 		row.SecondSendStartedAt.HasValue.Should().Be(calls == 2);
 		if (state == "failed")
 		{
@@ -630,6 +633,8 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		await using var verify = fixture.CreateDbContext();
 		var completed = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == attemptId);
 		completed.State.Should().Be("suggested");
+		completed.FirstStageInputTokens.Should().Be(1); completed.FirstStageOutputTokens.Should().Be(1);
+		completed.SecondStageInputTokens.Should().Be(2); completed.SecondStageOutputTokens.Should().Be(2);
 		var refined = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(completed.ResultJson!)!.Suggestion!;
 		refined.LeafCandidates.Should().ContainSingle().Which.CategoryId.Should().Be(seed.CategoryId.ToString("D"));
 		refined.Provenance.InputTokens.Should().Be(3);
@@ -1030,6 +1035,127 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			(await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId)).DebitUtcDay.Should().Be(today);
 		}
 		finally { await DisableAsync(seed.Actor); }
+	}
+
+	[Fact]
+	public async Task CompletionPersistsBothStagesUsageOnSuccess()
+	{
+		var seed = await SeedAsync("usage success " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		CategorySuggestion suggestion = new("some-category", ["some-category"], null, 0.9, 0.9, 0.9,
+			new("jev", "jev-1.14.0", CategorySuggestionPolicy.Version, seed.Taxonomy.ToString("D"), 13, 6), "local_choice",
+			RootCandidates: [new("some-category", 0.9)], LeafCandidates: [new("some-category", 0.9)]);
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Suggested, suggestion,
+			FirstStageUsage: new(8, 2), SecondStageUsage: new(5, 4)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("suggested");
+		row.FirstStageInputTokens.Should().Be(8); row.FirstStageOutputTokens.Should().Be(2);
+		row.SecondStageInputTokens.Should().Be(5); row.SecondStageOutputTokens.Should().Be(4);
+	}
+
+	[Fact]
+	public async Task CompletionPersistsFirstStageUsageOnAbstention()
+	{
+		await SeedAsync("usage abstention " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Abstained, FirstStageUsage: new(9, 3)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("abstained");
+		row.FirstStageInputTokens.Should().Be(9); row.FirstStageOutputTokens.Should().Be(3);
+		row.SecondStageInputTokens.Should().BeNull(); row.SecondStageOutputTokens.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task StaleCompletionStillPersistsBilledUsage()
+	{
+		await SeedAsync("usage stale " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.CategoryAssistanceSettings.SingleAsync()).Revision = Guid.NewGuid();
+			await db.SaveChangesAsync();
+		}
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable,
+			FirstStageUsage: new(10, 4), SecondStageUsage: new(6, 1)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("stale"); row.ResultJson.Should().BeNull();
+		row.FirstStageInputTokens.Should().Be(10); row.FirstStageOutputTokens.Should().Be(4);
+		row.SecondStageInputTokens.Should().Be(6); row.SecondStageOutputTokens.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task CompletionAfterLeaseExpiryPersistsUsageOnIndeterminateRow()
+	{
+		await SeedAsync("usage indeterminate " + Guid.NewGuid());
+		var clock = new MutableClock(DateTimeOffset.UtcNow);
+		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, clock.Now, default))!;
+		clock.Now = clock.Now.AddMinutes(3);
+		(await store.ClaimQueuedAsync(default)).Should().BeNull(); // Expiry cleanup marks the dispatch indeterminate.
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Abstained, FirstStageUsage: new(11, 2)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("indeterminate"); row.ResultJson.Should().BeNull();
+		row.FirstStageInputTokens.Should().Be(11); row.FirstStageOutputTokens.Should().Be(2);
+		row.SecondStageInputTokens.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task CompletionNeverOverwritesRecordedUsage()
+	{
+		await SeedAsync("usage overwrite " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 12, 4, default)).Should().BeTrue();
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable,
+			FirstStageUsage: new(99, 99), SecondStageUsage: new(5, 1)), Ready, default);
+		// A repeated completion for the same dispatch is stale, and must not replace either stage.
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable,
+			FirstStageUsage: new(77, 77), SecondStageUsage: new(66, 66)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("failed");
+		row.FirstStageInputTokens.Should().Be(12); row.FirstStageOutputTokens.Should().Be(4);
+		row.SecondStageInputTokens.Should().Be(5); row.SecondStageOutputTokens.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task CompletionWithAnotherDispatchTokenRecordsNothing()
+	{
+		await SeedAsync("usage token " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+
+		await store.CompleteAsync(claim with { ClaimToken = Guid.NewGuid() }, new(CategoryAssistanceAttemptOutcome.Abstained,
+			FirstStageUsage: new(9, 3), SecondStageUsage: new(4, 2)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("dispatching"); row.ClaimToken.Should().Be(claim.ClaimToken);
+		row.FirstStageInputTokens.Should().BeNull(); row.FirstStageOutputTokens.Should().BeNull();
+		row.SecondStageInputTokens.Should().BeNull(); row.SecondStageOutputTokens.Should().BeNull();
 	}
 
 	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description, int dailyLimit = 100)

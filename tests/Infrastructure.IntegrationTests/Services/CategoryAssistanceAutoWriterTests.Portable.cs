@@ -13,7 +13,7 @@ namespace Infrastructure.IntegrationTests.Services;
 
 public sealed partial class CategoryAssistanceAutoWriterTests
 {
-	private const string JevMigration = "20261030185904_AddJevAutomaticWrites";
+	private const string JevMigration = "20261030220732_AddJevAutomaticWrites";
 
 	[Fact]
 	public async Task PortableExportOmitsJevActivityButKeepsTheJevAssignment()

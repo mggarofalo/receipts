@@ -20,7 +20,7 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 
 		return SendAsync(JevTwoStageQuestions.Stage1(snapshot), isCurrent,
 			body => JevTwoStageQuestions.ParseStage1(body, snapshot) is { } judgment
-				? CategorySuggestionPolicy.DecideStage1(snapshot, judgment, "jev")
+				? Billed(CategorySuggestionPolicy.DecideStage1(snapshot, judgment, "jev"), judgment)
 				: CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse), ct);
 	}
 
@@ -35,9 +35,13 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 		IReadOnlyList<string> roots = CategorySuggestionPolicy.Stage2RootIds(baseline);
 		return SendAsync(JevTwoStageQuestions.Stage2(snapshot, roots), isCurrent,
 			body => JevTwoStageQuestions.ParseStage2(body, snapshot, roots) is { } judgment
-				? CategorySuggestionPolicy.DecideStage2(snapshot, baseline, judgment)
+				? Billed(CategorySuggestionPolicy.DecideStage2(snapshot, baseline, judgment), judgment)
 				: CategorySuggestionResult.Failed(SuggestionFailure.InvalidResponse), ct);
 	}
+
+	// A parsed response was billed whatever the policy decides, so its usage travels with every outcome.
+	private static CategorySuggestionResult Billed(CategorySuggestionResult result, CategoryStageJudgment judgment) =>
+		result with { Usage = new(judgment.InputTokens, judgment.OutputTokens) };
 
 	// Snapshot the caller's collection before validation and serialization.
 	private static CategorySuggestionRequest? Snapshot(CategorySuggestionRequest? request)
@@ -87,7 +91,7 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 			JevOptions latest = options.CurrentValue;
 			if (!latest.Enabled || latest.ApiKey != key || !await isCurrent(key, timeout.Token))
 			{
-				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled);
+				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled, result.Usage);
 			}
 
 			ct.ThrowIfCancellationRequested();

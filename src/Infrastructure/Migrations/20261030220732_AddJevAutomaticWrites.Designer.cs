@@ -13,7 +13,7 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20261030185904_AddJevAutomaticWrites")]
+    [Migration("20261030220732_AddJevAutomaticWrites")]
     partial class AddJevAutomaticWrites
     {
         /// <inheritdoc />
@@ -374,6 +374,12 @@ namespace Infrastructure.Migrations
 
                     b.Property<DateTimeOffset?>("SecondStageDecidedAt")
                         .HasColumnType("timestamptz");
+
+                    b.Property<long?>("SecondStageInputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("SecondStageOutputTokens")
+                        .HasColumnType("bigint");
 
                     b.Property<Guid>("SettingsRevision")
                         .HasColumnType("uuid");
@@ -1436,9 +1442,15 @@ namespace Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasDefaultValueSql("gen_random_uuid()");
 
+                    b.Property<Guid?>("OccasionId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("OriginalImagePath")
                         .HasMaxLength(1024)
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("PaidFromEnvelopeId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ProcessedImagePath")
                         .HasMaxLength(1024)
@@ -1455,6 +1467,10 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("Date")
                         .HasFilter("\"DeletedAt\" IS NULL");
+
+                    b.HasIndex("OccasionId");
+
+                    b.HasIndex("PaidFromEnvelopeId");
 
                     b.ToTable("Receipts", "receipts");
                 });
@@ -1483,6 +1499,14 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("EnvelopeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EnvelopeSource")
+                        .IsRequired()
+                        .HasMaxLength(16)
                         .HasColumnType("text");
 
                     b.Property<Guid?>("NormalizationAssignmentId")
@@ -1530,6 +1554,9 @@ namespace Infrastructure.Migrations
                     b.Property<double?>("NormalizedDescriptionMatchScore")
                         .HasColumnType("double precision");
 
+                    b.Property<Guid?>("OccasionId")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal>("Quantity")
                         .HasColumnType("decimal(18,4)");
 
@@ -1575,9 +1602,13 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EnvelopeId");
+
                     b.HasIndex("NormalizedDescriptionId");
 
                     b.HasIndex("NormalizedDescriptionMatchScore");
+
+                    b.HasIndex("OccasionId");
 
                     b.HasIndex("ReceiptId");
 
@@ -2066,6 +2097,170 @@ namespace Infrastructure.Migrations
 
                             t.HasCheckConstraint("CK_YnabSyncRecords_PushSnapshot", "\"RequestPayloadJson\" IS NULL OR (\"ImportId\" IS NOT NULL AND \"PayloadHash\" IS NOT NULL AND \"SourceVersion\" IS NOT NULL AND \"YnabAccountId\" IS NOT NULL)");
                         });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Envelopes.EnvelopeBackfillEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CompletedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<int>("DefaultCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("EnvelopeCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ItemCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("EnvelopeBackfill", "budget", t =>
+                        {
+                            t.HasCheckConstraint("CK_EnvelopeBackfill_Singleton", "\"Id\" = 1");
+                        });
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Envelopes.EnvelopeEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CascadeDeletedByParentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("DeletedByApiKeyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DeletedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasFilter("\"DeletedAt\" IS NULL");
+
+                    b.ToTable("Envelopes", "budget");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Envelopes.ItemTypeEnvelopeDefaultEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CategoryId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("EnvelopeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId")
+                        .IsUnique();
+
+                    b.HasIndex("EnvelopeId");
+
+                    b.ToTable("ItemTypeEnvelopeDefaults", "budget");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Envelopes.OccasionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CascadeDeletedByParentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("DeletedByApiKeyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DeletedByUserId")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasFilter("\"DeletedAt\" IS NULL");
+
+                    b.ToTable("Occasions", "budget");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Envelopes.YnabEnvelopeMappingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("EnvelopeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("YnabBudgetId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabCategoryGroupName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabCategoryId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("text");
+
+                    b.Property<string>("YnabCategoryName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvelopeId", "YnabBudgetId")
+                        .IsUnique();
+
+                    b.ToTable("YnabEnvelopeMappings", "ynab");
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.NormalizationAi.NormalizationAiConnectionEntity", b =>
@@ -3522,12 +3717,35 @@ namespace Infrastructure.Migrations
                     b.Navigation("NearestNeighbour");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.ReceiptEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Envelopes.OccasionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OccasionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Infrastructure.Entities.Envelopes.EnvelopeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("PaidFromEnvelopeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.ReceiptItemEntity", b =>
                 {
+                    b.HasOne("Infrastructure.Entities.Envelopes.EnvelopeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EnvelopeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Infrastructure.Entities.Core.NormalizedDescriptionEntity", "NormalizedDescription")
                         .WithMany()
                         .HasForeignKey("NormalizedDescriptionId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Infrastructure.Entities.Envelopes.OccasionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OccasionId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Infrastructure.Entities.Core.ReceiptEntity", "Receipt")
                         .WithMany()
@@ -3590,6 +3808,30 @@ namespace Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Transaction");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Envelopes.ItemTypeEnvelopeDefaultEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyIdentityEntity", null)
+                        .WithMany()
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Envelopes.EnvelopeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EnvelopeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Envelopes.YnabEnvelopeMappingEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Envelopes.EnvelopeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("EnvelopeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.NormalizationAi.NormalizationAiProposalEntity", b =>

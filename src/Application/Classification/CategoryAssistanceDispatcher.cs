@@ -15,8 +15,10 @@ public sealed record CategoryAssistanceQueuedWork(Guid AttemptId, Guid QueueClai
 public sealed record CategoryAssistanceDispatchClaim(CategoryAssistanceQueuedWork Work, Guid ClaimToken);
 
 public enum CategoryAssistanceAttemptOutcome { Suggested, Abstained, Failed, Stale, Indeterminate }
+/// <summary>FirstStageUsage and SecondStageUsage are what each response billed, recorded whatever the outcome.</summary>
 public sealed record CategoryAssistanceCompletion(CategoryAssistanceAttemptOutcome Outcome,
-	CategorySuggestion? Suggestion = null, SuggestionFailure? Failure = null);
+	CategorySuggestion? Suggestion = null, SuggestionFailure? Failure = null,
+	SuggestionUsage? FirstStageUsage = null, SuggestionUsage? SecondStageUsage = null);
 public enum CategoryAssistanceSecondDispatchDecision { Authorized, Staged, Rejected }
 public enum CategoryAssistanceQueuedDeferral { CapabilityUnavailable, StartRejected }
 
@@ -157,6 +159,7 @@ public sealed class CategoryAssistanceDispatcher(
 		}
 
 		CategoryAssistanceCompletion completion;
+		SuggestionUsage? firstUsage = null, secondUsage = null;
 		try
 		{
 			ct.ThrowIfCancellationRequested();
@@ -170,7 +173,14 @@ public sealed class CategoryAssistanceDispatcher(
 			else
 			{
 				var first = await provider.SuggestAsync(claim.Work.Request, claim.Work.Fence.ConnectionGeneration, ct);
+				firstUsage = first?.Usage is { IsValid: true } reported ? reported : null;
 				completion = ValidateResult(claim.Work, first, final: false);
+				// A result must report its own billed usage, and its provenance must total exactly that.
+				if (completion.Suggestion is { } stage1 && (firstUsage is null ||
+					stage1.Provenance.InputTokens != firstUsage.InputTokens || stage1.Provenance.OutputTokens != firstUsage.OutputTokens))
+				{
+					completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
+				}
 				baseline = completion.Suggestion;
 				if (completion.Outcome == CategoryAssistanceAttemptOutcome.Suggested)
 				{
@@ -186,13 +196,16 @@ public sealed class CategoryAssistanceDispatcher(
 			{
 				ct.ThrowIfCancellationRequested();
 				var result = await provider.RefineAsync(claim.Work.Request, baseline!, claim.Work.Fence.ConnectionGeneration, ct);
+				secondUsage = result?.Usage is { IsValid: true } reported ? reported : null;
 				completion = ValidateResult(claim.Work, result, final: true);
-				// Stage 2 may only add the leaf answer: everything stage 1 decided must survive unchanged.
+				// Stage 2 may only add the leaf answer: everything stage 1 decided must survive unchanged, and the
+				// provenance totals both stages' billed usage exactly.
 				if (completion.Suggestion is { } refined &&
 					(refined.FitProbability != baseline!.FitProbability ||
 					 refined.RootCandidates is null || !refined.RootCandidates.SequenceEqual(baseline.RootCandidates!) ||
-					 refined.Provenance.InputTokens < baseline.Provenance.InputTokens ||
-					 refined.Provenance.OutputTokens < baseline.Provenance.OutputTokens))
+					 secondUsage is null ||
+					 refined.Provenance.InputTokens != baseline.Provenance.InputTokens + secondUsage.InputTokens ||
+					 refined.Provenance.OutputTokens != baseline.Provenance.OutputTokens + secondUsage.OutputTokens))
 				{
 					completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.InvalidResponse);
 				}
@@ -209,7 +222,8 @@ public sealed class CategoryAssistanceDispatcher(
 			completion = new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable);
 		}
 
-		await store.CompleteAsync(claim, completion, capability, ct);
+		await store.CompleteAsync(claim, completion with { FirstStageUsage = firstUsage, SecondStageUsage = secondUsage },
+			capability, ct);
 		return true;
 	}
 
@@ -252,7 +266,7 @@ public sealed class CategoryAssistanceDispatcher(
 	// Stage 1 yields an abstention or a baseline; stage 2 yields the final suggestion. Both are rechecked against the
 	// durable request here, independently of the provider's own validation.
 	private static CategoryAssistanceCompletion ValidateResult(CategoryAssistanceQueuedWork work,
-	CategorySuggestionResult result, bool final)
+	CategorySuggestionResult? result, bool final)
 	{
 		if (result is null || (result.Suggestion is null) == (result.Failure is null))
 		{

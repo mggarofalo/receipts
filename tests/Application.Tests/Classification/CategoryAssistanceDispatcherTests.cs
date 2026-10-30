@@ -212,9 +212,9 @@ public class CategoryAssistanceDispatcherTests
 		CategorySuggestion verified = Refined(suggestion);
 		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), suggestion, It.IsAny<CancellationToken>())).ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Authorized);
 		provider.Setup(x => x.RefineAsync(work.Request, suggestion, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(verified, null));
+			.ReturnsAsync(Refinement(suggestion, verified));
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(suggestion, null));
+			.ReturnsAsync(Billed(suggestion));
 		CategoryAssistanceCompletion? saved = null;
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(),
 			It.Is<CategoryAssistanceCapability>(c => c.Provider == "jev"),
@@ -227,6 +227,8 @@ public class CategoryAssistanceDispatcherTests
 		Assert.Equal(CategoryAssistanceAttemptOutcome.Suggested, saved?.Outcome);
 		Assert.Same(verified, saved?.Suggestion);
 		Assert.Equal(["bread", "milk", "drink"], saved!.Suggestion!.LeafCandidates!.Select(c => c.CategoryId));
+		Assert.Equal(new SuggestionUsage(10, 5), saved.FirstStageUsage);
+		Assert.Equal(StageTwoUsage, saved.SecondStageUsage);
 		provider.Verify(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()), Times.Once);
 		provider.Verify(x => x.RefineAsync(work.Request, suggestion, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()), Times.Once);
 	}
@@ -236,7 +238,7 @@ public class CategoryAssistanceDispatcherTests
 	{
 		CategoryAssistanceDispatchClaim claim = ArrangeStartedClaim();
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(Suggestion() with { CategoryId = "invented" }, null));
+			.ReturnsAsync(Billed(Suggestion() with { CategoryId = "invented" }));
 		CategoryAssistanceCompletion? saved = null;
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(),
 			It.Is<CategoryAssistanceCapability>(c => c.Provider == "jev"),
@@ -265,7 +267,7 @@ public class CategoryAssistanceDispatcherTests
 			};
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration,
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(suggestion, null));
+			.ReturnsAsync(Billed(suggestion));
 		CategoryAssistanceCompletion? saved = null;
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(),
 			It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
@@ -303,7 +305,7 @@ public class CategoryAssistanceDispatcherTests
 		var claim = ArrangeStartedClaim();
 		var baseline = Suggestion();
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(baseline, null));
+			.ReturnsAsync(Billed(baseline));
 		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(authorized ? CategoryAssistanceSecondDispatchDecision.Authorized : CategoryAssistanceSecondDispatchDecision.Rejected);
 		if (authorized)
@@ -320,6 +322,8 @@ public class CategoryAssistanceDispatcherTests
 		Assert.Equal(CategoryAssistanceAttemptOutcome.Failed, saved!.Outcome);
 		Assert.Equal(authorized ? SuggestionFailure.Unavailable : SuggestionFailure.Disabled, saved.Failure);
 		Assert.Null(saved.Suggestion);
+		Assert.Equal(new SuggestionUsage(10, 5), saved.FirstStageUsage);
+		Assert.Null(saved.SecondStageUsage);
 		provider.Verify(x => x.RefineAsync(work.Request, baseline, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()),
 			authorized ? Times.Once : Times.Never);
 	}
@@ -330,7 +334,7 @@ public class CategoryAssistanceDispatcherTests
 		var claim = ArrangeStartedClaim();
 		var baseline = Suggestion();
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(baseline, null));
+			.ReturnsAsync(Billed(baseline));
 		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Staged);
 		Assert.True(await Dispatcher().DispatchOneAsync());
@@ -352,14 +356,16 @@ public class CategoryAssistanceDispatcherTests
 		var claim = new CategoryAssistanceDispatchClaim(staged, Guid.NewGuid());
 		store.Setup(x => x.TryStartDispatchAsync(staged, ready, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(claim);
 		provider.Setup(x => x.RefineAsync(staged.Request, baseline, staged.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(Refined(baseline), null));
+			.ReturnsAsync(Refinement(baseline, Refined(baseline)));
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), ready, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 		await Dispatcher().DispatchOneAsync();
 		provider.Verify(x => x.SuggestAsync(It.IsAny<CategorySuggestionRequest>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
 		store.Verify(x => x.TryStartOrStageSecondDispatchAsync(It.IsAny<CategoryAssistanceDispatchClaim>(), It.IsAny<CategoryAssistanceCapability>(),
 			It.IsAny<CategorySuggestion>(), It.IsAny<CancellationToken>()), Times.Never);
+		// The staged baseline's first-stage usage was recorded when it was billed; only stage 2 is billed here.
 		store.Verify(x => x.CompleteAsync(claim, It.Is<CategoryAssistanceCompletion>(c => c.Outcome == CategoryAssistanceAttemptOutcome.Suggested
-			&& c.Suggestion!.LeafCandidates != null), ready, It.IsAny<CancellationToken>()), Times.Once);
+			&& c.Suggestion!.LeafCandidates != null && c.FirstStageUsage == null && c.SecondStageUsage == StageTwoUsage),
+			ready, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -393,7 +399,7 @@ public class CategoryAssistanceDispatcherTests
 		var claim = ArrangeStartedClaim();
 		var abstention = Suggestion() with { CategoryId = null, Path = [], AbstentionReason = reason, FitProbability = fit };
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(abstention, null));
+			.ReturnsAsync(Billed(abstention));
 		CategoryAssistanceCompletion? saved = null;
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
 			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
@@ -403,6 +409,8 @@ public class CategoryAssistanceDispatcherTests
 
 		Assert.Equal(CategoryAssistanceAttemptOutcome.Abstained, saved!.Outcome);
 		Assert.Same(abstention, saved.Suggestion);
+		Assert.Equal(new SuggestionUsage(10, 5), saved.FirstStageUsage);
+		Assert.Null(saved.SecondStageUsage);
 		store.Verify(x => x.TryStartOrStageSecondDispatchAsync(It.IsAny<CategoryAssistanceDispatchClaim>(), It.IsAny<CategoryAssistanceCapability>(),
 			It.IsAny<CategorySuggestion>(), It.IsAny<CancellationToken>()), Times.Never);
 		provider.Verify(x => x.RefineAsync(It.IsAny<CategorySuggestionRequest>(), It.IsAny<CategorySuggestion>(),
@@ -414,7 +422,7 @@ public class CategoryAssistanceDispatcherTests
 	{
 		var claim = ArrangeStartedClaim();
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(Suggestion() with { CategoryId = null, Path = [], AbstentionReason = "no-fit", FitProbability = 0.5 }, null));
+			.ReturnsAsync(Billed(Suggestion() with { CategoryId = null, Path = [], AbstentionReason = "no-fit", FitProbability = 0.5 }));
 		CategoryAssistanceCompletion? saved = null;
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
 			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
@@ -443,11 +451,11 @@ public class CategoryAssistanceDispatcherTests
 			_ => refined with { CategoryId = "drink", Path = ["drink"] }
 		};
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(baseline, null));
+			.ReturnsAsync(Billed(baseline));
 		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Authorized);
 		provider.Setup(x => x.RefineAsync(work.Request, baseline, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(refined, null));
+			.ReturnsAsync(new CategorySuggestionResult(refined, null, StageTwoUsage));
 		CategoryAssistanceCompletion? saved = null;
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
 			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
@@ -466,7 +474,7 @@ public class CategoryAssistanceDispatcherTests
 		var claim = ArrangeStartedClaim();
 		// A stage-1 result must propose its own top root; a leaf here would skip stage 2's validation.
 		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new CategorySuggestionResult(Refined(Suggestion()) with { LeafCandidates = null }, null));
+			.ReturnsAsync(Billed(Refined(Suggestion()) with { LeafCandidates = null }));
 		CategoryAssistanceCompletion? saved = null;
 		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
 			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
@@ -477,6 +485,132 @@ public class CategoryAssistanceDispatcherTests
 		Assert.Equal(SuggestionFailure.InvalidResponse, saved!.Failure);
 		store.Verify(x => x.TryStartOrStageSecondDispatchAsync(It.IsAny<CategoryAssistanceDispatchClaim>(), It.IsAny<CategoryAssistanceCapability>(),
 			It.IsAny<CategorySuggestion>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	private static SuggestionUsage? Mismatched(string mismatch) => mismatch switch
+	{
+		"missing" => null,
+		"input-over" => new(11, 5),
+		"input-under" => new(9, 5),
+		"output" => new(10, 4),
+		_ => new(-1, 5)
+	};
+
+	[Theory]
+	[InlineData("missing", false)]
+	[InlineData("input-over", false)]
+	[InlineData("input-under", false)]
+	[InlineData("output", false)]
+	[InlineData("negative", false)]
+	[InlineData("missing", true)]
+	[InlineData("output", true)]
+	public async Task StageOneResultWhoseUsageIsNotItsProvenanceIsInvalidResponse(string mismatch, bool abstain)
+	{
+		var claim = ArrangeStartedClaim();
+		CategorySuggestion result = abstain
+			? Suggestion() with { CategoryId = null, Path = [], AbstentionReason = "no-fit", FitProbability = 0.3 }
+			: Suggestion();
+		SuggestionUsage? usage = Mismatched(mismatch);
+		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new CategorySuggestionResult(result, null, usage));
+		CategoryAssistanceCompletion? saved = null;
+		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
+			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
+			.Returns(Task.CompletedTask);
+
+		await Dispatcher().DispatchOneAsync();
+
+		Assert.Equal(CategoryAssistanceAttemptOutcome.Failed, saved!.Outcome);
+		Assert.Equal(SuggestionFailure.InvalidResponse, saved.Failure);
+		Assert.Null(saved.Suggestion);
+		// Whatever valid usage the response reported was billed and is still recorded.
+		Assert.Equal(usage is { IsValid: true } ? usage : null, saved.FirstStageUsage);
+		Assert.Null(saved.SecondStageUsage);
+		store.Verify(x => x.TryStartOrStageSecondDispatchAsync(It.IsAny<CategoryAssistanceDispatchClaim>(), It.IsAny<CategoryAssistanceCapability>(),
+			It.IsAny<CategorySuggestion>(), It.IsAny<CancellationToken>()), Times.Never);
+		provider.Verify(x => x.RefineAsync(It.IsAny<CategorySuggestionRequest>(), It.IsAny<CategorySuggestion>(),
+			It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Theory]
+	[InlineData("missing")]
+	[InlineData("input-over")]
+	[InlineData("input-under")]
+	[InlineData("output")]
+	[InlineData("negative")]
+	public async Task StageTwoProvenanceThatIsNotBaselinePlusItsUsageIsInvalidResponse(string mismatch)
+	{
+		var claim = ArrangeStartedClaim();
+		var baseline = Suggestion();
+		SuggestionUsage? usage = Mismatched(mismatch);
+		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Billed(baseline));
+		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Authorized);
+		// Refined adds exactly 10/5 to the baseline, so only StageTwoUsage would be consistent.
+		provider.Setup(x => x.RefineAsync(work.Request, baseline, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new CategorySuggestionResult(Refined(baseline), null, usage));
+		CategoryAssistanceCompletion? saved = null;
+		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
+			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
+			.Returns(Task.CompletedTask);
+
+		await Dispatcher().DispatchOneAsync();
+
+		Assert.Equal(CategoryAssistanceAttemptOutcome.Failed, saved!.Outcome);
+		Assert.Equal(SuggestionFailure.InvalidResponse, saved.Failure);
+		Assert.Null(saved.Suggestion);
+		Assert.Equal(new SuggestionUsage(10, 5), saved.FirstStageUsage);
+		Assert.Equal(usage is { IsValid: true } ? usage : null, saved.SecondStageUsage);
+	}
+
+	[Fact]
+	public async Task StageTwoFailureThatReportedUsageCarriesBothStagesUsage()
+	{
+		var claim = ArrangeStartedClaim();
+		var baseline = Suggestion();
+		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Billed(baseline));
+		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Authorized);
+		provider.Setup(x => x.RefineAsync(work.Request, baseline, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CategorySuggestionResult.Failed(SuggestionFailure.Disabled, new(7, 3)));
+		CategoryAssistanceCompletion? saved = null;
+		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
+			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
+			.Returns(Task.CompletedTask);
+
+		await Dispatcher().DispatchOneAsync();
+
+		Assert.Equal(CategoryAssistanceAttemptOutcome.Failed, saved!.Outcome);
+		Assert.Equal(SuggestionFailure.Disabled, saved.Failure);
+		Assert.Null(saved.Suggestion);
+		Assert.Equal(new SuggestionUsage(10, 5), saved.FirstStageUsage);
+		Assert.Equal(new SuggestionUsage(7, 3), saved.SecondStageUsage);
+	}
+
+	[Fact]
+	public async Task StageTwoExceptionCarriesOnlyFirstStageUsage()
+	{
+		var claim = ArrangeStartedClaim();
+		var baseline = Suggestion();
+		provider.Setup(x => x.SuggestAsync(work.Request, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(Billed(baseline));
+		store.Setup(x => x.TryStartOrStageSecondDispatchAsync(claim, It.IsAny<CategoryAssistanceCapability>(), baseline, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(CategoryAssistanceSecondDispatchDecision.Authorized);
+		provider.Setup(x => x.RefineAsync(work.Request, baseline, work.Fence.ConnectionGeneration, It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new IOException("transport failed"));
+		CategoryAssistanceCompletion? saved = null;
+		store.Setup(x => x.CompleteAsync(claim, It.IsAny<CategoryAssistanceCompletion>(), It.IsAny<CategoryAssistanceCapability>(), It.IsAny<CancellationToken>()))
+			.Callback<CategoryAssistanceDispatchClaim, CategoryAssistanceCompletion, CategoryAssistanceCapability, CancellationToken>((_, c, _, _) => saved = c)
+			.Returns(Task.CompletedTask);
+
+		await Dispatcher().DispatchOneAsync();
+
+		Assert.Equal(CategoryAssistanceAttemptOutcome.Failed, saved!.Outcome);
+		Assert.Equal(SuggestionFailure.Unavailable, saved.Failure);
+		Assert.Equal(new SuggestionUsage(10, 5), saved.FirstStageUsage);
+		Assert.Null(saved.SecondStageUsage);
 	}
 
 	private CategoryAssistanceDispatchClaim ArrangeStartedClaim()
@@ -496,6 +630,18 @@ public class CategoryAssistanceDispatcherTests
 		new("jev", CategorySuggestionPolicy.Model, CategorySuggestionPolicy.Version,
 			work.Request.TaxonomyRevision, 10, 5), "local_choice",
 		RootCandidates: [new("food", 0.8), new("drink", 0.2)]);
+
+	// What Refined adds to a Suggestion baseline's provenance.
+	private static readonly SuggestionUsage StageTwoUsage = new(10, 5);
+
+	// A stage-1 response bills exactly the tokens its provenance reports.
+	private static CategorySuggestionResult Billed(CategorySuggestion suggestion) =>
+		new(suggestion, null, new(suggestion.Provenance.InputTokens, suggestion.Provenance.OutputTokens));
+
+	// A stage-2 response bills the tokens it added to the baseline's provenance.
+	private static CategorySuggestionResult Refinement(CategorySuggestion baseline, CategorySuggestion refined) =>
+		new(refined, null, new(refined.Provenance.InputTokens - baseline.Provenance.InputTokens,
+			refined.Provenance.OutputTokens - baseline.Provenance.OutputTokens));
 
 	private static CategorySuggestion Refined(CategorySuggestion baseline) => baseline with
 	{

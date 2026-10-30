@@ -68,6 +68,7 @@ public class JevSuggestionProviderTests
 		Assert.Equal(CategorySuggestionPolicy.Version, actual.Suggestion.Provenance.QuestionPolicy);
 		Assert.Equal("jev", actual.Suggestion.Provenance.Provider);
 		Assert.True(CategorySuggestionPolicy.IsBaseline(Request, actual.Suggestion));
+		Assert.Equal(new SuggestionUsage(100, 10), actual.Usage);
 		Assert.Equal(1, handler.Calls);
 	}
 
@@ -91,6 +92,7 @@ public class JevSuggestionProviderTests
 		Assert.Equal(["apples", "citrus", "milk"], actual.Suggestion.LeafCandidates!.Select(c => c.CategoryId));
 		Assert.Equal(160, actual.Suggestion.Provenance.InputTokens);
 		Assert.Equal(14, actual.Suggestion.Provenance.OutputTokens);
+		Assert.Equal(new SuggestionUsage(60, 4), actual.Usage);
 	}
 
 	[Fact]
@@ -142,6 +144,7 @@ public class JevSuggestionProviderTests
 
 		CategorySuggestionResult before = await Provider(handler).SuggestBoundAsync(Request, (_, _) => Task.FromResult(false), default);
 		Assert.Equal(SuggestionFailure.Disabled, before.Failure);
+		Assert.Null(before.Usage);
 		Assert.Equal(0, handler.Calls);
 
 		CategorySuggestionResult after = await Provider(handler).SuggestBoundAsync(Request, (key, _) =>
@@ -151,6 +154,8 @@ public class JevSuggestionProviderTests
 		}, default);
 		Assert.Equal(SuggestionFailure.Disabled, after.Failure);
 		Assert.Null(after.Suggestion);
+		// The response was received and billed before the fence discarded it.
+		Assert.Equal(new SuggestionUsage(100, 10), after.Usage);
 		Assert.Equal(1, handler.Calls);
 		Assert.Equal(2, checks);
 	}
@@ -167,6 +172,7 @@ public class JevSuggestionProviderTests
 		CategorySuggestionResult actual = await Suggest(handler);
 		Assert.Equal(expected, actual.Failure);
 		Assert.Null(actual.Suggestion);
+		Assert.Null(actual.Usage);
 		Assert.Equal(1, handler.Calls);
 	}
 
@@ -184,7 +190,48 @@ public class JevSuggestionProviderTests
 	public async Task MalformedResponsesAreFailures(string body)
 	{
 		Handler handler = new((_, _) => Task.FromResult(Response(body)));
-		Assert.Equal(SuggestionFailure.InvalidResponse, (await Suggest(handler)).Failure);
+		CategorySuggestionResult actual = await Suggest(handler);
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Usage);
+	}
+
+	[Fact]
+	public async Task StructurallyInvalidResponseWithUsageCarriesNoUsage()
+	{
+		// The usage block is well formed, but the answer names no offered option, so nothing was parsed.
+		Handler handler = new((_, _) => Task.FromResult(Response(ValidStage1.Replace("\"choice\":\"Fruit\"", "\"choice\":\"Unknown\""))));
+		CategorySuggestionResult actual = await Suggest(handler);
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Usage);
+	}
+
+	[Theory]
+	[InlineData("\"confidence\":0.8", "\"confidence\":2")]
+	[InlineData("\"Dairy\":0.1", "\"Dairy\":0.2")]
+	public async Task PolicyRejectedStageOneJudgmentStillCarriesItsBilledUsage(string from, string to)
+	{
+		string body = ValidStage1.Replace(from, to);
+		Assert.NotNull(JevTwoStageQuestions.ParseStage1(System.Text.Encoding.UTF8.GetBytes(body), Request));
+
+		CategorySuggestionResult actual = await Suggest(new((_, _) => Task.FromResult(Response(body))));
+
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Suggestion);
+		Assert.Equal(new SuggestionUsage(100, 10), actual.Usage);
+	}
+
+	[Fact]
+	public async Task PolicyRejectedStageTwoJudgmentStillCarriesItsBilledUsage()
+	{
+		string body = ValidStage2.Replace("\"Dairy / Milk\":0.1", "\"Dairy / Milk\":0.2");
+		Assert.NotNull(JevTwoStageQuestions.ParseStage2(System.Text.Encoding.UTF8.GetBytes(body), Request, ["fruit", "dairy"]));
+
+		CategorySuggestionResult actual = await Provider(new((_, _) => Task.FromResult(Response(body))))
+			.RefineBoundAsync(Request, Baseline(), Current, default);
+
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Suggestion);
+		Assert.Equal(new SuggestionUsage(60, 4), actual.Usage);
 	}
 
 	[Fact]

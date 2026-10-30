@@ -290,8 +290,22 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		var head = await LockHeadAsync(db, ct);
 		var settings = await LockSettingsAsync(db, ct);
 		DateTimeOffset now = clock.GetUtcNow();
-		var row = await db.CategoryAssistanceAttempts.SingleOrDefaultAsync(x => x.Id == claim.Work.AttemptId
-			&& x.State == "dispatching" && x.ClaimToken == claim.ClaimToken, ct);
+		// Usage belongs to the billed dispatch, so it is kept even when the result itself is stale or arrives after the
+		// lease expired; a stage's usage, once recorded, is never replaced.
+		var billed = await db.CategoryAssistanceAttempts.SingleOrDefaultAsync(x => x.Id == claim.Work.AttemptId
+			&& x.DispatchToken == claim.ClaimToken, ct);
+		if (billed != null)
+		{
+			if (completion.FirstStageUsage is { IsValid: true } first && billed.FirstStageInputTokens is null)
+			{
+				billed.FirstStageInputTokens = first.InputTokens; billed.FirstStageOutputTokens = first.OutputTokens;
+			}
+			if (completion.SecondStageUsage is { IsValid: true } second && billed.SecondStageInputTokens is null)
+			{
+				billed.SecondStageInputTokens = second.InputTokens; billed.SecondStageOutputTokens = second.OutputTokens;
+			}
+		}
+		var row = billed is { State: "dispatching" } && billed.ClaimToken == claim.ClaimToken ? billed : null;
 		if (row != null)
 		{
 			bool current = row.LeaseExpiresAt > now
@@ -300,8 +314,8 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			row.State = current ? completion.Outcome.ToString().ToLowerInvariant() : "stale";
 			row.ResultJson = current ? JsonSerializer.Serialize(completion) : null;
 			row.CompletedAt = now; row.ClaimToken = null; row.LeaseExpiresAt = null;
-			await db.SaveChangesAsync(ct);
 		}
+		await db.SaveChangesAsync(ct);
 		await tx.CommitAsync(ct);
 	}
 

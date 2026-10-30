@@ -25,9 +25,16 @@ public sealed record CategorySuggestion(string? CategoryId, IReadOnlyList<string
 		string ProbabilityScope = "global_choice", double? SelectedPathSupport = null,
 		IReadOnlyList<SuggestionCandidate>? RootCandidates = null, IReadOnlyList<SuggestionCandidate>? LeafCandidates = null);
 public enum SuggestionFailure { Disabled, MissingCredential, InvalidInput, PayloadTooLarge, Busy, Authentication, RateLimited, Timeout, Unavailable, InvalidResponse }
-public sealed record CategorySuggestionResult(CategorySuggestion? Suggestion, SuggestionFailure? Failure)
+/// <summary>Billed tokens one provider response reported.</summary>
+public sealed record SuggestionUsage(long InputTokens, long OutputTokens)
 {
-	public static CategorySuggestionResult Failed(SuggestionFailure failure) => new(null, failure);
+	public bool IsValid => InputTokens is >= 0 and <= 9007199254740991 && OutputTokens is >= 0 and <= 9007199254740991;
+}
+
+/// <summary>Usage is this stage's own billed usage whenever a response reported it, including on a failure.</summary>
+public sealed record CategorySuggestionResult(CategorySuggestion? Suggestion, SuggestionFailure? Failure, SuggestionUsage? Usage = null)
+{
+	public static CategorySuggestionResult Failed(SuggestionFailure failure, SuggestionUsage? usage = null) => new(null, failure, usage);
 }
 
 /// <summary>

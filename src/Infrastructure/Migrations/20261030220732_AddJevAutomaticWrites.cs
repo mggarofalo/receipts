@@ -81,6 +81,21 @@ public partial class AddJevAutomaticWrites : Migration
 			type: "timestamptz",
 			nullable: true);
 
+		// Each stage's billed usage is recorded, whatever the outcome; first-stage usage already had its columns.
+		migrationBuilder.AddColumn<long>(
+			name: "SecondStageInputTokens",
+			schema: "category_assistance",
+			table: "Attempts",
+			type: "bigint",
+			nullable: true);
+
+		migrationBuilder.AddColumn<long>(
+			name: "SecondStageOutputTokens",
+			schema: "category_assistance",
+			table: "Attempts",
+			type: "bigint",
+			nullable: true);
+
 		migrationBuilder.UpdateData(
 			schema: "category_assistance",
 			table: "Settings",
@@ -143,6 +158,16 @@ public partial class AddJevAutomaticWrites : Migration
 
 		migrationBuilder.DropColumn(
 			name: "AutoWriteCheckedAt",
+			schema: "category_assistance",
+			table: "Attempts");
+
+		migrationBuilder.DropColumn(
+			name: "SecondStageInputTokens",
+			schema: "category_assistance",
+			table: "Attempts");
+
+		migrationBuilder.DropColumn(
+			name: "SecondStageOutputTokens",
 			schema: "category_assistance",
 			table: "Attempts");
 

@@ -372,6 +372,12 @@ namespace Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("SecondStageDecidedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<long?>("SecondStageInputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("SecondStageOutputTokens")
+                        .HasColumnType("bigint");
+
                     b.Property<Guid>("SettingsRevision")
                         .HasColumnType("uuid");
 
