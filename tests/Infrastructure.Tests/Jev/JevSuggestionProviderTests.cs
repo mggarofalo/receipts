@@ -160,6 +160,53 @@ public class JevSuggestionProviderTests
 		Assert.Equal(2, checks);
 	}
 
+	public static TheoryData<Exception> PostResponseFenceFaults => new()
+	{
+		new InvalidOperationException("synthetic"),
+		// A fence-owned cancellation (its own deadline, not the caller's) must not read as a usage-free transport timeout.
+		new OperationCanceledException("synthetic fence deadline"),
+	};
+
+	[Theory]
+	[MemberData(nameof(PostResponseFenceFaults))]
+	public async Task PostResponseFenceFaultIsUnavailableAndKeepsBilledUsage(Exception fault)
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response()));
+		int checks = 0;
+
+		CategorySuggestionResult actual = await Provider(handler).SuggestBoundAsync(Request, (_, _) =>
+			++checks == 1 ? Task.FromResult(true) : Task.FromException<bool>(fault), default);
+
+		Assert.Equal(SuggestionFailure.Unavailable, actual.Failure);
+		Assert.Null(actual.Suggestion);
+		Assert.Equal(new SuggestionUsage(100, 10), actual.Usage);
+		Assert.Equal(1, handler.Calls);
+		Assert.Equal(2, checks);
+	}
+
+	[Fact]
+	public async Task CallerCancellationDuringPostResponseFencePropagates()
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response()));
+		using CancellationTokenSource cancellation = new();
+		int checks = 0;
+
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Provider(handler).SuggestBoundAsync(Request, async (_, token) =>
+		{
+			if (++checks == 1)
+			{
+				return true;
+			}
+
+			cancellation.Cancel();
+			await Task.Delay(Timeout.Infinite, token);
+			return true;
+		}, cancellation.Token));
+
+		Assert.Equal(1, handler.Calls);
+		Assert.Equal(2, checks);
+	}
+
 	[Theory]
 	[InlineData(401, SuggestionFailure.Authentication)]
 	[InlineData(403, SuggestionFailure.Authentication)]

@@ -87,15 +87,24 @@ public sealed class JevSuggestionProvider(HttpClient client, IOptionsMonitor<Jev
 
 			await response.Content.LoadIntoBufferAsync(JevTwoStageQuestions.MaximumResponseBytes, timeout.Token);
 			CategorySuggestionResult result = decide(await response.Content.ReadAsByteArrayAsync(timeout.Token));
-			ct.ThrowIfCancellationRequested();
-			JevOptions latest = options.CurrentValue;
-			if (!latest.Enabled || latest.ApiKey != key || !await isCurrent(key, timeout.Token))
+			// The response is billed: past this point every outcome keeps its usage. The fence check gets its own
+			// deadline rather than the transport's remainder; only caller cancellation still propagates.
+			try
 			{
-				return CategorySuggestionResult.Failed(SuggestionFailure.Disabled, result.Usage);
-			}
+				ct.ThrowIfCancellationRequested();
+				using CancellationTokenSource fence = CancellationTokenSource.CreateLinkedTokenSource(ct);
+				fence.CancelAfter(TimeSpan.FromSeconds(10));
+				JevOptions latest = options.CurrentValue;
+				if (!latest.Enabled || latest.ApiKey != key || !await isCurrent(key, fence.Token))
+				{
+					return CategorySuggestionResult.Failed(SuggestionFailure.Disabled, result.Usage);
+				}
 
-			ct.ThrowIfCancellationRequested();
-			return result;
+				ct.ThrowIfCancellationRequested();
+				return result;
+			}
+			catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+			catch (Exception) { return CategorySuggestionResult.Failed(SuggestionFailure.Unavailable, result.Usage); }
 		}
 		catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return CategorySuggestionResult.Failed(SuggestionFailure.Timeout); }
 		catch (HttpRequestException) { return CategorySuggestionResult.Failed(SuggestionFailure.Unavailable); }
