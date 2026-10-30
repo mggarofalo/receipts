@@ -141,11 +141,12 @@ public sealed class CategoryAssistanceAutoWriter(IDbContextFactory<ApplicationDb
 			options.RootAutoWriteThreshold, options.LeafAutoWriteThreshold, options.LeafAutoWriteEnabled));
 	}
 
-	// Explicit acceptance eligibility, minus purchases the saving actor set aside or left as is in their own review.
+	// Acceptance eligibility limited to uncategorized purchases (a history request's categorized members stay for a person
+	// to decide), minus purchases the saving actor set aside or left as is in their own review.
 	private static async Task<List<Entities.CategoryAssistance.CategoryAssistanceObservationEntity>> EligibleAsync(
 		ApplicationDbContext db, Entities.CategoryAssistance.CategoryAssistanceAttemptEntity attempt, CancellationToken ct)
 	{
-		var eligible = await CategoryAssistanceDecisionStore.GetEligibleObservationsAsync(db, attempt, null, ct);
+		var eligible = await CategoryAssistanceDecisionStore.GetEligibleObservationsAsync(db, attempt, null, ct, uncategorizedOnly: true);
 		var actors = eligible.Select(x => x.Actor).Distinct().ToList();
 		var preferences = await db.CategoryAssistanceReviewPreferences.AsNoTracking()
 			.Where(x => x.AttemptId == attempt.Id && actors.Contains(x.Actor)).ToListAsync(ct);
@@ -161,7 +162,7 @@ public sealed class CategoryAssistanceAutoWriter(IDbContextFactory<ApplicationDb
 		foreach (var marker in markers)
 		{
 			// Recheck under the receipt locks; a save between capture and lock makes the purchase ineligible.
-			if (!await CategoryAssistanceDecisionStore.IsEligibleAsync(db, attempt, marker, ct)) { continue; }
+			if (!await CategoryAssistanceDecisionStore.IsEligibleAsync(db, attempt, marker, ct, uncategorizedOnly: true)) { continue; }
 			var source = await (from item in db.ReceiptItems.AsNoTracking()
 								join receipt in db.Receipts.AsNoTracking() on item.ReceiptId equals receipt.Id
 								where item.Id == marker.ReceiptItemId
