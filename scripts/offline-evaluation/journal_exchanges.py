@@ -7,8 +7,8 @@ from pathlib import Path
 from aggregate_scoring import PER_ATTEMPT_NANODOLLARS, _require
 from evaluation import _load
 
-# Campaign ledger per-journal maximum (campaign_ledger.Policy.max_calls).
-MAXIMUM_JOURNAL_ATTEMPTS = 96
+# Largest packet any round may freeze: round 4 approves 120 attempts (60 two-stage cases).
+MAXIMUM_JOURNAL_ATTEMPTS = 120
 
 
 def extract(rows, replay):
@@ -26,7 +26,9 @@ def extract(rows, replay):
                  and all(c in "0123456789abcdef" for c in digest)
                  and intent.get("kind") == "intent" and type(intent.get("index")) is int
                  and intent["index"] == index and intent.get("requestSha256") == digest
-                 and intent.get("reservationNanodollars") == PER_ATTEMPT_NANODOLLARS)
+                 # Round 4 reserves per request bytes; earlier rounds a fixed amount.
+                 and intent.get("reservationNanodollars")
+                 == attempt.get("reservationNanodollars", PER_ATTEMPT_NANODOLLARS))
         cursor += 1
         if cursor == len(rows):
             _require(index == len(attempts) - 1 and attempt.get("status") == "unknown")

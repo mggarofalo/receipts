@@ -1,5 +1,9 @@
 # RECEIPTS-1076: owner-label holdout (round 3)
 
+> **Historical.** Round 3 ran on 2026-10-29. Its scorer called a sibling leaf
+> under the owner's root "harmful specificity"; the corrected re-score and the
+> current protocol are in [round 4](AUTO-EVAL-NEXT-V4.md).
+
 Prepared 2026-10-29 on macOS after the Windows workstation holding the
 [first pilot](AUTO-EVAL-NEXT.md) and the [second-round packet](AUTO-EVAL-NEXT-V2.md)
 was lost. Their tooling was recovered from the session transcripts and is

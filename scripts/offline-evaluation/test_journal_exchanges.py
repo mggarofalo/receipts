@@ -51,8 +51,8 @@ class JournalExchangeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 extract(rows, replay)
 
-    def test_attempt_cap_is_ledger_per_journal_maximum(self):
-        for count, valid in ((49, True), (96, True), (97, False)):
+    def test_attempt_cap_is_the_largest_approved_packet(self):
+        for count, valid in ((49, True), (120, True), (121, False)):
             rows, replay = [{"kind": "header", "identity": "synthetic"}], {"attempts": []}
             for index in range(count):
                 digest = format(index, "064x")
@@ -66,6 +66,19 @@ class JournalExchangeTests(unittest.TestCase):
             else:
                 with self.assertRaises(ValueError):
                     extract(rows, replay)
+
+    def test_round_four_intents_must_match_each_attempt_reservation(self):
+        digest = "a" * 64
+        rows = [{"kind": "header", "identity": "synthetic"},
+                {"kind": "intent", "index": 0, "requestSha256": digest, "reservationNanodollars": 42_000},
+                {"kind": "response", "index": 0, "requestSha256": digest, "body": "synthetic",
+                 "statusCode": 200}]
+        replay = {"attempts": [{"requestSha256": digest, "status": "replayed",
+                                "reservationNanodollars": 42_000}]}
+        self.assertEqual(len(extract(rows, replay)), 1)
+        replay["attempts"][0]["reservationNanodollars"] = 41_958
+        with self.assertRaises(ValueError):
+            extract(rows, replay)
 
     def test_full_conditional_journal_and_unknown_tail_feed_bound_scorer(self):
         from test_aggregate_scoring import RUNNER as runner, fixture, policy_for, write_freeze
