@@ -74,9 +74,6 @@ const server = setupServer(
     HttpResponse.json({ data: [], total: 0, offset: 0, limit: 50 }),
   ),
   http.get("*/api/item-templates/similar", () => HttpResponse.json([])),
-  http.get("*/api/item-templates/category-suggestions", () =>
-    HttpResponse.json([]),
-  ),
   http.get("*/api/receipt-items/suggestions", () => HttpResponse.json([])),
   http.get("*/api/receipt-items/normalization-candidates", () =>
     HttpResponse.json([]),

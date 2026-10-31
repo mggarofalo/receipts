@@ -42,7 +42,6 @@ let writes: string[];
 let itemFailure: boolean;
 let itemReads: { code: string; location: string | null }[];
 let categoryFailure: boolean;
-let categoryReads: string[];
 const server = setupServer(
   http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
   http.get("*/api/receipt-items/normalization-candidates", () =>
@@ -88,15 +87,6 @@ const server = setupServer(
                 },
               ],
         );
-  }),
-  http.get("*/api/item-templates/category-suggestions", ({ request }) => {
-    categoryReads.push(new URL(request.url).searchParams.get("q")!);
-    return categoryFailure
-      ? HttpResponse.json(
-          { status: 503, detail: "Category hints unavailable" },
-          { status: 503 },
-        )
-      : HttpResponse.json([]);
   }),
   http.get("*/api/receipt-items/suggestions", ({ request }) => {
     const q = new URL(request.url).searchParams;
@@ -184,7 +174,6 @@ beforeEach(() => {
   itemFailure = false;
   itemReads = [];
   categoryFailure = false;
-  categoryReads = [];
   clearServerErrorPageFlag();
   localStorage.clear();
   setTokens(
@@ -502,7 +491,6 @@ it("keeps category lookup failures local while the description changes and permi
   await user.click(screen.getByRole("combobox", { name: /^Category/ }));
   await chooseCategoryOption(user, "Food");
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(categoryReads).toEqual([]);
   expect(writes).toEqual([]);
 });
 it("retries taxonomy without assigning a category or creating taxonomy", async () => {
@@ -527,7 +515,6 @@ it("retries taxonomy without assigning a category or creating taxonomy", async (
   expect(screen.getByRole("combobox", { name: /^Category/ })).toHaveTextContent(
     "Choose category",
   );
-  expect(categoryReads).toEqual([]);
   expect(writes).toEqual([]);
 });
 

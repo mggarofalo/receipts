@@ -12,11 +12,3 @@ public class SimilarItemResult
 	public decimal? DefaultUnitPrice { get; set; }
 	public string? DefaultItemCode { get; set; }
 }
-
-public class CategoryRecommendation
-{
-	public required string Category { get; set; }
-	public string? Subcategory { get; set; }
-	public double Confidence { get; set; }
-	public int OccurrenceCount { get; set; }
-}

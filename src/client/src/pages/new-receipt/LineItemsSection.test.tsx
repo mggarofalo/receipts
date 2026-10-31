@@ -89,11 +89,6 @@ vi.mock("@/hooks/useSimilarItems", () => ({
       isFetching: false,
     }),
   ),
-  useCategoryRecommendations: vi.fn(() =>
-    mockQueryResult({
-      data: [],
-    }),
-  ),
 }));
 
 // Empty unless a test configures envelopes, as when none have been created.

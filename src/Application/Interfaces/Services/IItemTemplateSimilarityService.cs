@@ -5,5 +5,4 @@ namespace Application.Interfaces.Services;
 public interface IItemTemplateSimilarityService
 {
 	Task<List<SimilarItemResult>> GetSimilarItemsAsync(string searchText, int limit, double threshold, bool useSemanticSearch, CancellationToken cancellationToken);
-	Task<List<CategoryRecommendation>> GetCategoryRecommendationsAsync(string description, int limit, CancellationToken cancellationToken);
 }

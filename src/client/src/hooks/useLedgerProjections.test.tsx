@@ -18,7 +18,7 @@ import { SummaryStats } from "@/components/dashboard/SummaryStats";
 import { useOutOfBalanceReport } from "./useOutOfBalanceReport";
 import { useYnabSplitComparison } from "./useYnab";
 import { usePromoteToTemplate } from "./usePromoteToTemplate";
-import { useSimilarItems, useCategoryRecommendations } from "./useSimilarItems";
+import { useSimilarItems } from "./useSimilarItems";
 import { useNormalizedDescriptions } from "./useNormalizedDescriptions";
 import { useItemTemplates } from "./useItemTemplates";
 import { useSignalR } from "./useSignalR";
@@ -475,7 +475,6 @@ it.each(["promotion", "same-session-created"] as const)(
     const queryClient = createAppQueryClient();
     let created = false;
     let suggestionReads = 0;
-    let categoryReads = 0;
     let creates = 0;
     const suggestion = {
       id: "history",
@@ -491,12 +490,6 @@ it.each(["promotion", "same-session-created"] as const)(
         if (!duplicateGuard) suggestionReads++;
         // A fresh post-create search can temporarily omit the new unembedded template.
         return HttpResponse.json(created ? [] : [suggestion]);
-      }),
-      http.get("*/api/item-templates/category-suggestions", () => {
-        categoryReads++;
-        return HttpResponse.json(
-          created ? [] : [{ category: "Food", confidence: 0.9 }],
-        );
       }),
       http.get("*/api/item-templates", () =>
         HttpResponse.json({
@@ -521,7 +514,6 @@ it.each(["promotion", "same-session-created"] as const)(
     function Suggestions() {
       useSignalR(origin !== "promotion");
       const similar = useSimilarItems("Milk");
-      const recommendations = useCategoryRecommendations("Milk");
       const templates = useItemTemplates();
       const registry = useNormalizedDescriptions();
       const promote = usePromoteToTemplate();
@@ -529,9 +521,6 @@ it.each(["promotion", "same-session-created"] as const)(
         <>
           <output aria-label="Visible suggestion">
             {similar.data?.[0]?.name}
-          </output>
-          <output aria-label="Category recommendation">
-            {recommendations.data?.[0]?.category}
           </output>
           <output aria-label="Template count">{templates.total}</output>
           <output aria-label="Canonical count">{registry.total}</output>
@@ -551,9 +540,6 @@ it.each(["promotion", "same-session-created"] as const)(
         expect(
           screen.getByRole("status", { name: "Visible suggestion" }),
         ).toHaveTextContent("Milk");
-        expect(
-          screen.getByRole("status", { name: "Category recommendation" }),
-        ).toHaveTextContent("Food");
       });
       expect(
         screen.getByRole("status", { name: "Template count" }),
@@ -561,7 +547,7 @@ it.each(["promotion", "same-session-created"] as const)(
       expect(
         screen.getByRole("status", { name: "Canonical count" }),
       ).toHaveTextContent(/^0$/);
-      const before = [suggestionReads, categoryReads];
+      const before = suggestionReads;
       if (origin === "promotion")
         await user.click(screen.getByRole("button", { name: "Promote" }));
       else {
@@ -589,10 +575,7 @@ it.each(["promotion", "same-session-created"] as const)(
       expect(
         screen.getByRole("status", { name: "Visible suggestion" }),
       ).toHaveTextContent("Milk");
-      expect(
-        screen.getByRole("status", { name: "Category recommendation" }),
-      ).toHaveTextContent("Food");
-      expect([suggestionReads, categoryReads]).toEqual(before);
+      expect(suggestionReads).toBe(before);
       expect(creates).toBe(origin === "promotion" ? 1 : 0);
       expect(buffered).not.toHaveBeenCalled();
     } finally {

@@ -16,7 +16,7 @@ import {
 import { useLocationHistory } from "./useLocationHistory";
 import { useLocationSuggestions } from "./useReceipts";
 import { useReceiptItemSuggestions } from "./useReceiptItemSuggestions";
-import { useSimilarItems, useCategoryRecommendations } from "./useSimilarItems";
+import { useSimilarItems } from "./useSimilarItems";
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 let failed: boolean;
 let reads: string[];
@@ -27,7 +27,6 @@ const endpoints = [
   "receipts/locations",
   "receipt-items/suggestions",
   "item-templates/similar",
-  "item-templates/category-suggestions",
 ];
 const server = setupServer(
   ...endpoints.map((endpoint) =>
@@ -56,7 +55,6 @@ function useAllSuggestions() {
     location: useLocationHistory(),
     item: useReceiptItemSuggestions("MILK", "Market"),
     similar: useSimilarItems("Milk"),
-    category: useCategoryRecommendations("Milk"),
   };
 }
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -89,16 +87,16 @@ it("keeps each extended suggestion result and retry callback stable across an un
       { value: "API market", label: "API market" },
     ]),
   );
-  expect(reads).toHaveLength(4);
+  expect(reads).toHaveLength(3);
   const previous = result.current;
   rerender();
   for (const key of Object.keys(previous) as (keyof typeof previous)[]) {
     expect(result.current[key]).toBe(previous[key]);
     expect(result.current[key].refetch).toBe(previous[key].refetch);
   }
-  expect(reads).toHaveLength(4);
+  expect(reads).toHaveLength(3);
 });
-it("makes all four actual shared query families local and manually recoverable without automatic retries", async () => {
+it("makes all three actual shared query families local and manually recoverable without automatic retries", async () => {
   failed = true;
   const { result } = renderHook(useAllSuggestions, { wrapper: Wrapper });
   await waitFor(() =>
@@ -120,7 +118,7 @@ it("makes all four actual shared query families local and manually recoverable w
       true,
     ),
   );
-  expect(reads).toHaveLength(8);
+  expect(reads).toHaveLength(6);
   expect(result.current.location.options).toEqual([
     { value: "API market", label: "API market" },
   ]);

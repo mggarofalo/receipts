@@ -14,8 +14,8 @@ queue itself.
 | **Item similarity** | Machine-derived, read-only | Suggestions while typing a line item | `ItemTemplateSimilarityService`, `useSimilarItems` |
 
 The third is worth naming explicitly because it is easy to mistake for a fourth vocabulary. It is
-not: `GetSimilarItems` and `GetCategoryRecommendations` compute suggestions on demand and store
-nothing. They influence what a user picks, never what anything resolves to. Only the first two
+not: `GetSimilarItems` computes suggestions on demand and stores
+nothing. It influences what a user picks, never what anything resolves to. Only the first two
 own persisted identity, and only they can disagree.
 
 ## The problem: two vocabularies that never met

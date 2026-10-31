@@ -1625,27 +1625,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/item-templates/category-suggestions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get category/subcategory recommendations for an item description
-         * @description Returns ranked category and subcategory suggestions based on semantic and
-         *     trigram similarity to existing items and receipt history.
-         */
-        get: operations["GetCategorySuggestions"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/item-templates/{id}/restore": {
         parameters: {
             query?: never;
@@ -5895,20 +5874,6 @@ export interface components {
             offset: number;
             /** Format: int32 */
             limit: number;
-        };
-        CategoryRecommendationResponse: {
-            category: string;
-            subcategory?: string | null;
-            /**
-             * Format: double
-             * @description Weighted confidence score based on similarity of source items
-             */
-            confidence: number;
-            /**
-             * Format: int32
-             * @description Number of similar items with this category
-             */
-            occurrenceCount: number;
         };
         EmbeddingCoverageResponse: {
             /** @description Full model, tokenizer, pooling, and normalization fingerprint admitted by semantic readers. */
@@ -12538,31 +12503,6 @@ export interface operations {
                 };
                 content: {
                     "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    GetCategorySuggestions: {
-        parameters: {
-            query: {
-                /** @description Item description to get category recommendations for */
-                q: string;
-                /** @description Maximum number of recommendations to return */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CategoryRecommendationResponse"][];
                 };
             };
         };
