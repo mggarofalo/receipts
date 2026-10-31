@@ -1,6 +1,6 @@
 # Migration: RetireThresholdMatcher (RECEIPTS-1099)
 
-**Migration id:** `20261031152711_RetireThresholdMatcher`
+**Migration id:** `20261031182933_RetireThresholdMatcher`
 **Date:** 2026-10-31
 
 Take a portable backup before deploying this migration.

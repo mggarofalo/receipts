@@ -13,7 +13,7 @@ using Pgvector;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20261031152711_RetireThresholdMatcher")]
+    [Migration("20261031182933_RetireThresholdMatcher")]
     partial class RetireThresholdMatcher
     {
         /// <inheritdoc />

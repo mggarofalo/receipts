@@ -27,7 +27,7 @@ be a third copy of the same search. There is no replacement UI.
   removed. `?tab=settings` falls back to the Review Queue.
 - `matching.NormalizedDescriptionSettings` and the index on
   `ReceiptItems.NormalizedDescriptionMatchScore` are dropped
-  ([migration](../migrations/20261031152711_RetireThresholdMatcher.md)).
+  ([migration](../migrations/20261031182933_RetireThresholdMatcher.md)).
 - Merge and split clear the moved items' match score instead of measuring it again against the
   surviving row, so they no longer need an embedding.
 - Backups keep the format version. Exports write an empty `normalized_description_settings` table,
