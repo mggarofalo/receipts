@@ -272,9 +272,6 @@ public class NormalizedDescriptionService(
 					&& mapping.State == "active" && mapping.Revision == item.ReviewMappingRevision,
 				item.NormalizationReviewState))).Select(item => item.Id).ToHashSet();
 
-		// Repoint, and clear the match score: it was measured against the discarded row, and no
-		// decision or display reads a re-measured score any more (RECEIPTS-1099).
-		int clearedMatchScoreCount = 0;
 		foreach (ReceiptItemEntity item in items)
 		{
 			item.NormalizedDescriptionId = keepId;
@@ -289,14 +286,6 @@ public class NormalizedDescriptionService(
 				var parent = parents[item.ReceiptId];
 				item.NormalizationIntent = new(ReceiptNormalizationIntentKind.Defer, Guid.NewGuid(),
 					NormalizationCatalogPolicy.Hash(new(parent.Location, item.Description, item.ReceiptItemCode)), ExpectedItemRevision: item.NormalizationRevision);
-			}
-			if (item.NormalizedDescriptionMatchScore is not null)
-			{
-				item.NormalizedDescriptionMatchScore = null;
-				if (item.DeletedAt is null)
-				{
-					clearedMatchScoreCount++;
-				}
 			}
 		}
 
@@ -354,7 +343,6 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "discardedId", OldValue = discardId.ToString(), NewValue = null },
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
-				new FieldChange { FieldName = "clearedMatchScoreCount", OldValue = null, NewValue = clearedMatchScoreCount.ToString() },
 				new FieldChange { FieldName = "relinkedTemplateCount", OldValue = null, NewValue = templates.Count.ToString() },
 			],
 			now);
@@ -368,7 +356,6 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "keptId", OldValue = null, NewValue = keepId.ToString() },
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
-				new FieldChange { FieldName = "clearedMatchScoreCount", OldValue = null, NewValue = clearedMatchScoreCount.ToString() },
 				new FieldChange { FieldName = "relinkedTemplateCount", OldValue = null, NewValue = templates.Count.ToString() },
 			],
 			now);
@@ -528,12 +515,9 @@ public class NormalizedDescriptionService(
 			.ToDictionary(g => g.Key, g => g.Count());
 		List<Guid> originIds = [.. originCounts.Keys];
 
-		// Repoint, and clear the match score for the reason MergeAsync does: it was measured
-		// against the row each item is leaving.
 		foreach (ReceiptItemEntity moved in items)
 		{
 			moved.NormalizedDescriptionId = created.Id;
-			moved.NormalizedDescriptionMatchScore = null;
 		}
 
 		Dictionary<Guid, string> originNames = await context.NormalizedDescriptions
@@ -682,12 +666,6 @@ public class NormalizedDescriptionService(
 	/// unnormalized while the row survives as a tombstone (RECEIPTS-876).
 	/// </summary>
 	/// <remarks>
-	/// Two details are load-bearing.
-	///
-	/// The match score is cleared alongside the FK. ON DELETE SET NULL would not help here — the
-	/// row is not being deleted — and a live item carrying a score with no description to explain
-	/// it is exactly the inconsistent state RECEIPTS-883 exists to prevent.
-	///
 	/// IgnoreQueryFilters reaches past soft-delete so trashed items are detached too. A trashed
 	/// item left pointing at a tombstone would come back from the recycle bin linked to a row the
 	/// reviewer rejected, and no report would ever show it again.
@@ -715,7 +693,6 @@ public class NormalizedDescriptionService(
 			}
 
 			item.NormalizedDescriptionId = null;
-			item.NormalizedDescriptionMatchScore = null;
 		}
 
 		// Templates declaring this text are unlinked too (RECEIPTS-881). The row survives as a
@@ -1078,20 +1055,10 @@ public class NormalizedDescriptionService(
 		// Live items only, matching the counts RequeuePendingAsync reports back. The default
 		// query filter already excludes trashed rows here; the requeue itself deliberately
 		// reaches past it to repoint them too (see RequeuePendingAsync).
-		var counts = await context.ReceiptItems
+		int linkedItemCount = await context.ReceiptItems
 			.AsNoTracking()
 			.IgnoreAutoIncludes()
-			.Where(r => r.NormalizedDescription!.Status == NormalizedDescriptionStatus.PendingReview)
-			.GroupBy(_ => 1)
-			.Select(g => new
-			{
-				Linked = g.Count(),
-				Stale = g.Count(r => r.NormalizedDescriptionMatchScore != null),
-			})
-			.FirstOrDefaultAsync(cancellationToken);
-
-		int linkedItemCount = counts?.Linked ?? 0;
-		int staleMatchScoreCount = counts?.Stale ?? 0;
+			.CountAsync(r => r.NormalizedDescription!.Status == NormalizedDescriptionStatus.PendingReview, cancellationToken);
 
 		// Retained numeric response fields are deprecated compatibility fields. Automatic
 		// similarity rematching is retired; zero indicates no scheduled rematch estimate.
@@ -1102,7 +1069,6 @@ public class NormalizedDescriptionService(
 			pendingIds.Count,
 			ComputePendingFingerprint(pendingIds),
 			linkedItemCount,
-			staleMatchScoreCount,
 			cycles,
 			seconds);
 	}
@@ -1134,7 +1100,7 @@ public class NormalizedDescriptionService(
 		{
 			// Re-runnable by design: a second pass with nothing pending is a no-op, not an error.
 			// The empty set has a stable fingerprint of its own, so this path is still guarded.
-			return new RequeuePendingResult(0, 0, 0);
+			return new RequeuePendingResult(0, 0);
 		}
 
 		List<Guid> pendingIds = [.. pending.Select(e => e.Id)];
@@ -1142,9 +1108,7 @@ public class NormalizedDescriptionService(
 
 		// IgnoreQueryFilters so trashed items are repointed as well. The FK is DeleteBehavior.SetNull,
 		// so a trashed row left pointing at a deleted description would have its link nulled by the
-		// database and come back from the recycle bin unlinked with no error raised — but with its
-		// stale match score intact, which is exactly the inconsistent state this issue exists to
-		// prevent. Same class of bug as the soft-deleted-transaction stranding fixed in
+		// database and come back from the recycle bin unlinked with no error raised. Same class of bug as the soft-deleted-transaction stranding fixed in
 		// AccountMergeService (RECEIPTS-801) and guarded in MergeAsync above.
 		List<ReceiptItemEntity> items = await context.ReceiptItems
 			.IgnoreQueryFilters()
@@ -1153,27 +1117,11 @@ public class NormalizedDescriptionService(
 			.ToListAsync(cancellationToken);
 
 		int unlinkedItemCount = 0;
-		int clearedMatchScoreCount = 0;
 
 		foreach (ReceiptItemEntity item in items)
 		{
-			bool isLive = item.DeletedAt is null;
-
-			// Null the score explicitly rather than relying on the delete cascade. ON DELETE SET NULL
-			// covers the FK only — NormalizedDescriptionMatchScore is a plain column, so the cascade
-			// would leave a score behind with no description to explain it. Doing both here keeps the
-			// pair consistent within the single transaction below.
-			if (item.NormalizedDescriptionMatchScore is not null)
-			{
-				item.NormalizedDescriptionMatchScore = null;
-				if (isLive)
-				{
-					clearedMatchScoreCount++;
-				}
-			}
-
 			item.NormalizedDescriptionId = null;
-			if (isLive)
+			if (item.DeletedAt is null)
 			{
 				unlinkedItemCount++;
 			}
@@ -1197,12 +1145,11 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "operation", OldValue = null, NewValue = "RequeuePending" },
 				new FieldChange { FieldName = "deletedDescriptionCount", OldValue = null, NewValue = pending.Count.ToString() },
 				new FieldChange { FieldName = "unlinkedItemCount", OldValue = null, NewValue = unlinkedItemCount.ToString() },
-				new FieldChange { FieldName = "clearedMatchScoreCount", OldValue = null, NewValue = clearedMatchScoreCount.ToString() },
 				new FieldChange { FieldName = "unlinkedTrashedItemCount", OldValue = null, NewValue = (items.Count - unlinkedItemCount).ToString() },
 			],
 			DateTimeOffset.UtcNow);
 
-		// Single SaveChanges: either the unlink, the score clear, the delete and the audit entry all
+		// Single SaveChanges: either the unlink, the delete and the audit entry all
 		// land, or none do. A partial commit would strand items pointing at deleted rows, or record
 		// a requeue that did not happen.
 		await context.SaveChangesAsync(cancellationToken);
@@ -1214,7 +1161,7 @@ public class NormalizedDescriptionService(
 			CommittedEntityType.NormalizedDescription,
 			CommittedChangeType.Deleted));
 
-		return new RequeuePendingResult(pending.Count, unlinkedItemCount, clearedMatchScoreCount);
+		return new RequeuePendingResult(pending.Count, unlinkedItemCount);
 	}
 
 	// Order-independent digest of a set of pending ids. Sorted before hashing so two callers that

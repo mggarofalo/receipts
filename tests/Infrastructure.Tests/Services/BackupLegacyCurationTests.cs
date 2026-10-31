@@ -30,7 +30,7 @@ public class BackupLegacyCurationTests
 		{
 			seed.Receipts.Add(new() { Id = receiptId, Location = "Store", Date = new(2024, 1, 1) });
 			seed.NormalizedDescriptions.Add(new() { Id = canonicalId, CanonicalName = "Milk canonical", DisplayLabel = "Chosen milk label", Status = NormalizedDescriptionStatus.Active, NearestNeighbourSimilarity = 0.86, CreatedAt = DateTimeOffset.UtcNow });
-			seed.ReceiptItems.Add(new() { Id = itemId, ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = canonicalId, NormalizedDescriptionMatchScore = 0.79 });
+			seed.ReceiptItems.Add(new() { Id = itemId, ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = canonicalId });
 			seed.ItemTemplates.Add(new() { Id = templateId, Name = "Milk template", NormalizedDescriptionId = canonicalId });
 			await seed.SaveChangesAsync();
 		}
@@ -71,7 +71,6 @@ public class BackupLegacyCurationTests
 			item.Description.Should().Be("Milk");
 			item.Quantity.Should().Be(1);
 			item.NormalizedDescriptionId.Should().Be(canonicalId);
-			item.NormalizedDescriptionMatchScore.Should().Be(0.79);
 			(await read.ItemTemplates.SingleAsync()).NormalizedDescriptionId.Should().Be(canonicalId);
 			NormalizedDescriptionEntity canonical = await read.NormalizedDescriptions.SingleAsync();
 			canonical.DisplayLabel.Should().Be("Chosen milk label");

@@ -25,7 +25,6 @@ public partial class ApplicationDbContext
 				&& entry.Entity.NormalizationOrigin is "mapped" or "excluded").ToArray())
 			{
 				entry.Entity.NormalizedDescriptionId = null;
-				entry.Entity.NormalizedDescriptionMatchScore = null;
 				entry.Entity.NormalizationOrigin = "unassigned";
 				entry.Entity.NormalizationMappingId = null;
 				entry.Entity.NormalizationAssignmentId = Guid.NewGuid();
@@ -54,7 +53,6 @@ public partial class ApplicationDbContext
 				&& item.NormalizationOrigin is "mapped" or "excluded")
 			{
 				item.NormalizedDescriptionId = null;
-				item.NormalizedDescriptionMatchScore = null;
 				item.NormalizationOrigin = "unassigned";
 				item.NormalizationMappingId = null;
 				item.NormalizationAssignmentId = Guid.NewGuid();

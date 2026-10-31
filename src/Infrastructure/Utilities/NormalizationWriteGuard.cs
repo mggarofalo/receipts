@@ -12,7 +12,6 @@ internal static class NormalizationWriteGuard
 		public Guid Id { get; set; }
 		public string Description { get; set; } = string.Empty;
 		public Guid? NormalizedDescriptionId { get; set; }
-		public double? NormalizedDescriptionMatchScore { get; set; }
 		public DateTimeOffset? DeletedAt { get; set; }
 		public string? Revision { get; set; }
 
@@ -20,7 +19,6 @@ internal static class NormalizationWriteGuard
 			&& string.Equals(Revision, current.Revision, StringComparison.Ordinal)
 			&& string.Equals(Description, current.Description, StringComparison.Ordinal)
 			&& NormalizedDescriptionId == current.NormalizedDescriptionId
-			&& NormalizedDescriptionMatchScore == current.NormalizedDescriptionMatchScore
 			&& DeletedAt == current.DeletedAt;
 	}
 
@@ -34,7 +32,7 @@ internal static class NormalizationWriteGuard
 		if (context.Database.IsNpgsql())
 		{
 			return await context.Database.SqlQuery<ItemSnapshot>($"""
-				SELECT "Id", "Description", "NormalizedDescriptionId", "NormalizedDescriptionMatchScore",
+				SELECT "Id", "Description", "NormalizedDescriptionId",
 				       "DeletedAt", xmin::text AS "Revision"
 				FROM receipts."ReceiptItems" WHERE "Id" = ANY ({ids})
 				""").ToListAsync(cancellationToken);
@@ -49,7 +47,6 @@ internal static class NormalizationWriteGuard
 				Id = item.Id,
 				Description = item.Description,
 				NormalizedDescriptionId = item.NormalizedDescriptionId,
-				NormalizedDescriptionMatchScore = item.NormalizedDescriptionMatchScore,
 				DeletedAt = item.DeletedAt,
 			})
 			.ToListAsync(cancellationToken);

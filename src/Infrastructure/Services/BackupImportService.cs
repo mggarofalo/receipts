@@ -747,7 +747,7 @@ public partial class BackupImportService(
 		await using SqliteCommand cmd = sqlite.CreateCommand();
 		bool hasCuration = exportVersion >= 5;
 		cmd.CommandText = "SELECT id, receipt_id, receipt_item_code, description, quantity, unit_price, unit_price_currency, total_amount, total_amount_currency, category, subcategory"
-			+ (hasCuration ? ", normalized_description_id, normalized_description_match_score" : "") + " FROM receipt_items";
+			+ (hasCuration ? ", normalized_description_id" : "") + " FROM receipt_items";
 		await using SqliteDataReader reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
 		while (await reader.ReadAsync(cancellationToken))
@@ -763,12 +763,8 @@ public partial class BackupImportService(
 			Currency totalAmountCurrency = ParseCurrency(reader.GetString(8));
 			string category = reader.GetString(9);
 			string? subcategory = reader.IsDBNull(10) ? null : reader.GetString(10);
+			// normalized_description_match_score (v5+) held the retired similarity score; it is ignored.
 			Guid? canonicalId = hasCuration ? ReadNullableGuid(reader, 11) : null;
-			double? matchScore = hasCuration ? ReadNullableScore(reader, 12) : null;
-			if (canonicalId is null && matchScore is not null)
-			{
-				throw new InvalidOperationException($"Receipt item {id} has a match score without a canonical description.");
-			}
 
 			ReceiptItemEntity? existing = await context.ReceiptItems
 				.IgnoreQueryFilters()
@@ -780,12 +776,11 @@ public partial class BackupImportService(
 				bool preserveAssignment = archiveAssignments.TryGetValue(id, out Guid archiveAssignmentId)
 					&& existing.NormalizationAssignmentId == archiveAssignmentId
 					&& existing.NormalizationOrigin == "legacy_unknown" && existing.NormalizationMappingId is null
-					&& existing.NormalizedDescriptionId == canonicalId && existing.NormalizedDescriptionMatchScore == matchScore
+					&& existing.NormalizedDescriptionId == canonicalId
 					&& existing.ReceiptId == receiptId && existing.Description == description && existing.ReceiptItemCode == receiptItemCode;
 				if (hasCuration || !string.Equals(existing.Description, description, StringComparison.Ordinal))
 				{
 					existing.NormalizedDescriptionId = canonicalId;
-					existing.NormalizedDescriptionMatchScore = matchScore;
 				}
 				existing.ReceiptId = receiptId;
 				existing.NormalizationOrigin = existing.NormalizedDescriptionId.HasValue ? "legacy_unknown" : "unassigned";
@@ -819,7 +814,6 @@ public partial class BackupImportService(
 					Category = category,
 					Subcategory = subcategory,
 					NormalizedDescriptionId = canonicalId,
-					NormalizedDescriptionMatchScore = matchScore,
 					NormalizationOrigin = canonicalId.HasValue ? "legacy_unknown" : "unassigned",
 					NormalizationAssignmentId = Guid.NewGuid(),
 				});

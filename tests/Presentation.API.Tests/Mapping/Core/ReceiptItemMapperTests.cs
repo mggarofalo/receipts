@@ -326,8 +326,7 @@ public class ReceiptItemMapperTests
 		)
 		{
 			NormalizedDescriptionId = expectedNormalizedId,
-			NormalizedDescriptionName = "Grapes",
-			NormalizedDescriptionMatchScore = 0.92
+			NormalizedDescriptionName = "Grapes"
 		};
 
 		// Act
@@ -336,7 +335,6 @@ public class ReceiptItemMapperTests
 		// Assert
 		Assert.Equal(expectedNormalizedId, actual.NormalizedDescriptionId);
 		Assert.Equal("Grapes", actual.NormalizedDescriptionName);
-		Assert.Equal(0.92, actual.NormalizedDescriptionMatchScore);
 	}
 
 	[Fact]
@@ -361,7 +359,6 @@ public class ReceiptItemMapperTests
 		// Assert
 		Assert.Null(actual.NormalizedDescriptionId);
 		Assert.Null(actual.NormalizedDescriptionName);
-		Assert.Null(actual.NormalizedDescriptionMatchScore);
 	}
 
 	[Fact]

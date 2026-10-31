@@ -39,7 +39,6 @@ public class ReceiptItemEntity : ISoftDeletable, IOwnedBy<ReceiptEntity>
 	public string Category { get; set; } = string.Empty;
 	public string? Subcategory { get; set; }
 	public Guid? NormalizedDescriptionId { get; set; }
-	public double? NormalizedDescriptionMatchScore { get; set; }
 	public Guid? EnvelopeId { get; set; }
 	public Domain.Envelopes.EnvelopeSource EnvelopeSource { get; set; }
 	[NotMapped]

@@ -139,44 +139,6 @@ public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 			"every trashed item must be repointed at the surviving row rather than SetNull'd");
 	}
 
-	// RECEIPTS-1099. The item's score was measured against the discarded row; a merge clears it
-	// instead of re-measuring against the survivor, and needs no embedding to do so.
-	[Fact]
-	public async Task MergeAsync_RelinksItemsAndClearsTheirMeasuredScore()
-	{
-		Guid keepId = Guid.NewGuid();
-		Guid discardId = Guid.NewGuid();
-		Guid itemId = Guid.NewGuid();
-		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
-
-		{
-			await using ApplicationDbContext setup = fixture.CreateDbContext();
-			setup.Receipts.Add(receipt);
-
-			// Names unique to this test: the fixture's Postgres is shared across the collection
-			// and NormalizedDescriptions has a unique index on lower(CanonicalName).
-			setup.NormalizedDescriptions.AddRange(BuildNormalized(keepId, "Cleared Sourdough"), BuildNormalized(discardId, "Clearde Sourdogh"));
-			await setup.SaveChangesAsync();
-
-			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
-			item.Id = itemId;
-			item.NormalizedDescriptionId = discardId;
-			item.NormalizedDescriptionMatchScore = 0.97;
-			setup.ReceiptItems.Add(item);
-			await setup.SaveChangesAsync();
-		}
-
-		await CreateService().MergeAsync(keepId, discardId, CancellationToken.None);
-
-		await using ApplicationDbContext verify = fixture.CreateDbContext();
-		ReceiptItemEntity itemAfter = await verify.ReceiptItems
-			.IgnoreAutoIncludes().AsNoTracking()
-			.FirstAsync(r => r.Id == itemId);
-
-		itemAfter.NormalizedDescriptionId.Should().Be(keepId);
-		itemAfter.NormalizedDescriptionMatchScore.Should().BeNull();
-	}
-
 	private NormalizedDescriptionService CreateService() => new(
 		new FixtureContextFactory(fixture),
 		new UnconfiguredEmbeddingService(),

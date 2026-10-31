@@ -27,7 +27,7 @@ public partial class TemplateNormalizationOwnershipTests(PostgresFixture server)
 	[Theory]
 	[InlineData(1)]
 	[InlineData(3)]
-	public async Task RealItemCreateChain_PreservesTrustedTemplateIdentity_WithNoInventedScore(int count)
+	public async Task RealItemCreateChain_PreservesTrustedTemplateIdentity(int count)
 	{
 		Seed seed = await SeedAsync();
 		using ServiceProvider provider = BuildProvider(Mock.Of<INormalizedDescriptionService>());
@@ -37,8 +37,8 @@ public partial class TemplateNormalizationOwnershipTests(PostgresFixture server)
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		List<ReceiptItemEntity> persisted = await verify.ReceiptItems.Where(item => item.ReceiptId == seed.Receipt).ToListAsync();
 		using AssertionScope assertions = new();
-		created.Should().HaveCount(count).And.OnlyContain(item => item.NormalizedDescriptionId == seed.Milk && item.NormalizedDescriptionMatchScore == null);
-		persisted.Should().HaveCount(count).And.OnlyContain(item => item.NormalizedDescriptionId == seed.Milk && item.NormalizedDescriptionMatchScore == null);
+		created.Should().HaveCount(count).And.OnlyContain(item => item.NormalizedDescriptionId == seed.Milk);
+		persisted.Should().HaveCount(count).And.OnlyContain(item => item.NormalizedDescriptionId == seed.Milk);
 		persisted.Should().OnlyContain(item => item.Description == "Entered receipt text" && item.Quantity == 2 && item.TotalAmount == 6);
 	}
 
@@ -72,7 +72,6 @@ public partial class TemplateNormalizationOwnershipTests(PostgresFixture server)
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		ReceiptItemEntity persisted = await verify.ReceiptItems.SingleAsync(item => item.ReceiptId == seed.Receipt);
 		persisted.NormalizedDescriptionId.Should().BeNull();
-		persisted.NormalizedDescriptionMatchScore.Should().BeNull();
 	}
 
 	[Theory]
@@ -155,7 +154,7 @@ public partial class TemplateNormalizationOwnershipTests(PostgresFixture server)
 		return new(receipt.Id, template, milk, bread);
 	}
 
-	private static ReceiptItem NewItem(Guid arbitraryCanonical) => new(Guid.NewGuid(), "123", "Entered receipt text", 2, new Money(3, Currency.USD), new Money(6, Currency.USD), "Historical category", null) { NormalizedDescriptionId = arbitraryCanonical, NormalizedDescriptionMatchScore = 0.99 };
+	private static ReceiptItem NewItem(Guid arbitraryCanonical) => new(Guid.NewGuid(), "123", "Entered receipt text", 2, new Money(3, Currency.USD), new Money(6, Currency.USD), "Historical category", null) { NormalizedDescriptionId = arbitraryCanonical };
 
 	private ServiceProvider BuildProvider(INormalizedDescriptionService canonical, IDbContextFactory<ApplicationDbContext>? factory = null)
 	{

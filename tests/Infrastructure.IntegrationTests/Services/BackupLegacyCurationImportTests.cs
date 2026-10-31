@@ -63,7 +63,7 @@ public class BackupLegacyCurationImportTests(PostgresFixture server) : IClassFix
 		{
 			seed.Receipts.Add(new() { Id = receipt, Location = "Store", Date = new(2024, 1, 1) });
 			seed.NormalizedDescriptions.Add(new() { Id = canonical, CanonicalName = "Milk canonical", DisplayLabel = "Chosen milk label", NearestNeighbourSimilarity = .86, CreatedAt = DateTimeOffset.UtcNow });
-			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, Category = "Food", NormalizedDescriptionId = canonical, NormalizedDescriptionMatchScore = .79 });
+			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, Category = "Food", NormalizedDescriptionId = canonical });
 			seed.ItemTemplates.Add(new() { Id = template, Name = "Milk template", NormalizedDescriptionId = canonical });
 			await seed.SaveChangesAsync();
 			receiptRevision = await seed.Receipts.AsNoTracking().Where(x => x.Id == receipt).Select(x => x.NormalizationRevision).SingleAsync();
@@ -90,7 +90,6 @@ public class BackupLegacyCurationImportTests(PostgresFixture server) : IClassFix
 			var restored = await read.ReceiptItems.SingleAsync();
 			restored.Description.Should().Be(description); restored.Quantity.Should().Be(2);
 			restored.NormalizedDescriptionId.Should().Be(changed ? null : canonical);
-			restored.NormalizedDescriptionMatchScore.Should().Be(changed ? null : .79);
 			(await read.ItemTemplates.SingleAsync()).NormalizedDescriptionId.Should().Be(canonical);
 			var concept = await read.NormalizedDescriptions.SingleAsync();
 			concept.DisplayLabel.Should().Be("Chosen milk label"); concept.NearestNeighbourId.Should().BeNull();

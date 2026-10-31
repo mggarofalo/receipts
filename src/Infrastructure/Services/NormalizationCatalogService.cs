@@ -257,7 +257,6 @@ public sealed partial class NormalizationCatalogService(
 					PreviousOrigin = item.NormalizationOrigin,
 					PreviousMappingId = item.NormalizationMappingId,
 					PreviousAssignmentId = item.NormalizationAssignmentId,
-					PreviousScore = item.NormalizedDescriptionMatchScore,
 					State = eligible ? "pending" : "protected"
 				});
 			}

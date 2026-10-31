@@ -82,7 +82,6 @@ public sealed partial class NormalizationCatalogTests
 		current.NormalizationOrigin.Should().Be("mapped");
 		current.NormalizationMappingId.Should().Be(mappingId);
 		current.NormalizationReviewState.Should().Be(NormalizationReviewState.Verified);
-		current.NormalizedDescriptionMatchScore.Should().BeNull();
 		if (changedField != "location")
 		{
 			(await ReadAsync(ids)).Count(x => x.NormalizedDescriptionId == null).Should().Be(4, "other unchanged historical observations remain reserved");

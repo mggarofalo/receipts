@@ -128,7 +128,7 @@ public static class ChatGptEvaluationCommand
 			bool rejected = value.GetProperty("exactRejected").GetBoolean();
 			string description = value.GetProperty("description").GetString()!;
 			bool eligible = NormalizationAiDecisionPolicy.IsEligibleSource(new(Guid.NewGuid(), description,
-				group is null ? null : Guid.NewGuid(), null, group is null ? null : NormalizedDescriptionStatus.Active, null,
+				group is null ? null : Guid.NewGuid(), null, group is null ? null : NormalizedDescriptionStatus.Active,
 				TemplateProtected: value.GetProperty("templateGroup").ValueKind != JsonValueKind.Null, ExactRejected: rejected));
 			JsonElement expected = value.GetProperty("expected");
 			items.Add(new()

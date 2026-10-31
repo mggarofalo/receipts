@@ -16,7 +16,7 @@ public class RequeuePendingCommandHandlerTests
 
 		mockService
 			.Setup(s => s.RequeuePendingAsync("abc123", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RequeuePendingResult(3, 12, 9));
+			.ReturnsAsync(new RequeuePendingResult(3, 12));
 
 		RequeuePendingCommandHandler handler = new(mockService.Object, mockSignal.Object);
 
@@ -25,7 +25,6 @@ public class RequeuePendingCommandHandlerTests
 		result.Should().NotBeNull();
 		result!.DeletedDescriptionCount.Should().Be(3);
 		result.UnlinkedItemCount.Should().Be(12);
-		result.ClearedMatchScoreCount.Should().Be(9);
 		// Without the wake-up the requeued items sit idle for up to a full poll interval.
 		mockSignal.Verify(s => s.NotifyDirty(), Times.Once);
 	}
@@ -58,7 +57,7 @@ public class RequeuePendingCommandHandlerTests
 
 		mockService
 			.Setup(s => s.RequeuePendingAsync("empty-digest", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RequeuePendingResult(0, 0, 0));
+			.ReturnsAsync(new RequeuePendingResult(0, 0));
 
 		RequeuePendingCommandHandler handler = new(mockService.Object, mockSignal.Object);
 

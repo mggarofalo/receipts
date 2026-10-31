@@ -111,7 +111,6 @@ internal static partial class PortableCatalogArchive
 				.Where(item => item.NormalizedDescriptionId == record.RetiredId).ToListAsync(ct))
 			{
 				item.NormalizedDescriptionId = record.SurvivorId;
-				item.NormalizedDescriptionMatchScore = null;
 				item.NormalizationOrigin = "legacy_unknown";
 				item.NormalizationMappingId = null;
 				// Install the archive's final legacy identity with the relink and proof invalidation.

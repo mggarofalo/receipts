@@ -68,7 +68,6 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 		summary.Skipped.Should().Be(unchanged ? 0 : 1, "stale work must be observably skipped rather than reported as linked");
 		stored.Description.Should().Be(change == "description-edit" ? "Bread" : "Milk");
 		stored.NormalizedDescriptionId.Should().Be(change is "candidate-merged" or "manual-link" ? seed.Bread : unchanged || change == "edit-revert" ? seed.Milk : null);
-		stored.NormalizedDescriptionMatchScore.Should().BeNull("approved source mappings do not invent similarity scores");
 		(stored.DeletedAt is not null).Should().Be(change == "soft-delete");
 		(await AuditCountAsync(seed.Item)).Should().Be(auditCount + (unchanged ? 1 : 0), "a skipped stale result must not create a fictitious business/audit update");
 	}
@@ -137,7 +136,6 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 		loser.Linked.Should().Be(0);
 		loser.Skipped.Should().Be(1);
 		stored.NormalizedDescriptionId.Should().Be(seed.Milk);
-		stored.NormalizedDescriptionMatchScore.Should().BeNull();
 		(await AuditCountAsync(seed.Item)).Should().Be(2, "one insert plus one winning normalization update");
 	}
 
@@ -154,7 +152,6 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 			sibling.Description = "Milk";
 			sibling.ReceiptItemCode = null;
 			sibling.NormalizedDescriptionId = null;
-			sibling.NormalizedDescriptionMatchScore = null;
 			unchanged = sibling.Id;
 			setup.ReceiptItems.Add(sibling);
 			await setup.SaveChangesAsync();
@@ -189,7 +186,6 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 		ReceiptItemEntity recovered = await verify.ReceiptItems.SingleAsync(item => item.Id == seed.Item);
 		recovered.Description.Should().Be("Bread");
 		recovered.NormalizedDescriptionId.Should().Be(seed.Bread);
-		recovered.NormalizedDescriptionMatchScore.Should().BeNull();
 		(await AuditCountAsync(seed.Item)).Should().Be(3);
 	}
 
@@ -231,7 +227,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 			// Simulate a concurrent historical assignment writer. SQL revision/evidence triggers
 			// must protect the candidate snapshot even when no receipt save policy runs.
 			await using ApplicationDbContext manual = fixture.CreateDbContext();
-			await manual.Database.ExecuteSqlInterpolatedAsync($"""UPDATE receipts."ReceiptItems" SET "NormalizedDescriptionId" = {seed.Bread}, "NormalizedDescriptionMatchScore" = NULL WHERE "Id" = {seed.Item}""");
+			await manual.Database.ExecuteSqlInterpolatedAsync($"""UPDATE receipts."ReceiptItems" SET "NormalizedDescriptionId" = {seed.Bread} WHERE "Id" = {seed.Item}""");
 			if (change == "link-unlink")
 			{
 				await manual.Database.ExecuteSqlInterpolatedAsync($"""UPDATE receipts."ReceiptItems" SET "NormalizedDescriptionId" = NULL WHERE "Id" = {seed.Item}""");
@@ -273,7 +269,6 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 		item.Description = "Milk";
 		item.ReceiptItemCode = null;
 		item.NormalizedDescriptionId = null;
-		item.NormalizedDescriptionMatchScore = null;
 		Guid milk = Guid.NewGuid(), bread = Guid.NewGuid();
 		context.NormalizedDescriptions.AddRange(CurrentCanonical(milk, approximate ? "Canonical Milk" : "Milk"), CurrentCanonical(bread, approximate ? "Canonical Bread" : "Bread"));
 		context.Receipts.Add(receipt);

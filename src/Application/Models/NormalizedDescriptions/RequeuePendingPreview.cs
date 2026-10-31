@@ -7,6 +7,5 @@ public record RequeuePendingPreview(
 	int PendingDescriptionCount,
 	string PendingFingerprint,
 	int LinkedItemCount,
-	int StaleMatchScoreCount,
 	int EstimatedResolverCycles,
 	int EstimatedCatchUpSeconds);

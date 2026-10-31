@@ -85,7 +85,7 @@ public class CurationProducerNotificationTests
 				return async () => _response = await normalized.UpdateNormalizedDescriptionStatus(_id, new UpdateNormalizedDescriptionStatusRequest { Status = DtoStatus.Rejected }, CancellationToken.None);
 			case "requeue":
 				_mediator.Setup(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()))
-					.Returns(() => CompleteCommand<RequeuePendingResult?>(new(1, 1, 1)));
+					.Returns(() => CompleteCommand<RequeuePendingResult?>(new(1, 1)));
 				return async () => _response = await normalized.RequeuePending(new RequeuePendingRequest { ExpectedFingerprint = "snapshot" }, CancellationToken.None);
 			case "accept":
 				_mediator.Setup(m => m.Send(It.IsAny<AcceptDuplicateGroupCommand>(), It.IsAny<CancellationToken>()))

@@ -41,12 +41,8 @@ export function MaintenanceTab() {
     );
   }
 
-  const {
-    pendingDescriptionCount,
-    pendingFingerprint,
-    linkedItemCount,
-    staleMatchScoreCount,
-  } = preview.data;
+  const { pendingDescriptionCount, pendingFingerprint, linkedItemCount } =
+    preview.data;
   const nothingToDo = pendingDescriptionCount === 0;
 
   return (
@@ -55,9 +51,9 @@ export function MaintenanceTab() {
         <CardHeader>
           <CardTitle>Requeue Pending Descriptions</CardTitle>
           <CardDescription>
-            Delete the previewed pending entries and clear their purchase links
-            and advisory scores. Purchases return to review without automatic
-            similarity rematching. Active entries stay unchanged.
+            Delete the previewed pending entries and clear their purchase links.
+            Purchases return to review without automatic similarity rematching.
+            Active entries stay unchanged.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -68,7 +64,7 @@ export function MaintenanceTab() {
           ) : (
             <>
               <div
-                className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+                className="grid grid-cols-1 gap-4 sm:grid-cols-2"
                 data-testid="requeue-preview-panel"
               >
                 <div>
@@ -85,15 +81,6 @@ export function MaintenanceTab() {
                   <p className="money-med tabular-nums">{linkedItemCount}</p>
                   <p className="text-xs text-muted-foreground">
                     returned to review
-                  </p>
-                </div>
-                <div>
-                  <p className="card-sub">Match scores</p>
-                  <p className="money-med tabular-nums">
-                    {staleMatchScoreCount}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    cleared in the same transaction
                   </p>
                 </div>
               </div>

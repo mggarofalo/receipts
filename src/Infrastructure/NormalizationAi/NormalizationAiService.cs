@@ -215,7 +215,6 @@ public sealed partial class NormalizationAiService(
 				LabelOnly = proposal.LabelOnly,
 				SourceCanonicalId = proposal.SourceCanonicalId,
 				SourceCanonicalRevision = proposal.SourceCanonicalRevision,
-				SourceMatchScore = proposal.SourceMatchScore,
 				Description = proposal.Description,
 				CandidatesJson = proposal.CandidatesJson
 			}).ToList()

@@ -525,7 +525,7 @@ public sealed partial class NormalizationAiWorkflowTests(PostgresFixture server)
 	{
 		await using var db = fixture.CreateDbContext();
 		var items = await db.ReceiptItems.Where(x => ids.Contains(x.Id)).ToListAsync();
-		items.Should().HaveCount(ids.Length).And.OnlyContain(x => x.NormalizedDescriptionId == null && x.NormalizedDescriptionMatchScore == null);
+		items.Should().HaveCount(ids.Length).And.OnlyContain(x => x.NormalizedDescriptionId == null);
 		items.Select(x => x.Description).Should().BeEquivalentTo("Milk", "Bread");
 		(await db.NormalizedDescriptions.CountAsync()).Should().Be(0);
 	}

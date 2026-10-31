@@ -16,9 +16,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // The InMemory suite cannot prove the parts that matter here. It enforces no FKs, so it cannot
 // show that deleting a pending row which another row cites as its nearest neighbour is legal
 // (the self-FK added in RECEIPTS-873 is ON DELETE SET NULL, and a RESTRICT would raise 23503).
-// It also does not replay cascades for store-resident rows the change tracker never saw, so a
-// stale NormalizedDescriptionMatchScore paired with a nulled FK survives there unnoticed —
-// which is precisely the inconsistent state the checklist asks us to rule out.
+// It also does not replay cascades for store-resident rows the change tracker never saw.
 //
 // The fixture is one Postgres instance shared by the whole collection with no per-test rollback,
 // and sibling tests seed their own PendingReview rows. Since the requeue is deliberately global
@@ -30,7 +28,7 @@ namespace Infrastructure.IntegrationTests.Services;
 public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 {
 	[Fact]
-	public async Task RequeuePendingAsync_LeavesNoItemWithANullLinkAndALingeringScore()
+	public async Task RequeuePendingAsync_UnlinksLiveAndTrashedItemsAndKeepsActiveRows()
 	{
 		// Arrange — a pending row citing a second pending row as its nearest neighbour, with a
 		// live item and a trashed item hanging off it, plus an untouched Active row.
@@ -64,18 +62,15 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 			ReceiptItemEntity liveItem = ReceiptItemEntityGenerator.Generate(receipt.Id);
 			liveItem.Id = liveItemId;
 			liveItem.NormalizedDescriptionId = pendingId;
-			liveItem.NormalizedDescriptionMatchScore = 0.86;
 
 			ReceiptItemEntity trashedItem = ReceiptItemEntityGenerator.Generate(receipt.Id);
 			trashedItem.Id = trashedItemId;
 			trashedItem.NormalizedDescriptionId = pendingId;
-			trashedItem.NormalizedDescriptionMatchScore = 0.86;
 			trashedItem.DeletedAt = DateTimeOffset.UtcNow;
 
 			ReceiptItemEntity activeItem = ReceiptItemEntityGenerator.Generate(receipt.Id);
 			activeItem.Id = activeItemId;
 			activeItem.NormalizedDescriptionId = activeId;
-			activeItem.NormalizedDescriptionMatchScore = 0.99;
 
 			setup.ReceiptItems.AddRange(liveItem, trashedItem, activeItem);
 			await setup.SaveChangesAsync();
@@ -86,7 +81,6 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
 		preview.PendingDescriptionCount.Should().Be(2);
 		preview.LinkedItemCount.Should().Be(1, "the preview counts live items only");
-		preview.StaleMatchScoreCount.Should().Be(1);
 
 		// Act — deleting `pending` and `neighbour` together exercises the self-FK: one of the two
 		// is removed while the other still cites it. A RESTRICT here would raise 23503.
@@ -96,7 +90,6 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 		result.Should().NotBeNull();
 		result!.DeletedDescriptionCount.Should().Be(2);
 		result.UnlinkedItemCount.Should().Be(1);
-		result.ClearedMatchScoreCount.Should().Be(1);
 
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 
@@ -107,29 +100,16 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 			.ToListAsync();
 		survivingIds.Should().BeEquivalentTo([activeId], "only the Active row may survive");
 
-		// The invariant the issue asks to verify afterwards, checked against real rows rather than
-		// the change tracker. Scoped to this test's receipt so a sibling test's data cannot mask
-		// or manufacture a violation.
-		List<ReceiptItemEntity> orphanedScores = await verify.ReceiptItems
-			.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
-			.Where(r => r.ReceiptId == receipt.Id)
-			.Where(r => r.NormalizedDescriptionId == null && r.NormalizedDescriptionMatchScore != null)
-			.ToListAsync();
-		orphanedScores.Should().BeEmpty(
-			"a null FK paired with a non-null match score is exactly the inconsistent window this requeue exists to close");
-
 		ReceiptItemEntity trashedAfter = await verify.ReceiptItems
 			.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
 			.SingleAsync(r => r.Id == trashedItemId);
 		trashedAfter.NormalizedDescriptionId.Should().BeNull();
-		trashedAfter.NormalizedDescriptionMatchScore.Should().BeNull();
 		trashedAfter.DeletedAt.Should().NotBeNull("the requeue must not resurrect trashed items");
 
 		ReceiptItemEntity activeAfter = await verify.ReceiptItems
 			.IgnoreAutoIncludes().AsNoTracking()
 			.SingleAsync(r => r.Id == activeItemId);
 		activeAfter.NormalizedDescriptionId.Should().Be(activeId, "Active entries are never touched");
-		activeAfter.NormalizedDescriptionMatchScore.Should().Be(0.99);
 
 		// The live item is now exactly what the background resolver's candidate query looks for.
 		ReceiptItemEntity liveAfter = await verify.ReceiptItems
@@ -143,7 +123,6 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 		RequeuePendingPreview after = await service.PreviewRequeuePendingAsync(CancellationToken.None);
 		after.PendingDescriptionCount.Should().Be(0);
 		after.LinkedItemCount.Should().Be(0);
-		after.StaleMatchScoreCount.Should().Be(0);
 
 		RequeuePendingResult? rerun = await service.RequeuePendingAsync(after.PendingFingerprint, CancellationToken.None);
 		rerun.Should().NotBeNull();
@@ -220,7 +199,6 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
 			item.Id = itemId;
 			item.NormalizedDescriptionId = pendingId;
-			item.NormalizedDescriptionMatchScore = 0.86;
 			setup.ReceiptItems.Add(item);
 			await setup.SaveChangesAsync();
 		}
@@ -242,7 +220,6 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 		ReceiptItemEntity untouched = await verify.ReceiptItems
 			.IgnoreAutoIncludes().AsNoTracking().SingleAsync(r => r.Id == itemId);
 		untouched.NormalizedDescriptionId.Should().Be(pendingId);
-		untouched.NormalizedDescriptionMatchScore.Should().Be(0.86);
 	}
 
 	// Sibling tests in this collection leave PendingReview rows behind, and the requeue is global

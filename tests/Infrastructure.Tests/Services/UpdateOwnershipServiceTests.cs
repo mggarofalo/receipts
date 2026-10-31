@@ -40,12 +40,11 @@ public class UpdateOwnershipServiceTests
 	}
 
 	[Theory]
-	[InlineData("Milk", null)]
-	[InlineData("Milk", 0.42)]
-	[InlineData("Bread", 0.42)]
-	[InlineData("milk", 0.42)]
-	[InlineData("Milk ", 0.42)]
-	public async Task ItemUpdate_PreservesOnlyUnchangedDescriptionMetadata_AndKeepsStoredParent(string newDescription, double? score)
+	[InlineData("Milk")]
+	[InlineData("Bread")]
+	[InlineData("milk")]
+	[InlineData("Milk ")]
+	public async Task ItemUpdate_PreservesOnlyUnchangedDescriptionMetadata_AndKeepsStoredParent(string newDescription)
 	{
 		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
 		Guid receiptId = Guid.NewGuid(), itemId = Guid.NewGuid(), canonicalId = Guid.NewGuid();
@@ -63,7 +62,6 @@ public class UpdateOwnershipServiceTests
 				TotalAmount = 3,
 				Category = "Food",
 				NormalizedDescriptionId = canonicalId,
-				NormalizedDescriptionMatchScore = score,
 			});
 			await seed.SaveChangesAsync();
 		}
@@ -71,7 +69,6 @@ public class UpdateOwnershipServiceTests
 		ReceiptItem update = new(itemId, "new-code", newDescription, 2, new Money(4, Currency.USD), new Money(8, Currency.USD), "Groceries", "Dairy")
 		{
 			NormalizedDescriptionId = Guid.NewGuid(),
-			NormalizedDescriptionMatchScore = 0.99,
 		};
 
 		await service.UpdateAsync([update], Guid.NewGuid(), CancellationToken.None);
@@ -89,7 +86,6 @@ public class UpdateOwnershipServiceTests
 		stored.Category.Should().Be("Groceries");
 		stored.Subcategory.Should().Be("Dairy");
 		stored.NormalizedDescriptionId.Should().Be(newDescription == "Milk" ? canonicalId : null);
-		stored.NormalizedDescriptionMatchScore.Should().Be(newDescription == "Milk" ? score : null);
 	}
 
 	[Fact]
@@ -100,18 +96,14 @@ public class UpdateOwnershipServiceTests
 		ReceiptItem input = new(Guid.NewGuid(), null, "Milk", 1, new Money(3), new Money(3), "Food", null)
 		{
 			NormalizedDescriptionId = canonicalId,
-			NormalizedDescriptionMatchScore = 0.42,
 		};
 
 		ReceiptItemEntity created = mapper.ToEntity(input);
 
 		created.NormalizedDescriptionId.Should().BeNull();
-		created.NormalizedDescriptionMatchScore.Should().BeNull();
 		created.NormalizedDescriptionId = canonicalId;
-		created.NormalizedDescriptionMatchScore = 0.42;
 		ReceiptItem read = mapper.ToDomain(created);
 		read.NormalizedDescriptionId.Should().Be(canonicalId);
-		read.NormalizedDescriptionMatchScore.Should().Be(0.42);
 	}
 
 	[Fact]

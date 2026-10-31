@@ -36,7 +36,7 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				new ReceiptEntity { Id = receiptB, Location = "Separate purchases", Date = new(2024, 1, 1) });
 			seed.ReceiptItems.AddRange(
 				new ReceiptItemEntity { Id = curatedItemId, ReceiptId = receiptA, Description = "Template entry text", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = activeId },
-				new ReceiptItemEntity { Id = measuredItemId, ReceiptId = receiptB, Description = "Measured receipt text", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = pendingId, NormalizedDescriptionMatchScore = 0.78 });
+				new ReceiptItemEntity { Id = measuredItemId, ReceiptId = receiptB, Description = "Measured receipt text", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = pendingId });
 			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = templateId, Name = "Template display differs from canonical", NormalizedDescriptionId = activeId });
 			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = unlinkedTemplateId, Name = "Intentionally unlinked template" });
 			seed.ReceiptItems.Add(new ReceiptItemEntity { Id = unlinkedItemId, ReceiptId = receiptA, Description = "Intentionally unlinked item", Quantity = 1, UnitPrice = 1, TotalAmount = 1, Category = "Food" });
@@ -111,9 +111,7 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 
 				using AssertionScope assertions = new();
 				curated.NormalizedDescriptionId.Should().Be(activeId);
-				curated.NormalizedDescriptionMatchScore.Should().BeNull("a declaration has no fabricated cosine score");
 				measured.NormalizedDescriptionId.Should().Be(pendingId);
-				measured.NormalizedDescriptionMatchScore.Should().Be(0.78);
 				template.NormalizedDescriptionId.Should().Be(activeId);
 				active.CanonicalName.Should().Be("Raw canonical text");
 				active.DisplayLabel.Should().Be("Chosen display label");
@@ -159,8 +157,6 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				{
 					ReceiptItemEntity previouslyUnlinked = await change.ReceiptItems.SingleAsync(row => row.Id == unlinkedItemId);
 					previouslyUnlinked.NormalizedDescriptionId = activeId;
-					previouslyUnlinked.NormalizedDescriptionMatchScore = 0.91;
-					(await change.ReceiptItems.SingleAsync(row => row.Id == curatedItemId)).NormalizedDescriptionMatchScore = 0.99;
 					(await change.ReceiptItems.SingleAsync(row => row.Id == measuredItemId)).NormalizedDescriptionId = activeId;
 					(await change.ItemTemplates.SingleAsync(row => row.Id == unlinkedTemplateId)).NormalizedDescriptionId = activeId;
 					(await change.ItemTemplates.SingleAsync(row => row.Id == templateId)).NormalizedDescriptionId = null;
@@ -180,8 +176,6 @@ public class BackupCurationRoundTripTests(PostgresFixture source) : IClassFixtur
 				await using ApplicationDbContext upserted = target.CreateDbContext();
 				ReceiptItemEntity explicitlyUnlinked = await upserted.ReceiptItems.SingleAsync(row => row.Id == unlinkedItemId);
 				explicitlyUnlinked.NormalizedDescriptionId.Should().Be(activeId);
-				explicitlyUnlinked.NormalizedDescriptionMatchScore.Should().Be(0.91);
-				(await upserted.ReceiptItems.SingleAsync(row => row.Id == curatedItemId)).NormalizedDescriptionMatchScore.Should().Be(0.99);
 				(await upserted.ReceiptItems.SingleAsync(row => row.Id == measuredItemId)).NormalizedDescriptionId.Should().Be(activeId);
 				(await upserted.ItemTemplates.SingleAsync(row => row.Id == templateId)).NormalizedDescriptionId.Should().BeNull();
 				(await upserted.ItemTemplates.SingleAsync(row => row.Id == unlinkedTemplateId)).NormalizedDescriptionId.Should().Be(activeId);

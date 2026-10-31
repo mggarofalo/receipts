@@ -1695,9 +1695,8 @@ export interface paths {
         };
         /**
          * Preview what a requeue of pending descriptions would destroy
-         * @description Reports how many `PendingReview` rows would be deleted, how many live
-         *     ReceiptItems would be unlinked, and how many stale
-         *     `NormalizedDescriptionMatchScore` values would be cleared. Nothing rebuilds
+         * @description Reports how many `PendingReview` rows would be deleted and how many live
+         *     ReceiptItems would be unlinked. Nothing rebuilds
          *     the deleted rows automatically; the unlinked items wait for review in Catalog.
          *
          *     Read-only â€” nothing is modified. Also serves as the post-run
@@ -1725,9 +1724,8 @@ export interface paths {
         /**
          * Delete every pending-review description and return its items to review
          * @description Deletes every `PendingReview` NormalizedDescription and, in the same
-         *     transaction, nulls both `NormalizedDescriptionId` and
-         *     `NormalizedDescriptionMatchScore` on every ReceiptItem that pointed at
-         *     one. Those items become unresolved. No similarity matcher re-links them:
+         *     transaction, nulls `NormalizedDescriptionId` on every ReceiptItem that
+         *     pointed at one. Those items become unresolved. No similarity matcher re-links them:
          *     automatic resolution applies only exact, reviewed source mappings, so the
          *     items wait for review in Catalog.
          *
@@ -6139,11 +6137,6 @@ export interface components {
             linkedItemCount: number;
             /**
              * Format: int32
-             * @description Number of those live items that also carry a non-null NormalizedDescriptionMatchScore, which the requeue clears in the same transaction. Reads zero after a successful run.
-             */
-            staleMatchScoreCount: number;
-            /**
-             * Format: int32
              * @description Legacy compatibility field, always zero. Pending cleanup requires reviewed normalization; no automatic similarity rematching is scheduled.
              */
             estimatedResolverCycles: number;
@@ -6164,11 +6157,6 @@ export interface components {
              * @description Number of live ReceiptItems whose NormalizedDescriptionId was nulled.
              */
             unlinkedItemCount: number;
-            /**
-             * Format: int32
-             * @description Number of live ReceiptItems whose NormalizedDescriptionMatchScore was nulled.
-             */
-            clearedMatchScoreCount: number;
         };
         CreateReceiptRequest: {
             /**
@@ -6480,11 +6468,6 @@ export interface components {
             normalizedDescriptionId?: string | null;
             /** @description Display label of a live active or pending identity. Provisional unless normalizationReviewState is verified; rejected and excluded associations are hidden. */
             normalizedDescriptionName?: string | null;
-            /**
-             * Format: double
-             * @description Cosine similarity captured when the resolver linked this item; null for unresolved or no-match-created items.
-             */
-            normalizedDescriptionMatchScore?: number | null;
         };
         ReceiptItemListResponse: {
             data: components["schemas"]["ReceiptItemResponse"][];

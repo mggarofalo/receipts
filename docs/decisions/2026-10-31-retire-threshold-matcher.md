@@ -34,4 +34,5 @@ be a third copy of the same search. There is no replacement UI.
   so the archive stays a valid v15 file for any importer that reads v15 (each one requires the
   table). Imports ignore any rows it holds. Release 0.17.1 reads only formats 1-13, so it cannot
   restore any v15 export, with or without this change.
-- The `NormalizedDescriptionMatchScore` column stays; dropping it is a separate item.
+- The `NormalizedDescriptionMatchScore` column stayed here and was dropped by RECEIPTS-1105
+  ([migration](../migrations/20261031190554_DropNormalizedDescriptionMatchScore.md)).

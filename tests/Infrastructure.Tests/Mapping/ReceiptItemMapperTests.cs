@@ -55,7 +55,6 @@ public class ReceiptItemMapperTests
 		Assert.Equal(source.Subcategory, actual.Subcategory);
 		Assert.Equal(source.NormalizationRevision, actual.NormalizationRevision);
 		Assert.Equal(source.NormalizedDescriptionId, actual.NormalizedDescriptionId);
-		Assert.Equal(source.NormalizedDescriptionMatchScore, actual.NormalizedDescriptionMatchScore);
 		Assert.Equal(source.NormalizationReviewState, actual.NormalizationReviewState);
 		Assert.Equal(source.NormalizationReviewReason, actual.NormalizationReviewReason);
 		Assert.Equal(source.NormalizationReviewDecisionId, actual.NormalizationReviewDecisionId);
@@ -107,7 +106,6 @@ public class ReceiptItemMapperTests
 		Subcategory = "Historical subcategory",
 		NormalizationRevision = Guid.NewGuid(),
 		NormalizedDescriptionId = Guid.NewGuid(),
-		NormalizedDescriptionMatchScore = 0.75,
 		NormalizationReviewState = NormalizationReviewState.NeedsReview,
 		NormalizationReviewReason = "Historical source",
 		NormalizationReviewDecisionId = Guid.NewGuid()

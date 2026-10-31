@@ -54,7 +54,6 @@ public sealed class NormalizationCatalogMemberEntity
 	public string PreviousOrigin { get; set; } = "unassigned";
 	public Guid? PreviousMappingId { get; set; }
 	public Guid? PreviousAssignmentId { get; set; }
-	public double? PreviousScore { get; set; }
 	public string State { get; set; } = "pending";
 	public Guid? AppliedRevision { get; set; }
 	public Guid? AssignmentId { get; set; }

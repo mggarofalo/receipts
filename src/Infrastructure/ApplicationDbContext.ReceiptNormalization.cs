@@ -280,7 +280,6 @@ public partial class ApplicationDbContext
 			}
 			bool explicitChoice = intent?.Kind is ReceiptNormalizationIntentKind.ConfirmExisting or ReceiptNormalizationIntentKind.ConfirmNew or ReceiptNormalizationIntentKind.Exclude;
 			item.NormalizedDescriptionId = explicitChoice ? targetId : mapping!.TargetId;
-			item.NormalizedDescriptionMatchScore = null;
 			item.NormalizationOrigin = explicitChoice ? decision.State == NormalizationReviewState.Excluded ? "purchase_excluded" : "reviewed" : mapping!.Exclude ? "excluded" : "mapped";
 			item.NormalizationMappingId = explicitChoice ? null : mapping!.Id;
 			item.NormalizationAssignmentId = explicitChoice ? Guid.NewGuid() : item.NormalizationAssignmentId ?? Guid.NewGuid();
