@@ -29,14 +29,18 @@ echo "Running as uid=$(id -u app) gid=$(id -g app)"
 # connected machine is a supported air-gapped pattern (see docs/deployment.md). chown
 # still fixes everything writable; failing the boot over the parts it cannot touch
 # would turn that into a restart loop.
+if ! chown -R app:app /data 2>/dev/null; then
+    echo "Note: parts of /data are read-only and were left as-is"
+fi
+
 # Temporary files go to disk, not the /tmp tmpfs: a backup restore stages the upload and
 # its decompressed SQLite file there, and on tmpfs those bytes count against the app's
 # memory limit. Recreated on every start so a crash cannot leave stale files behind.
-rm -rf /data/tmp && mkdir -p /data/tmp
-export TMPDIR=/data/tmp
-
-if ! chown -R app:app /data 2>/dev/null; then
-    echo "Note: parts of /data are read-only and were left as-is"
+# Runs as app: root lacks DAC_OVERRIDE (cap_drop ALL) and /data is app-owned after chown.
+if gosu app rm -rf /data/tmp && gosu app mkdir -p /data/tmp; then
+    export TMPDIR=/data/tmp
+else
+    echo "Note: /data/tmp is not writable; temporary files stay on /tmp"
 fi
 
 # ─── Secrets bridge ──────────────────────────────────────────────────────────

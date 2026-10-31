@@ -202,7 +202,8 @@ restore unchanged. Two limits apply, independently:
   decompression bombs.
 
 The container entrypoint points `TMPDIR` at `/data/tmp`, on the `app-data` volume, not the
-`/tmp` tmpfs. The staged upload and the decompressed SQLite file would otherwise count
+`/tmp` tmpfs. It recreates the directory empty on every start, and falls back to `/tmp` if
+`/data` is not writable. The staged upload and the decompressed SQLite file would otherwise count
 against the app's 3 GB memory limit, next to the resident embedding model. That cost
 decided whether a restore with three times the owner's classification history completed.
 

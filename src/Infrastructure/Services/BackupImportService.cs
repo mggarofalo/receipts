@@ -18,7 +18,7 @@ public partial class BackupImportService(
 	ILogger<BackupImportService> logger) : IBackupImportService
 {
 	// Bounds the restored SQLite file, after decompression; uploads are capped separately at the HTTP edge.
-	// The temp file lives on the container's tmpfs, so this is memory: about 5x the owner's current backup.
+	// About 5x the owner's current backup; also bounds temporary disk use and decompression bombs.
 	internal const long MaxSqliteBytes = 512L * 1024 * 1024; // 512 MiB
 
 	public Task<BackupImportResult> ImportFromSqliteAsync(Stream sqliteStream, CancellationToken cancellationToken)
