@@ -117,7 +117,8 @@ internal static class ItemEnvelopeWriter
 		{
 			return;
 		}
-		List<ReceiptItemEntity> items = await db.ReceiptItems.IgnoreAutoIncludes()
+		// Items in the recycle bin follow too, so a restored item agrees with its receipt.
+		List<ReceiptItemEntity> items = await db.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.Where(item => item.ReceiptId == receipt.Id).ToListAsync(ct);
 		Dictionary<Guid, (Guid? CategoryId, Guid RevisionId)> types = paidFromChanged && receipt.PaidFromEnvelopeId is null
 			? await CurrentTypesAsync(db, items.Select(item => item.Id).ToArray(), ct) : [];

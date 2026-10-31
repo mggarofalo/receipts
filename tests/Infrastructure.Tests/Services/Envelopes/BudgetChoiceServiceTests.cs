@@ -153,6 +153,32 @@ public class BudgetChoiceServiceTests
 		(await world.ReadItemAsync(tagged.Id)).OccasionId.Should().Be(own);
 	}
 
+	[Fact]
+	public async Task SetReceipt_ChoiceChange_AppliesToSoftDeletedItemsButNotTheirOverrides()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		Guid previous = await AddOccasionAsync(world, isActive: true);
+		Guid next = await AddOccasionAsync(world, isActive: true);
+		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Food, occasion: previous);
+		ReceiptItemEntity receiptSourced = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Fuel"));
+		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Fuel", envelopeOverride: world.Food));
+		await SoftDeleteItemAsync(world, receiptSourced.Id);
+		await SoftDeleteItemAsync(world, overridden.Id);
+
+		// Act
+		await Service(world).SetReceiptChoicesAsync(receipt.Id, world.Car, next, CancellationToken.None);
+
+		// Assert
+		ReceiptItemEntity actualReceiptSourced = await world.ReadItemAsync(receiptSourced.Id);
+		actualReceiptSourced.EnvelopeId.Should().Be(world.Car);
+		actualReceiptSourced.EnvelopeSource.Should().Be(EnvelopeSource.Receipt);
+		actualReceiptSourced.OccasionId.Should().Be(next);
+		ReceiptItemEntity actualOverridden = await world.ReadItemAsync(overridden.Id);
+		actualOverridden.EnvelopeId.Should().Be(world.Food);
+		actualOverridden.EnvelopeSource.Should().Be(EnvelopeSource.Item);
+	}
+
 	// --- Item choices ---
 
 	[Fact]
@@ -324,6 +350,13 @@ public class BudgetChoiceServiceTests
 		db.Occasions.Add(new() { Id = id, Name = $"Occasion {id:N}", IsActive = isActive });
 		await db.SaveChangesAsync();
 		return id;
+	}
+
+	private static async Task SoftDeleteItemAsync(EnvelopeWorld world, Guid itemId)
+	{
+		await using ApplicationDbContext db = world.Factory.CreateDbContext();
+		(await db.ReceiptItems.IgnoreAutoIncludes().SingleAsync(row => row.Id == itemId)).DeletedAt = DateTimeOffset.UtcNow;
+		await db.SaveChangesAsync();
 	}
 
 	private static async Task<ReceiptEntity> ReadReceiptAsync(EnvelopeWorld world, Guid id)

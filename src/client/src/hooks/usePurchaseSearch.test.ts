@@ -173,8 +173,9 @@ it.each(["receipt-item", "normalized-description"] as const)(
     );
     await waitFor(() => expect(result.current.search.isSuccess).toBe(true));
     expect(get).toHaveBeenCalledTimes(1);
-    act(() => invalidateDomainChange(result.current.client, change));
-    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    // The repair resolves once the mounted search has refetched.
+    await act(() => invalidateDomainChange(result.current.client, change));
+    expect(get).toHaveBeenCalledTimes(2);
   },
 );
 

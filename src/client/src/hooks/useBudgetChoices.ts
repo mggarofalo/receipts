@@ -4,7 +4,11 @@ import { toastErrorPolicy } from "@/lib/request-error-policy";
 import { invalidateDomainChange } from "@/lib/query-invalidation";
 import client from "@/lib/api-client";
 
-/** Null envelope is automatic; null occasion is none. Both are replaced. */
+/**
+ * Null envelope is automatic; null occasion is none. Both are replaced, so the
+ * mutation stays pending until the refetch lands: a follow-up choice must not
+ * resend the other choice from stale data.
+ */
 export function useSetReceiptBudgetChoices() {
   const queryClient = useQueryClient();
   return useSessionMutation({
@@ -29,7 +33,7 @@ export function useSetReceiptBudgetChoices() {
   });
 }
 
-/** Null envelope returns the item to automatic; null occasion is none. */
+/** Null envelope returns the item to automatic; null occasion is none. Pending until refetched. */
 export function useSetReceiptItemBudgetChoices() {
   const queryClient = useQueryClient();
   return useSessionMutation({

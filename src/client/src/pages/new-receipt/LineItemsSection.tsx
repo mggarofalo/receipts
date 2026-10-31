@@ -324,17 +324,21 @@ export function LineItemsSection({
       ),
     [items, paidFromEnvelopeId, defaults, envelopes],
   );
-  const paidFrom = receiptEnvelope(
-    paidFromEnvelopeId,
-    // An override counts as the envelope the item would get automatically.
-    items.map((item) =>
-      previewItemEnvelope(
-        { typePath: item.categoryChoice?.path },
-        null,
-        defaults,
-        envelopes,
+  const paidFrom = useMemo(
+    () =>
+      receiptEnvelope(
+        paidFromEnvelopeId,
+        // An override counts as the envelope the item would get automatically.
+        items.map((item) =>
+          previewItemEnvelope(
+            { typePath: item.categoryChoice?.path },
+            null,
+            defaults,
+            envelopes,
+          ),
+        ),
       ),
-    ),
+    [items, paidFromEnvelopeId, defaults, envelopes],
   );
 
   const applySuggestion = useCallback(

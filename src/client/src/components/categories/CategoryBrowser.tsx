@@ -100,15 +100,21 @@ function initialPlace(
   value?: CategoryChoice,
   suggestions?: CategorySuggestion[],
 ) {
-  const suggested = (suggestions ?? [])
-    .map((suggestion) => suggestion.categoryId)
-    .filter((id) => index.byId.has(id));
-  if (suggested.length > 0) {
-    const active =
-      value?.categoryId && suggested.includes(value.categoryId)
-        ? value.categoryId
-        : suggested[0];
-    return { levelId: null, activeKey: `suggested:${active}` };
+  // The suggestions the panel renders: known, distinct, at most the limit.
+  const suggested = [
+    ...new Set(
+      (suggestions ?? [])
+        .map((suggestion) => suggestion.categoryId)
+        .filter((id) => index.byId.has(id)),
+    ),
+  ].slice(0, SUGGESTION_LIMIT);
+  // A current choice the suggestions don't include keeps its own place.
+  const keepsPlace = !!value?.categoryId && !suggested.includes(value.categoryId);
+  if (suggested.length > 0 && !keepsPlace) {
+    return {
+      levelId: null,
+      activeKey: `suggested:${value?.categoryId ?? suggested[0]}`,
+    };
   }
   if (value?.categoryId === null)
     return { levelId: null, activeKey: "unclassified" };

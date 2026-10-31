@@ -3,8 +3,12 @@ import {
   QueryObserver,
   type QueryKey,
 } from "@tanstack/react-query";
-import { describe, expect, it } from "vitest";
-import { type DomainChange, repairDomainChange } from "./query-invalidation";
+import { describe, expect, it, vi } from "vitest";
+import {
+  type DomainChange,
+  invalidateDomainChange,
+  repairDomainChange,
+} from "./query-invalidation";
 
 const cacheKeys = {
   budget: ["ynab", "settings", "budget"],
@@ -276,6 +280,48 @@ describe("taxonomy cross-session repair", () => {
     await repairDomainChange(client, "receipt-item", () => true);
     for (const key of keys)
       expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    client.clear();
+  });
+});
+
+describe("invalidateDomainChange", () => {
+  it("resolves only after active projections finish refetching", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let release!: () => void;
+    let reads = 0;
+    const observer = new QueryObserver(client, {
+      queryKey: ["occasions", "all"],
+      queryFn: async () => {
+        reads++;
+        if (reads > 1)
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        return { data: reads };
+      },
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await vi.waitFor(() =>
+      expect(client.getQueryData(["occasions", "all"])).toEqual({ data: 1 }),
+    );
+    client.setQueryData(["receipts"], "inactive");
+
+    let settled = false;
+    const done = invalidateDomainChange(client, "occasion").then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(reads).toBe(2));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    release();
+    await done;
+    expect(client.getQueryData(["occasions", "all"])).toEqual({ data: 2 });
+    // Unrelated projections are left alone.
+    expect(client.getQueryState(["receipts"])?.isInvalidated).toBe(false);
+    unsubscribe();
     client.clear();
   });
 });

@@ -5,7 +5,7 @@ import {
   normalizationSourceKey,
   receiptNormalizationSource,
 } from "@/lib/receipt-normalization";
-import { useState, useRef } from "react";
+import { useMemo, useState, useRef } from "react";
 import { ReceiptNormalizationError } from "@/components/ReceiptNormalizationError";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateDomainChange } from "@/lib/query-invalidation";
@@ -117,19 +117,23 @@ export function ReceiptItemsCard({
   const setReceiptChoices = useSetReceiptBudgetChoices();
   const setItemChoices = useSetReceiptItemBudgetChoices();
   const choicesBusy = setReceiptChoices.isPending || setItemChoices.isPending;
-  const paidFrom = receiptEnvelope(
-    paidFromEnvelopeId,
-    // An override counts as the envelope the item would get automatically.
-    items.map((item) =>
-      item.envelopeSource === "item"
-        ? previewItemEnvelope(
-            { typePath: item.currentClassification?.recordedPath },
-            null,
-            defaults,
-            envelopes,
-          )
-        : item.envelopeId,
-    ),
+  const paidFrom = useMemo(
+    () =>
+      receiptEnvelope(
+        paidFromEnvelopeId,
+        // An override counts as the envelope the item would get automatically.
+        items.map((item) =>
+          item.envelopeSource === "item"
+            ? previewItemEnvelope(
+                { typePath: item.currentClassification?.recordedPath },
+                null,
+                defaults,
+                envelopes,
+              )
+            : item.envelopeId,
+        ),
+      ),
+    [items, paidFromEnvelopeId, defaults, envelopes],
   );
   const updateReceiptItem = useUpdateReceiptItem();
   const deleteReceiptItems = useDeleteReceiptItems();

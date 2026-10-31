@@ -50,9 +50,12 @@ Persistence applies it at the write chokepoints (`Infrastructure.Services.ItemEn
 - **Changing a receipt's paid-from envelope** applies it to every item except
   per-item overrides. Clearing it sends receipt-sourced items back to their
   default. A receipt occasion replaces the occasion only on items that carried
-  the previous one.
+  the previous one. There is no per-item "none": an item whose occasion was
+  cleared follows the next receipt occasion if the receipt had none. Items in
+  the recycle bin follow receipt changes too, so a restored item agrees with
+  its receipt.
 - **Explicit choices** (`budget-choices` below) replace the stored ones, so
-  null can clear them. Returning an overridden item to automatic takes the
+  null can clear them. Both choices are sent each time. Returning an overridden item to automatic takes the
   receipt's active paid-from envelope, else its item type's default. Any other
   item keeps its recorded envelope.
 - A newly chosen archived or missing envelope or occasion is rejected (400).
