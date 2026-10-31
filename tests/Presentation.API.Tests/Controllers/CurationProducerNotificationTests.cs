@@ -118,7 +118,6 @@ public class CurationProducerNotificationTests
 		string domain = operation switch
 		{
 			"accept" or "unaccept" => "duplicate-acceptance",
-			"settings" => "normalized-description-settings",
 			_ => "normalized-description",
 		};
 		_notifier.Verify(n => n.NotifyAllChanged(domain, "updated"), Times.Once);

@@ -940,7 +940,7 @@ public class NormalizedDescriptionService(
 		//
 		// The reverse order looks tidier — put the template on its entry, then move the items — but
 		// the two run in separate DbContexts and therefore separate transactions, so a merge failure
-		// (the embedding service is down mid-rescore, the caller goes away) would leave the template
+		// (a concurrent edit conflicts, the caller goes away) would leave the template
 		// permanently torn off whatever entry it previously declared, with the row still in the queue
 		// and no audit entry to explain the move. Every receipt item entered from that template would
 		// then be filed under a bucket nobody chose. Failing before the FK write instead leaves the
@@ -1333,7 +1333,7 @@ public class NormalizedDescriptionService(
 			""";
 
 		List<SampleDescriptionRow> samples;
-		if (context.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+		if (context.Database.ProviderName == PostgreSQL)
 		{
 			samples = await context.Database
 				.SqlQueryRaw<SampleDescriptionRow>(sql, ids, MaxSampleRawDescriptions)
