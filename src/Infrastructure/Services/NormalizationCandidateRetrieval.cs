@@ -82,14 +82,16 @@ internal static class NormalizationCandidateRetrieval
 		NormalizationCatalogCandidate Candidate(NormalizedDescriptionEntity target, string[] channels, IReadOnlyList<string> examples)
 			=> new(target.Id, target.NormalizationRevision, target.CanonicalName, target.DisplayLabel, channels, examples,
 				semanticSimilarities.TryGetValue(target.Id, out double similarity) ? similarity : null);
-		async Task AddAsync(IQueryable<NormalizedDescriptionEntity> query, string channel)
+		// Suggestions are best effort; full catalog search remains available.
+		// Keep both database work and per-keystroke transfer bounded.
+		Task<List<NormalizedDescriptionEntity>> AlphabeticalAsync(IQueryable<NormalizedDescriptionEntity> query)
+			=> query.OrderBy(target => target.CanonicalName).ThenBy(target => target.Id)
+				.Take(include is null ? 20 : MaximumReceiptScanPerChannel).ToListAsync(cancellationToken);
+		// Accepts at most 20 rows per channel, in the order the channel ranked them.
+		void Add(IReadOnlyList<NormalizedDescriptionEntity> ranked, string channel)
 		{
-			var orderedQuery = query.OrderBy(target => target.CanonicalName).ThenBy(target => target.Id);
-			// Suggestions are best effort; full catalog search remains available.
-			// Keep both database work and per-keystroke transfer bounded.
-			var candidates = orderedQuery.Take(include is null ? 20 : MaximumReceiptScanPerChannel);
 			int accepted = 0;
-			await foreach (var target in candidates.AsAsyncEnumerable().WithCancellation(cancellationToken))
+			foreach (var target in ranked)
 			{
 				if (!found.TryGetValue(target.Id, out var existing)) { existing = (target, []); }
 				if (include is not null)
@@ -130,17 +132,17 @@ internal static class NormalizationCandidateRetrieval
 			}
 		}
 		string text = source.Description.ToLowerInvariant();
-		await AddAsync(active.Where(target => target.CanonicalName.ToLower() == text || (target.DisplayLabel ?? target.CanonicalName).ToLower() == text), "exact");
+		Add(await AlphabeticalAsync(active.Where(target => target.CanonicalName.ToLower() == text || (target.DisplayLabel ?? target.CanonicalName).ToLower() == text)), "exact");
 		// Approved examples are evidence, never self-training on automatic links.
-		await AddAsync(active.Where(target => context.NormalizationSourceMappings.Any(mapping => mapping.State == "active" && !mapping.Exclude
+		Add(await AlphabeticalAsync(active.Where(target => context.NormalizationSourceMappings.Any(mapping => mapping.State == "active" && !mapping.Exclude
 			&& mapping.TargetId == target.Id && mapping.Description == source.Description
-			&& (hiddenMappingId == null || mapping.Id != hiddenMappingId))), "approved_example");
+			&& (hiddenMappingId == null || mapping.Id != hiddenMappingId)))), "approved_example");
 		string[] tokens = LexicalTokens(source.Description, lexicalTerms);
 		foreach (string token in tokens)
 		{
-			await AddAsync(active.Where(target => target.CanonicalName.ToLower().Contains(token) || (target.DisplayLabel ?? target.CanonicalName).ToLower().Contains(token)), "lexical");
+			Add(await AlphabeticalAsync(active.Where(target => target.CanonicalName.ToLower().Contains(token) || (target.DisplayLabel ?? target.CanonicalName).ToLower().Contains(token))), "lexical");
 		}
-		if (nearest.Count > 0) { await AddAsync(active.Where(target => nearest.Contains(target.Id)), "semantic"); }
+		if (nearest.Count > 0) { Add(await AlphabeticalAsync(active.Where(target => nearest.Contains(target.Id))), "semantic"); }
 		if (probe is not null) { probe.Pool = found.ToDictionary(entry => entry.Key, entry => entry.Value.Channels.Order().ToArray()); }
 		List<NormalizationCatalogCandidate> result = [];
 		// Reserve space for the best semantic neighbors: alphabetically early lexical
