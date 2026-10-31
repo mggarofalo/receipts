@@ -1,5 +1,4 @@
 using Application.Interfaces.Services;
-using Application.Queries.Core.ItemTemplate.GetCategoryRecommendations;
 using Application.Queries.Core.ItemTemplate.GetHistoryCandidates;
 using Application.Queries.Core.ItemTemplate.GetSimilarItems;
 using Application.Services;
@@ -29,7 +28,6 @@ public class ValidationCompositionTests
 		using ServiceProvider provider = CreateProvider(new(), new());
 		using IServiceScope scope = provider.CreateScope();
 		scope.ServiceProvider.GetServices<IValidator<GetSimilarItemsQuery>>().Should().ContainSingle().Which.Should().BeOfType<GetSimilarItemsQueryValidator>();
-		scope.ServiceProvider.GetServices<IValidator<GetCategoryRecommendationsQuery>>().Should().ContainSingle().Which.Should().BeOfType<GetCategoryRecommendationsQueryValidator>();
 		scope.ServiceProvider.GetServices<IValidator<GetItemTemplateHistoryCandidatesQuery>>().Should().ContainSingle().Which.Should().BeOfType<GetItemTemplateHistoryCandidatesQueryValidator>();
 	}
 
@@ -69,9 +67,7 @@ public class ValidationCompositionTests
 		using ServiceProvider provider = CreateProvider(similarity, history);
 		using IServiceScope scope = provider.CreateScope();
 		IMediator mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
-		Func<Task> category = async () => await mediator.Send(new GetCategoryRecommendationsQuery("a", 21));
 		Func<Task> candidates = async () => await mediator.Send(new GetItemTemplateHistoryCandidatesQuery(-1, 501, 0));
-		await category.Should().ThrowAsync<ValidationException>();
 		await candidates.Should().ThrowAsync<ValidationException>();
 		similarity.VerifyNoOtherCalls();
 		history.VerifyNoOtherCalls();

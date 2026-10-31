@@ -35,7 +35,6 @@ export const queryKeys = {
   templateHistoryCandidates: ["itemTemplates", "historyCandidates"],
   receiptItemSuggestions: ["receiptItemSuggestions"],
   similarItems: ["similarItems"],
-  categoryRecommendations: ["categoryRecommendations"],
   normalizedDescriptions: ["normalized-descriptions"],
   normalizationCatalog: ["normalization-catalog"],
   normalizationAi: ["normalization-ai"],
@@ -73,7 +72,6 @@ const LEDGER_CHANGE_QUERY_KEYS = [
   queryKeys.receiptItemSuggestions,
   queryKeys.templateHistoryCandidates,
   queryKeys.similarItems,
-  queryKeys.categoryRecommendations,
   queryKeys.normalizedDescriptions,
   queryKeys.normalizationCatalog,
   queryKeys.normalizationAi,
@@ -105,7 +103,6 @@ const TEMPLATE_CHANGE_QUERY_KEYS = [
   queryKeys.normalizationCatalog,
   queryKeys.normalizationAi,
   queryKeys.similarItems,
-  queryKeys.categoryRecommendations,
 ] as const;
 
 // Curation changes are visible anywhere a canonical label or link is projected.
@@ -151,10 +148,7 @@ const YNAB_SYNC_EVENT_CHANGE_QUERY_KEYS = [
   queryKeys.ynabStatus,
 ] as const;
 
-const ITEM_EMBEDDING_CHANGE_QUERY_KEYS = [
-  queryKeys.similarItems,
-  queryKeys.categoryRecommendations,
-] as const;
+const ITEM_EMBEDDING_CHANGE_QUERY_KEYS = [queryKeys.similarItems] as const;
 
 // Portable restore can change destination settings as well as ledger rows.
 const BACKUP_IMPORT_QUERY_KEYS = [
@@ -230,9 +224,7 @@ function projectionKeysForChange(
   // A new template may not have its embedding yet (RECEIPTS-866). Keep mounted
   // similarity results until the embedding-completion producer repairs them.
   return DOMAIN_CHANGE_QUERY_KEYS[change].filter(
-    (queryKey) =>
-      queryKey !== queryKeys.similarItems &&
-      queryKey !== queryKeys.categoryRecommendations,
+    (queryKey) => queryKey !== queryKeys.similarItems,
   );
 }
 

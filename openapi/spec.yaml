@@ -4580,45 +4580,6 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
-  /api/item-templates/category-suggestions:
-    get:
-      operationId: GetCategorySuggestions
-      tags: [ItemTemplates]
-      summary: Get category/subcategory recommendations for an item description
-      description: |
-        Returns ranked category and subcategory suggestions based on semantic and
-        trigram similarity to existing items and receipt history.
-      security:
-        - BearerAuth: []
-        - ApiKey: []
-      parameters:
-        - name: q
-          in: query
-          required: true
-          schema:
-            type: string
-            minLength: 2
-          description: Item description to get category recommendations for
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            format: int32
-            default: 5
-            minimum: 1
-            maximum: 20
-          description: Maximum number of recommendations to return
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/CategoryRecommendationResponse"
-
   /api/item-templates/{id}/restore:
     post:
       operationId: RestoreItemTemplate
@@ -13478,25 +13439,6 @@ components:
         limit:
           type: integer
           format: int32
-
-    CategoryRecommendationResponse:
-      type: object
-      required: [category, confidence, occurrenceCount]
-      properties:
-        category:
-          type: string
-        subcategory:
-          type:
-            - string
-            - "null"
-        confidence:
-          type: number
-          format: double
-          description: Weighted confidence score based on similarity of source items
-        occurrenceCount:
-          type: integer
-          format: int32
-          description: Number of similar items with this category
 
     # â”€â”€ Normalized Descriptions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

@@ -102,9 +102,6 @@ const server = setupServer(
     HttpResponse.json({ data: [], total: 0, offset: 0, limit: 500 }),
   ),
   http.get("*/api/item-templates/similar", () => HttpResponse.json([])),
-  http.get("*/api/item-templates/category-suggestions", () =>
-    HttpResponse.json([]),
-  ),
   http.get("*/api/ynab/connection-status", () =>
     HttpResponse.json({ isConfigured: true, isConnected: true }),
   ),

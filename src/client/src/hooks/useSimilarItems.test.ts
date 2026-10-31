@@ -18,7 +18,7 @@ vi.mock("./useDebouncedValue", () => ({
 }));
 
 import client from "@/lib/api-client";
-import { useSimilarItems, useCategoryRecommendations } from "./useSimilarItems";
+import { useSimilarItems } from "./useSimilarItems";
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -84,46 +84,5 @@ describe("useSimilarItems", () => {
       middleware: expect.any(Array),
       signal: expect.any(AbortSignal),
     });
-  });
-});
-
-describe("useCategoryRecommendations", () => {
-  it("does not fetch when description is too short", () => {
-    const { result } = renderHook(
-      () => useCategoryRecommendations("a"),
-      { wrapper: createWrapper() },
-    );
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
-  });
-
-  it("fetches recommendations when description is >= 2 chars", async () => {
-    const recs = [{ category: "Food", subcategory: "Dairy" }];
-    (client.GET as Mock).mockResolvedValue({ data: recs, error: undefined });
-
-    const { result } = renderHook(
-      () => useCategoryRecommendations("milk"),
-      { wrapper: createWrapper() },
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(recs);
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/item-templates/category-suggestions",
-      {
-        params: { query: { q: "milk", limit: 5 } },
-        middleware: expect.any(Array),
-        signal: expect.any(AbortSignal),
-      },
-    );
-  });
-
-  it("does not fetch when enabled is false", () => {
-    const { result } = renderHook(
-      () => useCategoryRecommendations("milk", { enabled: false }),
-      { wrapper: createWrapper() },
-    );
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(client.GET).not.toHaveBeenCalled();
   });
 });

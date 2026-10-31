@@ -8,7 +8,6 @@ using Application.Commands.ItemTemplate.Update;
 using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.ItemTemplate;
-using Application.Queries.Core.ItemTemplate.GetCategoryRecommendations;
 using Application.Queries.Core.ItemTemplate.GetHistoryCandidates;
 using Application.Queries.Core.ItemTemplate.GetSimilarItems;
 using Asp.Versioning;
@@ -34,7 +33,6 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 	public const string RouteGetDeleted = "deleted";
 	public const string RouteRestore = "{id}/restore";
 	public const string RouteGetSimilar = "similar";
-	public const string RouteGetCategorySuggestions = "category-suggestions";
 	public const string RouteGetHistoryCandidates = "history-candidates";
 
 	[HttpGet(RouteGetById)]
@@ -268,24 +266,5 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 			Offset = result.Offset,
 			Limit = result.Limit,
 		});
-	}
-
-	[HttpGet(RouteGetCategorySuggestions)]
-	[EndpointSummary("Get category/subcategory recommendations")]
-	[EndpointDescription("Returns ranked category and subcategory suggestions based on semantic and trigram similarity to existing items and receipt history.")]
-	public async Task<Ok<List<CategoryRecommendationResponse>>> GetCategorySuggestions([FromQuery] string q, [FromQuery] int limit = 5, CancellationToken cancellationToken = default)
-	{
-		GetCategoryRecommendationsQuery query = new(q, limit);
-		IEnumerable<CategoryRecommendation> results = await mediator.Send(query, cancellationToken);
-
-		List<CategoryRecommendationResponse> response = [.. results.Select(r => new CategoryRecommendationResponse
-		{
-			Category = r.Category,
-			Subcategory = r.Subcategory,
-			Confidence = r.Confidence,
-			OccurrenceCount = r.OccurrenceCount,
-		})];
-
-		return TypedResults.Ok(response);
 	}
 }
