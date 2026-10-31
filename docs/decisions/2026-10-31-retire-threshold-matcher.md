@@ -31,6 +31,7 @@ be a third copy of the same search. There is no replacement UI.
 - Merge and split clear the moved items' match score instead of measuring it again against the
   surviving row, so they no longer need an embedding.
 - Backups keep the format version. Exports write an empty `normalized_description_settings` table,
-  which every v5+ importer requires, including the previous release used for rollback. Imports
-  ignore any rows it holds.
+  so the archive stays a valid v15 file for any importer that reads v15 (each one requires the
+  table). Imports ignore any rows it holds. Release 0.17.1 reads only formats 1-13, so it cannot
+  restore any v15 export, with or without this change.
 - The `NormalizedDescriptionMatchScore` column stays; dropping it is a separate item.

@@ -316,8 +316,8 @@ public class BackupService(
 				FOREIGN KEY (receipt_id_b) REFERENCES receipts(id)
 			)
 			""",
-			// Retired matcher thresholds (RECEIPTS-1099). The table stays, empty, because every
-			// v5+ importer — including the previous release, for rollback — requires it.
+			// Retired matcher thresholds (RECEIPTS-1099). The table stays, empty, so the export remains
+			// a valid v15 archive: every importer of format v5 or later requires it.
 			"""
 			CREATE TABLE normalized_description_settings (
 				id TEXT NOT NULL PRIMARY KEY,
