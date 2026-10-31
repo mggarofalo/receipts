@@ -283,7 +283,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
-		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
+		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct, kind, clock.GetUtcNow());
 		if (operation.Kind != kind || kind is not (HistoricalOperationKind.ManualV1 or HistoricalOperationKind.RestructureV1))
 		{ throw new TaxonomyException(409, "Automatic historical operations cannot be run by the manual service."); }
 		operation.State = HistoricalReclassificationPolicy.Cancel(operation.State);
@@ -309,7 +309,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 			if (expectedRestoreGeneration == Guid.Empty || expectedRestoreGeneration != currentGeneration)
 			{ throw new TaxonomyException(409, "Automatic undo request predates restore."); }
 		}
-		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
+		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct, kind, clock.GetUtcNow());
 		if (operation.Kind != kind)
 		{ throw new TaxonomyException(409, "Historical operation kind does not match the execution path."); }
 		if (kind == HistoricalOperationKind.ApprovedMappingV1 && operation.ApprovedMappingRevisionId is null)
@@ -421,13 +421,26 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		return row;
 	}
 
-	private static async Task<HistoricalOperationEntity> OwnedAsync(ApplicationDbContext db, string actor, Guid id, bool locked, CancellationToken ct)
+	/// <summary>
+	/// The caller's operation. A category restructure belongs to the deployment rather than to the administrator who
+	/// started it, so any enabled administrator may resume, cancel or undo it.
+	/// </summary>
+	private static async Task<HistoricalOperationEntity> OwnedAsync(ApplicationDbContext db, string actor, Guid id, bool locked, CancellationToken ct,
+		HistoricalOperationKind? kind = null, DateTimeOffset now = default)
 	{
 		IQueryable<HistoricalOperationEntity> query = locked
 			? db.HistoricalOperations.FromSqlInterpolated($"SELECT * FROM taxonomy.\"HistoricalOperations\" WHERE \"Id\" = {id} FOR UPDATE")
 			: db.HistoricalOperations.AsNoTracking();
-		return await query.SingleOrDefaultAsync(x => x.Id == id && x.Actor == actor, ct)
+		if (kind != HistoricalOperationKind.RestructureV1)
+		{
+			return await query.SingleOrDefaultAsync(x => x.Id == id && x.Actor == actor, ct)
+				?? throw new TaxonomyException(404, "Historical operation does not exist.");
+		}
+		HistoricalOperationEntity operation = await query.SingleOrDefaultAsync(x => x.Id == id && x.Kind == HistoricalOperationKind.RestructureV1, ct)
 			?? throw new TaxonomyException(404, "Historical operation does not exist.");
+		if (!await TaxonomyService.IsEnabledAdminAsync(db, actor, now, ct))
+		{ throw new TaxonomyException(403, "An enabled administrator is required to restructure categories."); }
+		return operation;
 	}
 
 	private static void ValidateLimit(int limit)

@@ -46,6 +46,8 @@ function RestructureCategories() {
   usePageTitle("Restructure categories");
   const fileInput = useRef<HTMLInputElement>(null);
   const [plan, setPlan] = useState<RestructurePlan>();
+  // One ID per chosen plan, so retrying after a lost response resumes the same application.
+  const [applicationId, setApplicationId] = useState<string>();
   const [fileError, setFileError] = useState<string>();
   const [confirming, setConfirming] = useState(false);
   const [running, setRunning] = useState<RestructureApplication>();
@@ -66,16 +68,17 @@ function RestructureCategories() {
       return;
     }
     setPlan(parsed);
+    setApplicationId(crypto.randomUUID());
     preview.mutate(parsed);
   }
 
   function apply() {
-    if (!plan) return;
+    if (!plan || !applicationId) return;
     setConfirming(false);
     run.mutate(
       {
         kind: "apply",
-        applicationId: crypto.randomUUID(),
+        applicationId,
         plan,
         onProgress: setRunning,
       },
@@ -227,10 +230,12 @@ function RestructureCategories() {
                         Resume
                       </Button>
                     )}
-                    {application.state !== "undone" && (
+                    {(application.state !== "undone" || !application.undoneAt) && (
                       <Button variant="outline" size="sm" disabled={busy}
                         onClick={() => continueRun("undo", application.id)}>
-                        {application.state === "undoing" ? "Continue undo" : "Undo"}
+                        {application.state === "undoing" || application.state === "undone"
+                          ? "Continue undo"
+                          : "Undo"}
                       </Button>
                     )}
                   </div>

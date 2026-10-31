@@ -64,7 +64,9 @@ public class RestructurePlannerTests
 			new(PartyLinked, "Party fund", true, [new("budget", "ynab-other")]),
 			new(Home, "Home", true, [new("budget", "ynab-home")]),
 		],
-		[], defaults ?? new Dictionary<Guid, Guid>(), mappings ?? [], []);
+		[], defaults ?? new Dictionary<Guid, Guid>(), mappings ?? [],
+		items.Where(item => item.EnvelopeId != null).GroupBy(item => item.EnvelopeId!.Value)
+			.ToDictionary(group => group.Key, group => new RestructureEnvelopeUse(group.Count(), 0)));
 
 	[Fact]
 	public void NodeMappingsMoveUnlistedPurchasesAndListedOnesOverrideThem()
@@ -278,5 +280,71 @@ public class RestructurePlannerTests
 
 		reverted.Where(n => n.Id != created).Should().BeEquivalentTo(Tree);
 		reverted.Single(n => n.Id == created).Archived.Should().BeTrue();
+	}
+
+	[Fact]
+	public void UnchangedIgnoresExtraArchivedCategoriesButNotActiveOnesOrEditedReferenceCategories()
+	{
+		TaxonomyNode leftover = new(Guid.NewGuid(), Groceries, "Pantry staples", "Includes flour. Not snacks.", true);
+
+		RestructurePlanner.Unchanged(Tree, [.. Tree, leftover]).Should().BeTrue();
+		RestructurePlanner.Unchanged(Tree, [.. Tree, leftover with { Archived = false }]).Should().BeFalse();
+		RestructurePlanner.Unchanged(Tree, [.. Tree.Select(n => n.Id == Dairy ? n with { Definition = "Milk" } : n), leftover]).Should().BeFalse();
+		RestructurePlanner.Unchanged(Tree, [.. Tree.Where(n => n.Id != Household)]).Should().BeFalse();
+	}
+
+	[Fact]
+	public void EditsRestoreACreatedCategoryLeftArchivedByAnUndoAndPassOtherChangesThrough()
+	{
+		Guid created = Guid.NewGuid();
+		TaxonomyNode leftover = new(created, Groceries, "Pantry", "Includes flour. Not snacks.", true);
+		RestructureCategoryChange archive = new("archive", Event);
+		RestructureCategoryChange fresh = new("create", Guid.NewGuid(), null, "Garden", "Includes seeds. Not food.");
+
+		RestructurePlanner.Edits([new("create", created, Groceries, "Pantry", "Includes flour. Not snacks."), archive, fresh], [.. Tree, leftover])
+			.Should().Equal(new TaxonomyEdit("restore", created), archive.ToEdit(), fresh.ToEdit());
+		RestructurePlanner.Edits([new("create", created, null, "Pantry staples", "Includes flour and rice. Not snacks.")], [.. Tree, leftover])
+			.Should().Equal(new TaxonomyEdit("restore", created), new TaxonomyEdit("move", created, ParentId: null),
+				new TaxonomyEdit("rename", created, Name: "Pantry staples"),
+				new TaxonomyEdit("define", created, Definition: "Includes flour and rice. Not snacks."));
+		// A create of an ID the tree holds active is not rewritten; the tree rejects it.
+		RestructurePlanner.Edits([new("create", Dairy, Groceries, "Dairy", "Includes milk.")], Tree)
+			.Should().Equal(new TaxonomyEdit("create", Dairy, Groceries, "Dairy", "Includes milk."));
+	}
+
+	[Fact]
+	public void APlanCannotMovePurchasesOffACategoryThatIsAlreadyArchived()
+	{
+		Guid old = Guid.NewGuid();
+		TaxonomyNode[] withArchived = [.. Tree, new(old, null, "Old", null, true)];
+		RestructureItemState onOld = Item(old);
+		RestructureState state = State([onOld]) with { CurrentNodes = withArchived, BaseNodes = withArchived };
+
+		RestructurePlanner.Plan(Plan(nodeMappings: [new(Event, Clear: true), new(EventDairy, Dairy, Occasion: "Event"),
+			new(Placeholder, Clear: true), new(old, Dairy)]), state)
+			.Errors.Should().ContainSingle(e => e.Contains("Old is already archived"));
+		RestructurePlanner.Plan(Plan([new(onOld.ItemId, Dairy, Rule: "d")]), state)
+			.Errors.Should().ContainSingle(e => e.Contains("1 listed purchases are on archived categories"));
+		RestructurePlanner.Plan(Plan(), state).Errors.Should().BeEmpty();
+	}
+
+	[Fact]
+	public void MergeReportsCountEveryPurchaseAndReceiptTheMergeMoves()
+	{
+		// The deployment's counts include the recycle bin, which the captured purchases do not.
+		RestructureState state = State([Item(Dairy, envelope: Food)]) with
+		{
+			EnvelopeUse = new Dictionary<Guid, RestructureEnvelopeUse> { [Food] = new(5, 2), [Party] = new(3, 1) },
+		};
+
+		RestructureOutcome outcome = RestructurePlanner.Plan(
+			Plan(merges: [new(new("Pantry (2)"), new("Pantry")), new(new("Party"), new("Party fund", "ynab-other"))]), state);
+
+		outcome.Errors.Should().BeEmpty();
+		outcome.Report.EnvelopeMerges.Should().BeEquivalentTo(new RestructureMergeReport[]
+		{
+			new("Pantry (2)", "Pantry", 5, 2, 0, 5), new("Party", "Party fund", 3, 1, 0, 3)
+		});
+		outcome.Report.Budget.Should().Be(new RestructureBudgetReport(8, 8));
 	}
 }

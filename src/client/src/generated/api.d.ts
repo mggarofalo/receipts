@@ -17586,12 +17586,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Administrator role required */
+            /** @description An enabled administrator is required */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
             /** @description Not Found */
             404: {
@@ -17651,12 +17653,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Administrator role required */
+            /** @description An enabled administrator is required */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
             /** @description Not Found */
             404: {
@@ -17782,12 +17786,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Administrator role required */
+            /** @description An enabled administrator is required */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
             /** @description Not Found */
             404: {
@@ -17847,12 +17853,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Administrator role required */
+            /** @description An enabled administrator is required */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
             /** @description Not Found */
             404: {
@@ -17918,12 +17926,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Administrator role required */
+            /** @description An enabled administrator is required */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
             /** @description Not Found */
             404: {

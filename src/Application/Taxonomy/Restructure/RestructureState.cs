@@ -13,7 +13,7 @@ public sealed record RestructureState(
 	IReadOnlyList<RestructureOccasionState> Occasions,
 	IReadOnlyDictionary<Guid, Guid> Defaults,
 	IReadOnlyList<RestructureMappingState> Mappings,
-	IReadOnlyList<RestructureReceiptState> PaidFromReceipts);
+	IReadOnlyDictionary<Guid, RestructureEnvelopeUse> EnvelopeUse);
 
 /// <summary>A purchase and its current assignment (null category when cleared).</summary>
 public sealed record RestructureItemState(Guid ItemId, Guid AssignmentId, Guid? CategoryId, DateTimeOffset RecordedAt,
@@ -30,4 +30,5 @@ public sealed record RestructureOccasionState(Guid Id, string Name, bool IsActiv
 public sealed record RestructureMappingState(NormalizationSourceKey Source, string SourceFingerprint, Guid RevisionId,
 	Guid CategoryId, string? SemanticFingerprint);
 
-public sealed record RestructureReceiptState(Guid ReceiptId, Guid PaidFromEnvelopeId);
+/// <summary>How many purchases and paid-from receipts hold an envelope, counting the recycle bin as an envelope merge does.</summary>
+public sealed record RestructureEnvelopeUse(int Items, int Receipts);

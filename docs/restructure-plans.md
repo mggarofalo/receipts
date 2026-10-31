@@ -49,11 +49,14 @@ The dry run (`POST /api/restructure-plans/preview`) runs the same planner as app
 every error at once. A plan is refused when:
 
 - the format or version is unknown;
-- the category tree no longer matches the plan's base tree (compared by content, so a plan that
-  was undone can be applied again);
+- the category tree no longer matches the plan's base tree. Trees are compared by content, and
+  archived categories the base lacks are ignored, so a plan that was undone can be applied again:
+  a category it created comes back by restore;
 - an active category has no definition, or the tree is deeper than two levels;
 - an archived category has no node mapping, or a mapping or item names a category that is not
   active after the plan;
+- a node mapping or a listed purchase would move purchases off a category that is already
+  archived, because undo could not put them back there;
 - an envelope reference matches no envelope, or more than one;
 - a merge chains into another merge or targets an archived envelope, or a default names an
   archived envelope;
@@ -61,7 +64,13 @@ every error at once. A plan is refused when:
   inherits, and the plan does not say which wins.
 
 A plan never overwrites a person's later decision. A purchase classified after `snapshotAt` by
-hand, by Jev or by an approved mapping is left as it is and reported as a conflict.
+hand, by Jev or by an approved mapping is left as it is and reported as a conflict. An occasion
+tag is written only while the purchase still has the occasion it had when the plan was applied.
+
+Purchases in the recycle bin are not reassigned. If one is restored later, it keeps its old
+category, which may now be archived, and shows up in classification cleanup like any other
+purchase on an archived category. Envelope merges do move purchases and receipts in the recycle
+bin, and the dry run counts them.
 
 ## Budget parity
 
@@ -82,11 +91,18 @@ envelope is not touched.
 
 `POST /api/restructure-plans/{id}/undo` puts everything back: the tree, defaults, mappings,
 envelope merges and each purchase. Undo skips anything someone changed since, and reports it. It
-is refused once the category tree has changed after the apply, because that change would be lost.
-Undoing an application that was still running cancels it first.
+is refused while the category tree differs from the one the apply left (by content, ignoring
+categories a later, undone restructure left archived), because that change would be lost. Put the
+change back, or undo the later restructure, first. Undoing an application that was still running
+cancels it first.
+
+Category edits are refused while a restructure is being applied or undone, because the purchases
+still to move are pinned to one category revision.
 
 A plan ID can be applied again only after its previous application is undone, and only one
-application can be unfinished at a time. Every endpoint requires the admin role.
+application can be unfinished at a time. Every endpoint requires the admin role. A restructure
+belongs to the deployment, not to the administrator who started it: any enabled administrator can
+resume, cancel or undo it.
 
 ## Backups
 

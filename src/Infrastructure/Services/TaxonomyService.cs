@@ -50,6 +50,11 @@ public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> fact
 			TaxonomyRevision replay = (await ReadRevisionAsync(context, previous.RevisionId, cancellationToken))!;
 			return replay with { AffectedCount = previous.AffectedCount };
 		}
+		// A restructure moves purchases against one pinned revision; an edit in the middle would strand the rest.
+		if (await context.HistoricalOperations.AnyAsync(row => row.Kind == HistoricalOperationKind.RestructureV1
+			&& (row.State == HistoricalOperationState.Preview || row.State == HistoricalOperationState.Applying
+				|| row.State == HistoricalOperationState.Undoing), cancellationToken))
+		{ throw new TaxonomyException(409, "A category restructure is still running. Finish or undo it before changing categories."); }
 		(Guid resultId, int affected) = await AppendInTransactionAsync(context, head, actor, command, hash, now, cancellationToken);
 		await context.SaveChangesAsync(cancellationToken);
 		await transaction.CommitAsync(cancellationToken);

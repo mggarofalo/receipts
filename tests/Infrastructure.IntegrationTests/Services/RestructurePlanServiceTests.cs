@@ -374,4 +374,190 @@ public sealed class RestructurePlanServiceTests(PostgresFixture server) : Isolat
 		memory.Should().BeLessThan(256L * 1024 * 1024);
 		Console.WriteLine($"restructure scale: dry run {dryRun}, capture {capture}, {perPurchase.TotalMilliseconds:F1} ms per purchase, {memory / 1024 / 1024} MiB");
 	}
+
+	private async Task AddAdminAsync(string id)
+	{
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		db.Users.Add(new ApplicationUser { Id = id, UserName = id });
+		db.UserRoles.Add(new() { UserId = id, RoleId = await db.Roles.Where(x => x.Name == AppRoles.Admin).Select(x => x.Id).SingleAsync() });
+		await db.SaveChangesAsync();
+	}
+
+	private async Task<TaxonomyRevision> RenameAsync(Guid category, string name)
+	{
+		TaxonomyRevision head = (await Tree().ReadAsync(null))!;
+		return await Tree().ChangeAsync(Actor, new(head.Id, Guid.NewGuid(), "Later edit", [new("rename", category, Name: name)]));
+	}
+
+	[Fact]
+	public async Task CategoryEditsAreRefusedWhileARestructureIsUnfinishedAndAllowedOnceItCompletes()
+	{
+		// Arrange
+		Seed seed = await SeedAsync();
+		await AddItemsAsync(seed, seed.Placeholder, 1, seed.Pantry);
+		RestructureApplicationSummary begun = await Service().BeginAsync(Actor, Guid.NewGuid(), Plan(seed, DateTimeOffset.UtcNow));
+
+		// Act
+		Func<Task> midway = () => RenameAsync(seed.Household, "Home");
+
+		// Assert
+		begun.State.Should().Be(HistoricalOperationState.Preview);
+		(await midway.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
+		(await ApplyAllAsync(begun.Id)).State.Should().Be(HistoricalOperationState.Completed);
+		(await RenameAsync(seed.Household, "Home")).Nodes.Should().Contain(node => node.Id == seed.Household && node.Name == "Home");
+	}
+
+	[Fact]
+	public async Task AnotherEnabledAdministratorCanContinueCancelAndUndoARestructure()
+	{
+		// Arrange
+		const string other = "restructure-test-other-admin";
+		Seed seed = await SeedAsync();
+		await AddAdminAsync(other);
+		await AddItemsAsync(seed, seed.Placeholder, 3, seed.Pantry);
+		RestructureApplicationSummary begun = await Service().BeginAsync(Actor, Guid.NewGuid(), Plan(seed, DateTimeOffset.UtcNow));
+
+		// Act
+		RestructureApplicationSummary chunk = await Service().ApplyChunkAsync(other, begun.Id, 1);
+		RestructureApplicationSummary cancelled = await Service().CancelAsync(other, begun.Id);
+		RestructureApplicationSummary undone;
+		do { undone = await Service().UndoChunkAsync(other, begun.Id, 100); }
+		while (undone.State != HistoricalOperationState.Undone);
+
+		// Assert
+		chunk.Progress.Applied.Should().Be(1);
+		cancelled.State.Should().Be(HistoricalOperationState.Cancelled);
+		undone.Progress.Undone.Should().Be(1);
+		undone.UndoneAt.Should().NotBeNull();
+	}
+
+	[Fact]
+	public async Task APlanThatCreatesACategoryAppliesAgainAfterItWasUndone()
+	{
+		// Arrange
+		Seed seed = await SeedAsync();
+		Guid[] placeholder = await AddItemsAsync(seed, seed.Placeholder, 1, seed.Pantry);
+		Guid created = Guid.NewGuid();
+		RestructurePlan basePlan = Plan(seed, DateTimeOffset.UtcNow, [new(placeholder[0], created, Rule: "d")]);
+		RestructurePlan plan = basePlan with
+		{
+			TaxonomyChanges = [.. basePlan.TaxonomyChanges, new("create", created, seed.Groceries, "Pantry staples", "Includes flour and rice. Not snacks.")],
+		};
+		Guid first = (await Service().BeginAsync(Actor, Guid.NewGuid(), plan)).Id;
+		await ApplyAllAsync(first);
+		await UndoAllAsync(first);
+		(await CurrentTreeAsync()).Single(node => node.Id == created).Archived.Should().BeTrue();
+
+		// Act
+		RestructurePreview preview = await Service().PreviewAsync(plan);
+		RestructureApplicationSummary again = await ApplyAllAsync((await Service().BeginAsync(Actor, Guid.NewGuid(), plan)).Id);
+
+		// Assert
+		preview.Valid.Should().BeTrue(string.Join(" ", preview.Errors));
+		again.State.Should().Be(HistoricalOperationState.Completed);
+		again.Progress.Applied.Should().Be(1);
+		(await CurrentTreeAsync()).Single(node => node.Id == created).Should().Be(
+			new Domain.Taxonomy.TaxonomyNode(created, seed.Groceries, "Pantry staples", "Includes flour and rice. Not snacks.", false));
+		(await SnapshotAsync())[placeholder[0]].Category.Should().Be(created);
+	}
+
+	[Fact]
+	public async Task UndoComparesCategoryContentSoAnEditThatWasPutBackDoesNotBlockIt()
+	{
+		// Arrange
+		Seed seed = await SeedAsync();
+		await AddItemsAsync(seed, seed.Placeholder, 1, seed.Pantry);
+		RestructureApplicationSummary summary = await ApplyAllAsync((await Service().BeginAsync(Actor, Guid.NewGuid(), Plan(seed, DateTimeOffset.UtcNow))).Id);
+		await RenameAsync(seed.Household, "Home");
+
+		// Act
+		Func<Task> whileEdited = () => Service().UndoChunkAsync(Actor, summary.Id, 100);
+		TaxonomyException refused = (await whileEdited.Should().ThrowAsync<TaxonomyException>()).Which;
+		await RenameAsync(seed.Household, "Household (t)");
+		RestructureApplicationSummary undone = await UndoAllAsync(summary.Id);
+
+		// Assert
+		refused.Status.Should().Be(409);
+		undone.Progress.Undone.Should().Be(1);
+		undone.UndoneAt.Should().NotBeNull();
+	}
+
+	[Fact]
+	public async Task AnOccasionTheUserChangedAfterCaptureIsLeftByApplyAndUndo()
+	{
+		// Arrange
+		Seed seed = await SeedAsync();
+		Guid[] items = await AddItemsAsync(seed, seed.EventDairy, 2, seed.Party);
+		RestructureApplicationSummary begun = await Service().BeginAsync(Actor, Guid.NewGuid(), Plan(seed, DateTimeOffset.UtcNow));
+		Guid birthday = Guid.NewGuid();
+		await using (ApplicationDbContext db = fixture.CreateDbContext())
+		{
+			db.Occasions.Add(new OccasionEntity { Id = birthday, Name = "Birthday", IsActive = true });
+			await db.SaveChangesAsync();
+			await db.ReceiptItems.Where(x => x.Id == items[0]).ExecuteUpdateAsync(x => x.SetProperty(i => i.OccasionId, birthday));
+		}
+
+		// Act
+		await ApplyAllAsync(begun.Id);
+		var applied = await SnapshotAsync();
+		await UndoAllAsync(begun.Id);
+		var undone = await SnapshotAsync();
+
+		// Assert: the purchase still moves, but keeps the user's occasion throughout.
+		applied[items[0]].Category.Should().Be(seed.Dairy);
+		applied[items[0]].Occasion.Should().Be(birthday);
+		applied[items[1]].Occasion.Should().NotBeNull().And.NotBe(birthday);
+		undone[items[0]].Category.Should().Be(seed.EventDairy);
+		undone[items[0]].Occasion.Should().Be(birthday);
+		undone[items[1]].Occasion.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task DryRunMergeCountsIncludeDeletedPurchasesTheMergeMoves()
+	{
+		// Arrange
+		Seed seed = await SeedAsync();
+		Guid[] duplicates = await AddItemsAsync(seed, seed.Dairy, 3, seed.PantryDuplicate);
+		await using (ApplicationDbContext db = fixture.CreateDbContext())
+		{
+			await db.ReceiptItems.IgnoreQueryFilters().Where(x => x.Id == duplicates[0])
+				.ExecuteUpdateAsync(x => x.SetProperty(i => i.DeletedAt, DateTimeOffset.UtcNow));
+		}
+		RestructurePlan plan = Plan(seed, DateTimeOffset.UtcNow);
+
+		// Act
+		RestructurePreview preview = await Service().PreviewAsync(plan);
+		await Service().BeginAsync(Actor, Guid.NewGuid(), plan);
+
+		// Assert
+		await using ApplicationDbContext after = fixture.CreateDbContext();
+		int moved = await after.ReceiptItems.IgnoreQueryFilters().CountAsync(x => duplicates.Contains(x.Id) && x.EnvelopeId == seed.Pantry);
+		moved.Should().Be(3);
+		preview.Report.EnvelopeMerges.Should().ContainSingle().Which.Items.Should().Be(moved);
+		preview.Report.Budget.ItemsChangingEnvelope.Should().Be(moved);
+	}
+
+	[Fact]
+	public async Task APlanContainingNulIsRefusedAndWritesNothing()
+	{
+		// Arrange
+		Seed seed = await SeedAsync();
+		Guid[] placeholder = await AddItemsAsync(seed, seed.Placeholder, 1, seed.Pantry);
+		RestructurePlan plan = Plan(seed, DateTimeOffset.UtcNow,
+			[new(placeholder[0], seed.Household, Rule: "d", Evidence: System.Text.Json.JsonSerializer.SerializeToElement(new { note = "a\0b" }))]);
+		Guid head = (await Tree().ReadAsync(null))!.Id;
+
+		// Act
+		Func<Task> begin = () => Service().BeginAsync(Actor, Guid.NewGuid(), plan);
+
+		// Assert
+		TaxonomyException error = (await begin.Should().ThrowAsync<TaxonomyException>()).Which;
+		error.Status.Should().Be(400);
+		error.Message.Should().Contain("NUL");
+		(await Tree().ReadAsync(null))!.Id.Should().Be(head);
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		(await db.RestructureApplications.AnyAsync()).Should().BeFalse();
+		(await db.HistoricalOperations.AnyAsync(x => x.Kind == Infrastructure.Entities.Taxonomy.HistoricalOperationKind.RestructureV1)).Should().BeFalse();
+		(await db.Occasions.AnyAsync()).Should().BeFalse();
+	}
 }

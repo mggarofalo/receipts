@@ -42,6 +42,9 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 		if (string.IsNullOrWhiteSpace(actor) || applicationId == Guid.Empty)
 		{ throw new TaxonomyException(400, "Actor and application ID are required."); }
 		string planJson = JsonSerializer.Serialize(plan);
+		// PostgreSQL jsonb cannot hold NUL, so refuse it here rather than fail on save.
+		if (planJson.Contains("\\u0000", StringComparison.Ordinal))
+		{ throw new TaxonomyException(400, "The plan must not contain NUL characters."); }
 		string planHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(planJson)));
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -65,7 +68,8 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 				   select application.Id).AnyAsync(ct))
 		{ throw new TaxonomyException(409, "This plan is already applied, or another restructure is still running. Undo or finish it first."); }
 
-		RestructureOutcome outcome = RestructurePlanner.Plan(plan, await LoadStateAsync(db, head.RevisionId, plan.BaseTaxonomyRevisionId, ct));
+		RestructureState state = await LoadStateAsync(db, head.RevisionId, plan.BaseTaxonomyRevisionId, ct);
+		RestructureOutcome outcome = RestructurePlanner.Plan(plan, state);
 		if (!outcome.IsValid)
 		{ throw new TaxonomyException(400, outcome.Errors[0], new Dictionary<string, object?> { ["errors"] = outcome.Errors }); }
 
@@ -73,7 +77,7 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 		if (plan.TaxonomyChanges.Count > 0)
 		{
 			TaxonomyChangeCommand command = new(head.RevisionId, Derived(applicationId, "taxonomy"), plan.Reason,
-				[.. plan.TaxonomyChanges.Select(change => change.ToEdit())]);
+				RestructurePlanner.Edits(plan.TaxonomyChanges, state.CurrentNodes));
 			await TaxonomyService.AppendInTransactionAsync(db, head, actor, command, TaxonomyService.RequestHash(command), now, ct);
 			// Mapping approvals read the new revision's nodes from the database.
 			await db.SaveChangesAsync(ct);
@@ -233,8 +237,9 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 		foreach (HistoricalWrite write in writes)
 		{
 			if (extras[write.Row.ItemId].TargetOccasionId is not Guid tagged) { continue; }
-			if (!reverting) { write.Item.OccasionId = tagged; }
-			else if (write.Item.OccasionId == tagged) { write.Item.OccasionId = extras[write.Row.ItemId].PreviousOccasionId; }
+			// Only while the purchase still carries the occasion it had when captured, or the tag this plan set.
+			if (!reverting && write.Item.OccasionId == extras[write.Row.ItemId].PreviousOccasionId) { write.Item.OccasionId = tagged; }
+			else if (reverting && write.Item.OccasionId == tagged) { write.Item.OccasionId = extras[write.Row.ItemId].PreviousOccasionId; }
 		}
 		return written;
 	};
@@ -251,7 +256,7 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 		TaxonomyHeadEntity head = await LockHeadAsync(db, ct);
 		HistoricalOperationEntity operation = await db.HistoricalOperations
 			.FromSqlInterpolated($"SELECT * FROM taxonomy.\"HistoricalOperations\" WHERE \"Id\" = {applicationId} FOR UPDATE")
-			.SingleOrDefaultAsync(x => x.Actor == actor && x.Kind == HistoricalOperationKind.RestructureV1, ct)
+			.SingleOrDefaultAsync(x => x.Kind == HistoricalOperationKind.RestructureV1, ct)
 			?? throw new TaxonomyException(404, "Restructure does not exist.");
 		RestructureApplicationEntity application = await db.RestructureApplications.SingleAsync(x => x.Id == applicationId, ct);
 		if (application.UndoRevisionId is Guid begun)
@@ -259,16 +264,17 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 			await transaction.CommitAsync(ct);
 			return begun;
 		}
-		if (head.RevisionId != application.AppliedRevisionId)
-		{ throw new TaxonomyException(409, "Categories changed after this restructure. Undo those changes first, or keep the restructure."); }
 		DateTimeOffset now = Truncate(clock.GetUtcNow());
 		if (!await TaxonomyService.IsEnabledAdminAsync(db, actor, now, ct))
 		{ throw new TaxonomyException(403, "An enabled administrator is required to restructure categories."); }
+		List<TaxonomyNode> current = [.. (await NodesAsync(db, head.RevisionId, ct)).Values];
+		// Content, not revision identity: an edit that was itself put back, or a later restructure that was undone, is fine.
+		if (!RestructurePlanner.Unchanged([.. (await NodesAsync(db, application.AppliedRevisionId, ct)).Values], current))
+		{ throw new TaxonomyException(409, "Categories changed after this restructure. Undo those changes first, or keep the restructure."); }
 		// An interrupted apply stops here; purchases it already reassigned are undone like the rest.
 		if (operation.State is HistoricalOperationState.Preview or HistoricalOperationState.Applying)
 		{ operation.State = HistoricalReclassificationPolicy.Cancel(operation.State); }
 
-		List<TaxonomyNode> current = [.. (await NodesAsync(db, head.RevisionId, ct)).Values];
 		List<TaxonomyNode> original = [.. (await NodesAsync(db, application.BaseRevisionId, ct)).Values];
 		IReadOnlyList<TaxonomyEdit> revert = RestructurePlanner.RevertChanges(current, original);
 		if (revert.Count > 0)
@@ -284,6 +290,10 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 			change.UndoOutcome = await RevertAsync(db, head, actor, applicationId, change, now, ct);
 		}
 		application.UndoRevisionId = head.RevisionId;
+		// Freeze the undo intent now, so category edits stay refused from here until the last purchase is back.
+		operation.State = HistoricalReclassificationPolicy.BeginUndo(operation.State);
+		operation.UndoTaxonomyRevisionId = head.RevisionId;
+		operation.UndoReason = UndoReason;
 		await db.SaveChangesAsync(ct);
 		await transaction.CommitAsync(ct);
 		if (publisher is not null)
@@ -501,10 +511,15 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 														 select revision).ToListAsync(ct))
 			.Select(revision => new RestructureMappingState(new(revision.Location, revision.Description, revision.ItemCode),
 				revision.SourceFingerprint, revision.Id, revision.CategoryId!.Value, revision.SemanticFingerprint)).ToList();
-		List<RestructureReceiptState> paidFrom = await db.Receipts.AsNoTracking().Where(x => x.PaidFromEnvelopeId != null)
-			.Select(x => new RestructureReceiptState(x.Id, x.PaidFromEnvelopeId!.Value)).ToListAsync(ct);
+		// The same rows an envelope merge moves (ApplyMergesAsync), so the dry run's budget counts match the apply.
+		Dictionary<Guid, int> itemUse = await db.ReceiptItems.IgnoreQueryFilters().Where(x => x.EnvelopeId != null)
+			.GroupBy(x => x.EnvelopeId!.Value).ToDictionaryAsync(g => g.Key, g => g.Count(), ct);
+		Dictionary<Guid, int> receiptUse = await db.Receipts.IgnoreQueryFilters().Where(x => x.PaidFromEnvelopeId != null)
+			.GroupBy(x => x.PaidFromEnvelopeId!.Value).ToDictionaryAsync(g => g.Key, g => g.Count(), ct);
+		Dictionary<Guid, RestructureEnvelopeUse> use = itemUse.Keys.Union(receiptUse.Keys)
+			.ToDictionary(id => id, id => new RestructureEnvelopeUse(itemUse.GetValueOrDefault(id), receiptUse.GetValueOrDefault(id)));
 		return new(headRevision, [.. current.Values], original is null ? null : [.. original.Values], items, envelopes, occasions,
-			defaults, mappings, paidFrom);
+			defaults, mappings, use);
 	}
 
 	private static async Task<RestructureApplicationSummary> SummaryAsync(ApplicationDbContext db, RestructureApplicationEntity row, CancellationToken ct)

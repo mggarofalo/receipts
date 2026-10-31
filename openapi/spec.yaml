@@ -9399,7 +9399,11 @@ paths:
         '401':
           description: Authentication required
         '403':
-          description: Administrator role required
+          description: An enabled administrator is required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Not Found
           content:
@@ -9490,7 +9494,11 @@ paths:
         '401':
           description: Authentication required
         '403':
-          description: Administrator role required
+          description: An enabled administrator is required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Not Found
           content:
@@ -9610,7 +9618,11 @@ paths:
         '401':
           description: Authentication required
         '403':
-          description: Administrator role required
+          description: An enabled administrator is required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Not Found
           content:
@@ -9659,7 +9671,11 @@ paths:
         '401':
           description: Authentication required
         '403':
-          description: Administrator role required
+          description: An enabled administrator is required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Not Found
           content:
@@ -9720,7 +9736,11 @@ paths:
         '401':
           description: Authentication required
         '403':
-          description: Administrator role required
+          description: An enabled administrator is required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Not Found
           content:

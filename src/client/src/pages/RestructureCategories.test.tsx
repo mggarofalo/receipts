@@ -98,6 +98,21 @@ it("shows the dry run report and applies the plan after confirmation", async () 
   expect(runMutate).toHaveBeenCalledWith(expect.objectContaining({ kind: "apply" }), expect.anything());
 });
 
+it("retries a failed apply with the same application ID", async () => {
+  setPreview({ valid: true, errors: [], warnings: [], report });
+  const user = await upload('{"planId":"p"}');
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await user.click(screen.getByRole("button", { name: "Apply plan" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Apply" }));
+  }
+
+  expect(runMutate).toHaveBeenCalledTimes(2);
+  const [first, second] = runMutate.mock.calls.map(([variables]) => (variables as { applicationId: string }).applicationId);
+  expect(first).toEqual(expect.any(String));
+  expect(second).toBe(first);
+});
+
 it("lists applied plans with undo, and resume for an interrupted one", async () => {
   const user = userEvent.setup();
   hooks.applications = { data: [application("completed"), { ...application("applying"), id: "app-2" }], isPending: false, isError: false };
@@ -121,4 +136,18 @@ it("shows an empty activity list", () => {
   renderWithProviders(<RestructureCategories />);
 
   expect(screen.getByText("No plans applied yet.")).toBeInTheDocument();
+});
+
+it("offers to continue an undo whose categories are put back but purchases are not", async () => {
+  const user = userEvent.setup();
+  hooks.applications = {
+    data: [application("undone"), { ...application("undone"), id: "app-2", undoneAt: "2026-10-31T12:00:00Z" }],
+    isPending: false,
+    isError: false,
+  };
+  renderWithProviders(<RestructureCategories />);
+
+  await user.click(screen.getByRole("button", { name: "Continue undo" }));
+  expect(runMutate).toHaveBeenCalledWith(expect.objectContaining({ kind: "undo", id: "app-1" }));
+  expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
 });

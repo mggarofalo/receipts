@@ -18,12 +18,12 @@ namespace API.Controllers;
 [Authorize(Policy = "RequireAdmin")]
 [Route("api/restructure-plans")]
 [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-[ProducesResponseType(StatusCodes.Status403Forbidden)]
 public sealed class RestructurePlansController(IRestructurePlanService service) : ControllerBase
 {
 	private const int MaximumChunk = HistoricalReclassificationPolicy.MaximumChunkSize;
 
 	[HttpPost("preview")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	[EndpointSummary("Validate a restructure plan and report what applying it would do")]
 	public async Task<Results<Ok<RestructurePreview>, BadRequestProblem>> Preview([FromBody] RestructurePlan plan, CancellationToken ct)
 	{
@@ -33,13 +33,14 @@ public sealed class RestructurePlansController(IRestructurePlanService service) 
 
 	[HttpPost]
 	[EndpointSummary("Apply a restructure plan's category changes and capture its purchase reassignments")]
-	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Begin(
+	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Begin(
 		[FromBody] RestructureBeginBody body, CancellationToken ct) => Run(async () =>
 		body.ApplicationId == Guid.Empty || body.Plan is null
 			? ApiProblem.BadRequest("An application ID and a restructure plan are required.")
 			: TypedResults.Ok(await service.BeginAsync(Actor(), body.ApplicationId, body.Plan, ct)));
 
 	[HttpGet]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	[EndpointSummary("List restructure applications, newest first")]
 	public async Task<Results<Ok<RestructureApplicationPage>, BadRequestProblem>> List(
 		[FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default)
@@ -50,10 +51,11 @@ public sealed class RestructurePlansController(IRestructurePlanService service) 
 
 	[HttpGet("{id:guid}")]
 	[EndpointSummary("Read a restructure application's progress and report")]
-	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Read(
+	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Read(
 		Guid id, CancellationToken ct) => Run(async () => TypedResults.Ok(await service.ReadAsync(id, ct)));
 
 	[HttpGet("{id:guid}/items")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	[EndpointSummary("Page a restructure application's reassigned purchases")]
 	public async Task<Results<Ok<RestructureItemPage>, BadRequestProblem, NotFoundProblem>> Items(Guid id,
 		[FromQuery] RestructureItemFilter filter = RestructureItemFilter.All, [FromQuery] int offset = 0,
@@ -67,7 +69,7 @@ public sealed class RestructurePlansController(IRestructurePlanService service) 
 
 	[HttpPost("{id:guid}/apply")]
 	[EndpointSummary("Reassign the next chunk of purchases")]
-	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Apply(
+	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Apply(
 		Guid id, [FromBody] RestructureChunkBody body, CancellationToken ct) => Run(async () =>
 		body.Limit is < 1 or > MaximumChunk
 			? ApiProblem.BadRequest("Use a chunk limit of 1 to 100.")
@@ -75,12 +77,12 @@ public sealed class RestructurePlansController(IRestructurePlanService service) 
 
 	[HttpPost("{id:guid}/cancel")]
 	[EndpointSummary("Stop reassigning purchases; reassigned purchases stay until undone")]
-	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Cancel(
+	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Cancel(
 		Guid id, CancellationToken ct) => Run(async () => TypedResults.Ok(await service.CancelAsync(Actor(), id, ct)));
 
 	[HttpPost("{id:guid}/undo")]
 	[EndpointSummary("Undo a restructure: categories first, then the next chunk of purchases")]
-	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Undo(
+	public Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Undo(
 		Guid id, [FromBody] RestructureChunkBody body, CancellationToken ct) => Run(async () =>
 		body.Limit is < 1 or > MaximumChunk
 			? ApiProblem.BadRequest("Use a chunk limit of 1 to 100.")
@@ -88,14 +90,15 @@ public sealed class RestructurePlansController(IRestructurePlanService service) 
 
 	private string Actor() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 
-	private static async Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Run(
-		Func<Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, NotFoundProblem, ConflictProblem>>> action)
+	private static async Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Run(
+		Func<Task<Results<Ok<RestructureApplicationSummary>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>>> action)
 	{
 		try { return await action(); }
 		catch (TaxonomyException error)
 		{
 			return error.Status switch
 			{
+				403 => new ForbiddenProblem(error.Message, "enabled_admin_required"),
 				404 => ApiProblem.NotFound(error.Message),
 				409 => ApiProblem.Conflict(error.Message, error.Extensions),
 				_ when error.Extensions.TryGetValue("errors", out object? errors) && errors is IEnumerable<string> details

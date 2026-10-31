@@ -31,12 +31,12 @@ public static class RestructurePlanner
 
 		if (state.BaseNodes is null)
 		{ errors.Add("The plan's base category revision does not exist here. Generate the plan from a backup of this deployment."); }
-		else if (!SameTree(state.BaseNodes, state.CurrentNodes))
+		else if (!Unchanged(state.BaseNodes, state.CurrentNodes))
 		{ errors.Add("Categories changed since the plan was generated. Generate a new plan from a current backup."); }
 		if (errors.Count > 0) { return Invalid(errors, state); }
 
 		IReadOnlyList<TaxonomyNode> result;
-		try { result = TaxonomyTree.Apply(state.CurrentNodes, [.. plan.TaxonomyChanges.Select(change => change.ToEdit())]); }
+		try { result = TaxonomyTree.Apply(state.CurrentNodes, Edits(plan.TaxonomyChanges, state.CurrentNodes)); }
 		catch (TaxonomyValidationException error) { return Invalid([$"Category changes are invalid: {error.Message}"], state); }
 
 		Dictionary<Guid, TaxonomyNode> before = state.CurrentNodes.ToDictionary(node => node.Id);
@@ -46,6 +46,10 @@ public static class RestructurePlanner
 		HashSet<string> occasionNames = ValidateOccasions(plan.Occasions ?? [], state, errors);
 		Dictionary<Guid, RestructureNodeMapping> nodeMappings = ValidateNodeMappings(plan, before, after, occasionNames, errors);
 		Dictionary<Guid, RestructureItemReassignment> itemReassignments = ValidateItems(plan, after, occasionNames, errors);
+		int onArchived = state.Items.Count(item => itemReassignments.ContainsKey(item.ItemId)
+			&& item.CategoryId is Guid category && before.TryGetValue(category, out TaxonomyNode? node) && node.Archived);
+		if (onArchived > 0)
+		{ errors.Add($"{onArchived} listed purchases are on archived categories, so undo could not put them back. Leave them out of the plan."); }
 		List<RestructureResolvedMerge> merges = ValidateMerges(plan, state, errors);
 		Dictionary<Guid, Guid?> explicitDefaults = ValidateExplicitDefaults(plan, state, after, errors);
 		if (errors.Count > 0) { return Invalid(errors, state); }
@@ -113,9 +117,41 @@ public static class RestructurePlanner
 		return names.Count == 0 ? "(unknown)" : string.Join(" / ", names);
 	}
 
-	/// <summary>Content equality of two trees; revision identity does not matter (an undone restructure matches its base again).</summary>
-	public static bool SameTree(IReadOnlyList<TaxonomyNode> left, IReadOnlyList<TaxonomyNode> right) =>
-		left.Count == right.Count && left.OrderBy(node => node.Id).SequenceEqual(right.OrderBy(node => node.Id));
+	/// <summary>
+	/// Whether <paramref name="current"/> still has the content of <paramref name="reference"/>. Revision identity does
+	/// not matter, and archived categories the reference lacks are ignored: an undone restructure leaves the categories
+	/// it created archived, and otherwise matches its base again.
+	/// </summary>
+	public static bool Unchanged(IReadOnlyList<TaxonomyNode> reference, IReadOnlyList<TaxonomyNode> current)
+	{
+		Dictionary<Guid, TaxonomyNode> nodes = current.ToDictionary(node => node.Id);
+		HashSet<Guid> known = [.. reference.Select(node => node.Id)];
+		return reference.All(node => nodes.TryGetValue(node.Id, out TaxonomyNode? match) && match == node)
+			&& nodes.Values.All(node => known.Contains(node.Id) || node.Archived);
+	}
+
+	/// <summary>
+	/// The plan's category changes as tree edits. Creating a category this deployment already holds archived (left by an
+	/// undone restructure) restores it with the planned parent, name and definition, so the plan applies again.
+	/// </summary>
+	public static IReadOnlyList<TaxonomyEdit> Edits(IReadOnlyList<RestructureCategoryChange> changes, IReadOnlyList<TaxonomyNode> current)
+	{
+		Dictionary<Guid, TaxonomyNode> archived = current.Where(node => node.Archived).ToDictionary(node => node.Id);
+		List<TaxonomyEdit> edits = [];
+		foreach (RestructureCategoryChange change in changes)
+		{
+			if (change.Kind != "create" || !archived.TryGetValue(change.CategoryId, out TaxonomyNode? node))
+			{
+				edits.Add(change.ToEdit());
+				continue;
+			}
+			edits.Add(new("restore", node.Id));
+			if (node.ParentId != change.ParentId) { edits.Add(new("move", node.Id, ParentId: change.ParentId)); }
+			if (node.Name != change.Name) { edits.Add(new("rename", node.Id, Name: change.Name)); }
+			if (node.Definition != change.Definition) { edits.Add(new("define", node.Id, Definition: change.Definition)); }
+		}
+		return edits;
+	}
 
 	private static RestructureOutcome Invalid(List<string> errors, RestructureState state) => new(errors, [], state.CurrentNodes, [], [], [], [], [],
 		new(new(0, 0, 0, 0, 0, 0, 0, 0), new(0, 0, 0, 0, 0, 0, new Dictionary<string, int>()), [], new(0, 0, 0, 0), new(0, 0, 0, 0), [], new(0, 0), []));
@@ -180,6 +216,9 @@ public static class RestructurePlanner
 			{ errors.Add($"Node mapping names category {mapping.CategoryId}, which does not exist."); continue; }
 			if (!mappings.TryAdd(mapping.CategoryId, mapping))
 			{ errors.Add($"Category {PathOf(before, mapping.CategoryId)} has more than one node mapping."); continue; }
+			// Undo cannot write an archived category, so purchases moved off one could never go back.
+			if (before[mapping.CategoryId].Archived)
+			{ errors.Add($"Category {PathOf(before, mapping.CategoryId)} is already archived, so undo could not put its purchases back. Leave it out of the plan."); continue; }
 			ValidateTarget($"Node mapping for {PathOf(before, mapping.CategoryId)}", mapping.TargetCategoryId, mapping.Clear,
 				mapping.Occasion, after, occasions, errors);
 			if (mapping.TargetCategoryId == mapping.CategoryId)
@@ -440,9 +479,10 @@ public static class RestructurePlanner
 		Dictionary<Guid, RestructureEnvelopeState> envelopes = state.Envelopes.ToDictionary(e => e.Id);
 		return merges.Select(merge =>
 		{
-			int items = state.Items.Count(item => item.EnvelopeId == merge.SourceEnvelopeId);
+			RestructureEnvelopeUse use = state.EnvelopeUse.GetValueOrDefault(merge.SourceEnvelopeId) ?? new(0, 0);
+			int items = use.Items;
 			return new RestructureMergeReport(envelopes[merge.SourceEnvelopeId].Name, envelopes[merge.TargetEnvelopeId].Name, items,
-				state.PaidFromReceipts.Count(receipt => receipt.PaidFromEnvelopeId == merge.SourceEnvelopeId),
+				use.Receipts,
 				state.Defaults.Count(pair => pair.Value == merge.SourceEnvelopeId),
 				LinksDiffer(envelopes[merge.SourceEnvelopeId], envelopes[merge.TargetEnvelopeId]) ? items : 0);
 		}).ToList();
