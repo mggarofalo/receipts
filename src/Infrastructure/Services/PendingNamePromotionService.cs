@@ -43,13 +43,15 @@ public sealed class PendingNamePromotionService(
 		if (!string.Equals(preview.Fingerprint, expectedFingerprint, StringComparison.Ordinal)) { return null; }
 		if (names.Count == 0) { return new PendingNamePromotionResult(null, 0, 0); }
 
-		Guid[] ids = names.Select(name => name.Id).ToArray();
-		await NormalizationWriteGuard.LockTargetsAsync(context, ids, cancellationToken);
+		Guid[] eligible = names.Select(name => name.Id).ToArray();
+		await NormalizationWriteGuard.LockTargetsAsync(context, eligible, cancellationToken);
 		List<NormalizedDescriptionEntity> targets = await context.NormalizedDescriptions
-			.Where(target => ids.Contains(target.Id) && target.Status == NormalizedDescriptionStatus.PendingReview)
+			.Where(target => eligible.Contains(target.Id) && target.Status == NormalizedDescriptionStatus.PendingReview)
 			.ToListAsync(cancellationToken);
 		foreach (NormalizedDescriptionEntity target in targets) { target.Status = NormalizedDescriptionStatus.Active; }
 		await context.SaveChangesAsync(cancellationToken);
+		// Record only the names this transaction changed, so undo can never "restore" one it did not promote.
+		Guid[] ids = targets.Select(target => target.Id).ToArray();
 
 		// The revision trigger has issued each promoted name a new revision; undo compares against it.
 		Dictionary<Guid, Guid> revisions = await context.NormalizedDescriptions.AsNoTracking()
@@ -61,7 +63,7 @@ public sealed class PendingNamePromotionService(
 			CreatedBy = actor,
 			CreatedAt = DateTimeOffset.UtcNow,
 			MinimumPurchases = MinimumPurchases,
-			PurchaseCount = preview.PurchaseCount,
+			PurchaseCount = names.Where(name => ids.Contains(name.Id)).Sum(name => name.PurchaseCount),
 			Entries = ids.Select(id => new PendingNamePromotionEntryEntity { NormalizedDescriptionId = id, RevisionAfter = revisions[id] }).ToList(),
 		};
 		context.PendingNamePromotions.Add(promotion);
@@ -74,14 +76,14 @@ public sealed class PendingNamePromotionService(
 				new FieldChange { FieldName = "operation", OldValue = null, NewValue = "PromotePendingNames" },
 				new FieldChange { FieldName = "promotionId", OldValue = null, NewValue = promotion.Id.ToString() },
 				new FieldChange { FieldName = "promotedCount", OldValue = null, NewValue = ids.Length.ToString() },
-				new FieldChange { FieldName = "purchaseCount", OldValue = null, NewValue = preview.PurchaseCount.ToString() },
+				new FieldChange { FieldName = "purchaseCount", OldValue = null, NewValue = promotion.PurchaseCount.ToString() },
 				new FieldChange { FieldName = "minimumPurchases", OldValue = null, NewValue = MinimumPurchases.ToString() },
 			],
 			promotion.CreatedAt);
 		await context.SaveChangesAsync(cancellationToken);
 		await transaction.CommitAsync(cancellationToken);
 		await committedChangePublisher.PublishAsync(new(CommittedEntityType.NormalizedDescription, CommittedChangeType.Updated));
-		return new PendingNamePromotionResult(promotion.Id, ids.Length, preview.PurchaseCount);
+		return new PendingNamePromotionResult(promotion.Id, ids.Length, promotion.PurchaseCount);
 	}
 
 	public async Task<IReadOnlyList<PendingNamePromotion>> ListAsync(CancellationToken cancellationToken)
@@ -171,6 +173,7 @@ public sealed class PendingNamePromotionService(
 			shared AS (
 				SELECT location, description, code FROM live GROUP BY location, description, code
 				HAVING count(DISTINCT target) > 1),
+			-- [:alnum:] follows the database locale; the deployed UTF-8 locale keeps non-ASCII letters.
 			letters AS (
 				SELECT "Id", regexp_replace(lower("CanonicalName"), '[^[:alnum:]]', '', 'g') AS letters
 				FROM matching."NormalizedDescriptions")

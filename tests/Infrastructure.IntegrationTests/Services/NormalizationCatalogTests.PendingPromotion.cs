@@ -38,6 +38,26 @@ public sealed partial class NormalizationCatalogTests
 	}
 
 	[Fact]
+	public async Task PendingPromotion_CountsOnlyLivePurchasesAndTreatsRejectedNamesAsCollisions()
+	{
+		await ResetAsync();
+		var trashed = await PendingAsync("Oat milk");
+		var items = await ItemsAsync(new("Store A", "OAT MILK 64OZ", null), 2, "legacy_unknown", trashed.Id);
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.ReceiptItems.SingleAsync(item => item.Id == items[0])).DeletedAt = DateTimeOffset.UtcNow;
+			db.NormalizedDescriptions.Add(new NormalizedDescriptionEntity { Id = Guid.NewGuid(), CanonicalName = "Rye-bread", Status = NormalizedDescriptionStatus.Rejected, CreatedAt = DateTimeOffset.UtcNow });
+			await db.SaveChangesAsync();
+		}
+		var collides = await PendingAsync("Rye bread");
+		await ItemsAsync(new("Store A", "RYE BREAD", null), 2, "legacy_unknown", collides.Id);
+
+		var preview = await PromotionService().PreviewAsync(CancellationToken.None);
+
+		preview.Names.Should().BeEmpty("one purchase is trashed, and a rejected name spells the other the same way");
+	}
+
+	[Fact]
 	public async Task PendingPromotion_RefusesAStalePreview()
 	{
 		await ResetAsync();

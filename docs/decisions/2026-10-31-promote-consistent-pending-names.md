@@ -1,6 +1,6 @@
 # Promote consistent pending names instead of showing unreviewed ones
 
-Date: 2026-10-31. Status: accepted; implementation in progress. Tracking: RECEIPTS-1107.
+Date: 2026-10-31. Status: accepted and implemented; applying it to production awaits a local upgrade rehearsal. Tracking: RECEIPTS-1107.
 
 ## Context
 

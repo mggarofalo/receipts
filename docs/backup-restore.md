@@ -60,6 +60,7 @@ They exclude operational/security logs, credentials and regenerable values:
 | `YnabServerKnowledge` | The YNAB delta-sync cursor. It is re-fetchable from YNAB on the next sync (regenerable derived data, like the omitted embedding vectors), so restoring a stale value would only risk a bad delta window. |
 | Normalized-description embedding vectors | Regenerable derived data whose dimension is a build-time constant; see the vector recovery limitation below. |
 | ASP.NET Identity users and authentication settings | Excluded for security reasons. |
+| `PendingNamePromotions`, `PendingNamePromotionEntries` | The log of bulk name promotions. Promoted names keep their Active status in the backup, but a promotion cannot be undone after a restore. |
 
 ## Format compatibility and curation
 
