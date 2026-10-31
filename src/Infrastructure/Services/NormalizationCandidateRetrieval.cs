@@ -12,6 +12,22 @@ internal static class NormalizationCandidateRetrieval
 {
 	private const int MaximumReceiptScanPerChannel = 500;
 
+	/// <summary>The receipt-entry chooser: only candidates with useful display evidence survive.</summary>
+	internal static Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveForReceiptEntryAsync(
+		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
+		CancellationToken cancellationToken)
+		=> RetrieveAsync(context, source, embeddingService, cancellationToken,
+			candidate => ReceiptSuggestionEvidence.IsUseful(source, candidate), ReceiptSuggestionEvidence.LexicalTerms);
+
+	/// <summary>The lowercase terms the lexical channel probes, one bounded query each.</summary>
+	internal static string[] LexicalTokens(string description, Func<string, IEnumerable<string>>? lexicalTerms = null)
+	{
+		IEnumerable<string> terms = lexicalTerms?.Invoke(description)
+				?? description.Split([' ', '\t', '-', '/'], StringSplitOptions.RemoveEmptyEntries)
+						.Where(token => token.Length >= 2);
+		return terms.Select(token => token.ToLowerInvariant()).Distinct().Take(8).ToArray();
+	}
+
 	internal static async Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveAsync(
 		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
 				CancellationToken cancellationToken, Func<NormalizationCatalogCandidate, bool>? include = null,
@@ -46,10 +62,7 @@ internal static class NormalizationCandidateRetrieval
 		// Approved examples are evidence, never self-training on automatic links.
 		await AddAsync(active.Where(target => context.NormalizationSourceMappings.Any(mapping => mapping.State == "active" && !mapping.Exclude
 			&& mapping.TargetId == target.Id && mapping.Description == source.Description)), "approved_example");
-		IEnumerable<string> terms = lexicalTerms?.Invoke(source.Description)
-				?? source.Description.Split([' ', '\t', '-', '/'], StringSplitOptions.RemoveEmptyEntries)
-						.Where(token => token.Length >= 2);
-		string[] tokens = terms.Select(token => token.ToLowerInvariant()).Distinct().Take(8).ToArray();
+		string[] tokens = LexicalTokens(source.Description, lexicalTerms);
 		foreach (string token in tokens)
 		{
 			await AddAsync(active.Where(target => target.CanonicalName.ToLower().Contains(token) || (target.DisplayLabel ?? target.CanonicalName).ToLower().Contains(token)), "lexical");
