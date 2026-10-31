@@ -1607,15 +1607,7 @@ public class NormalizedDescriptionService(
 			: null;
 		string fingerprint = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
 
-		IQueryable<NormalizedDescriptionEntity> canonical = context.NormalizedDescriptions
-			.AsNoTracking()
-			.Where(entity =>
-				entity.Status != NormalizedDescriptionStatus.Rejected
-				&& entity.CanonicalName != string.Empty);
-		int canonicalTotal = await canonical.CountAsync(cancellationToken);
-		int canonicalReady = await canonical.CountAsync(
-			entity => entity.Embedding != null && entity.EmbeddingModelVersion == fingerprint,
-			cancellationToken);
+		(int canonicalReady, int canonicalTotal) = await CatalogEmbeddingCoverage.CountAsync(context, cancellationToken);
 
 		IQueryable<ItemTemplateEntity> templates = context.ItemTemplates
 			.AsNoTracking()
