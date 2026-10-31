@@ -1,0 +1,298 @@
+{
+  "version": 1,
+  "provenance": "wholly-synthetic",
+  "purpose": "Catalog shortlist recall fixture for RECEIPTS-1089. No real receipt text, store or product data.",
+  "catalog": [
+    {
+      "name": "Cheddar cheese"
+    },
+    {
+      "name": "Swiss cheese"
+    },
+    {
+      "name": "Mozzarella cheese"
+    },
+    {
+      "name": "Provolone cheese"
+    },
+    {
+      "name": "Pepper jack cheese"
+    },
+    {
+      "name": "Colby jack cheese"
+    },
+    {
+      "name": "Monterey jack cheese"
+    },
+    {
+      "name": "Parmesan cheese"
+    },
+    {
+      "name": "Feta cheese"
+    },
+    {
+      "name": "Goat cheese"
+    },
+    {
+      "name": "Blue cheese"
+    },
+    {
+      "name": "Brie cheese"
+    },
+    {
+      "name": "Gouda cheese"
+    },
+    {
+      "name": "Havarti cheese"
+    },
+    {
+      "name": "Muenster cheese"
+    },
+    {
+      "name": "American cheese slices"
+    },
+    {
+      "name": "Cottage cheese"
+    },
+    {
+      "name": "Cream cheese"
+    },
+    {
+      "name": "Ricotta cheese"
+    },
+    {
+      "name": "String cheese"
+    },
+    {
+      "name": "Shredded Mexican cheese blend"
+    },
+    {
+      "name": "Frozen cheese pizza"
+    },
+    {
+      "name": "Bananas"
+    },
+    {
+      "name": "Whole milk"
+    },
+    {
+      "name": "Almond milk"
+    },
+    {
+      "name": "Oat milk unsweetened"
+    },
+    {
+      "name": "Chicken breast"
+    },
+    {
+      "name": "Chicken thighs"
+    },
+    {
+      "name": "Chicken wings"
+    },
+    {
+      "name": "Ground beef"
+    },
+    {
+      "name": "Ground turkey"
+    },
+    {
+      "name": "Beef broth"
+    },
+    {
+      "name": "Tortilla chips"
+    },
+    {
+      "name": "Potato chips"
+    },
+    {
+      "name": "Crunchy peanut butter"
+    },
+    {
+      "name": "Creamy peanut butter"
+    },
+    {
+      "name": "Plain Greek yogurt"
+    },
+    {
+      "name": "Vanilla yogurt"
+    },
+    {
+      "name": "Toilet paper"
+    },
+    {
+      "name": "Paper towels"
+    },
+    {
+      "name": "Hass avocados"
+    },
+    {
+      "name": "Spaghetti"
+    },
+    {
+      "name": "Strawberries"
+    },
+    {
+      "name": "Large eggs"
+    },
+    {
+      "name": "Sourdough bread"
+    },
+    {
+      "name": "Dark roast ground coffee"
+    },
+    {
+      "name": "Orange juice",
+      "displayLabel": "Orange juice, no pulp"
+    },
+    {
+      "name": "Baby spinach"
+    }
+  ],
+  "mappings": [
+    {
+      "store": "Synthetic Market A",
+      "description": "Bananas",
+      "itemCode": "4011",
+      "target": "Bananas"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "SOURDOUGH BREAD",
+      "itemCode": null,
+      "target": "Sourdough bread"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "WHOLE MILK 1 GAL",
+      "itemCode": null,
+      "target": "Whole milk"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "KS ORG CHKN BRST",
+      "itemCode": "1001",
+      "target": "Chicken breast"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "GRND BEEF 80/20",
+      "itemCode": null,
+      "target": "Ground beef"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "GRND BEEF 80/20",
+      "itemCode": null,
+      "target": "Ground beef"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "CHIPS",
+      "itemCode": null,
+      "target": "Tortilla chips"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "CHIPS",
+      "itemCode": null,
+      "target": "Potato chips"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "SHRD MOZZ CHEESE",
+      "itemCode": null,
+      "target": "Mozzarella cheese"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "CHEESE PIZZA FRZN",
+      "itemCode": null,
+      "target": "Frozen cheese pizza"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "CHEDDAR CHEESE BLOCK 8 OZ",
+      "itemCode": null,
+      "target": "Cheddar cheese"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "OAT MLK UNSWT",
+      "itemCode": null,
+      "target": "Oat milk unsweetened"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "PB CRUNCHY",
+      "itemCode": null,
+      "target": "Crunchy peanut butter"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "GREEK YOG PLN",
+      "itemCode": null,
+      "target": "Plain Greek yogurt"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "TP 12 ROLL",
+      "itemCode": null,
+      "target": "Toilet paper"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "PAPER TOWELS 6PK",
+      "itemCode": null,
+      "target": "Paper towels"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "AVOCADO HASS",
+      "itemCode": null,
+      "target": "Hass avocados"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "Spaghetti 16 oz",
+      "itemCode": null,
+      "target": "Spaghetti"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "STRAWBERRIES 1LB",
+      "itemCode": null,
+      "target": "Strawberries"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "EGGS LG 18CT",
+      "itemCode": null,
+      "target": "Large eggs"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "COFFEE GRND DK RST",
+      "itemCode": null,
+      "target": "Dark roast ground coffee"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "OJ NO PULP 52 FL OZ",
+      "itemCode": null,
+      "target": "Orange juice"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "SPINACH BABY 5OZ",
+      "itemCode": null,
+      "target": "Baby spinach"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "CHKN WINGS FAM PK",
+      "itemCode": null,
+      "target": "Chicken wings"
+    }
+  ]
+}
