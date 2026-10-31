@@ -3,6 +3,8 @@ using Application.Normalization;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pgvector;
 
 namespace Infrastructure.Services;
@@ -31,9 +33,31 @@ internal static class NormalizationCandidateRetrieval
 	/// <summary>The receipt-entry chooser: only candidates with useful display evidence survive.</summary>
 	internal static Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveForReceiptEntryAsync(
 		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
-		CancellationToken cancellationToken, NormalizationRetrievalProbe? probe = null)
+		CancellationToken cancellationToken, NormalizationRetrievalProbe? probe = null, ILogger? logger = null)
 		=> RetrieveAsync(context, source, embeddingService, cancellationToken,
-			candidate => ReceiptSuggestionEvidence.IsUseful(source, candidate), ReceiptSuggestionEvidence.LexicalTerms, probe);
+			candidate => ReceiptSuggestionEvidence.IsUseful(source, candidate), ReceiptSuggestionEvidence.LexicalTerms, probe, logger);
+
+	/// <summary>
+	/// Suggestions are best effort: a full inference queue or an unavailable model degrades to the
+	/// non-semantic channels instead of failing the request. Caller cancellation still propagates.
+	/// </summary>
+	internal static async Task<float[]?> TryEmbedAsync(IEmbeddingService embeddingService, string text, ILogger logger,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			return await embeddingService.GenerateEmbeddingAsync(text, cancellationToken);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			throw;
+		}
+		catch (Exception ex)
+		{
+			logger.LogWarning(ex, "Semantic candidate retrieval unavailable; using exact, approved and lexical evidence only");
+			return null;
+		}
+	}
 
 	/// <summary>The lowercase terms the lexical channel probes, one bounded query each.</summary>
 	internal static string[] LexicalTokens(string description, Func<string, IEnumerable<string>>? lexicalTerms = null)
@@ -47,7 +71,8 @@ internal static class NormalizationCandidateRetrieval
 	internal static async Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveAsync(
 		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
 				CancellationToken cancellationToken, Func<NormalizationCatalogCandidate, bool>? include = null,
-				Func<string, IEnumerable<string>>? lexicalTerms = null, NormalizationRetrievalProbe? probe = null)
+				Func<string, IEnumerable<string>>? lexicalTerms = null, NormalizationRetrievalProbe? probe = null,
+				ILogger? logger = null)
 	{
 		Guid? hiddenMappingId = probe?.HiddenMappingId;
 		string? hiddenDescription = probe?.HiddenDescription;
@@ -83,7 +108,7 @@ internal static class NormalizationCandidateRetrieval
 		List<Guid> nearest = [];
 		if (context.Database.IsNpgsql() && embeddingService?.IsConfigured == true)
 		{
-			float[]? vector = await embeddingService.GenerateEmbeddingAsync(source.Description, cancellationToken);
+			float[]? vector = await TryEmbedAsync(embeddingService, source.Description, logger ?? NullLogger.Instance, cancellationToken);
 			if (vector is { Length: > 0 })
 			{
 				Vector embedding = new(vector);
@@ -121,12 +146,22 @@ internal static class NormalizationCandidateRetrieval
 		// limit so weak candidates cannot crowd out useful ones.
 		var eligible = found.Values.Where(entry => include is null
 				|| include(Candidate(entry.Target, entry.Channels.ToArray(), []))).ToArray();
-		var ordered = eligible.Where(entry => entry.Channels.Contains("exact")).Take(2)
-				.Concat(eligible.Where(entry => entry.Channels.Contains("approved_example")).OrderBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal).Take(4))
-				.Concat(eligible.Where(entry => semanticRanks.ContainsKey(entry.Target.Id)).OrderBy(entry => semanticRanks[entry.Target.Id]).Take(8))
-				.Concat(eligible.OrderByDescending(entry => entry.Channels.Count)
-		.ThenBy(entry => semanticRanks.GetValueOrDefault(entry.Target.Id, int.MaxValue)).ThenBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal))
-	.DistinctBy(entry => entry.Target.Id).Take(20).ToArray();
+		IEnumerable<(NormalizedDescriptionEntity Target, HashSet<string> Channels)> Rank(
+			IReadOnlyCollection<(NormalizedDescriptionEntity Target, HashSet<string> Channels)> entries)
+			=> entries.Where(entry => entry.Channels.Contains("exact")).Take(2)
+				.Concat(entries.Where(entry => entry.Channels.Contains("approved_example")).OrderBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal).Take(4))
+				.Concat(entries.Where(entry => semanticRanks.ContainsKey(entry.Target.Id)).OrderBy(entry => semanticRanks[entry.Target.Id]).Take(8))
+				.Concat(entries.OrderByDescending(entry => entry.Channels.Count)
+					.ThenBy(entry => semanticRanks.GetValueOrDefault(entry.Target.Id, int.MaxValue)).ThenBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal));
+		// Receipt entry (RECEIPTS-1095): a row the caller admits only for its semantic similarity ranks
+		// after every row with exact, approved or useful lexical evidence, so a near neighbour never
+		// displaces a whole-word match, including in the inline top five.
+		HashSet<Guid> bySimilarityAlone = include is null ? [] : eligible
+			.Where(entry => !include(Candidate(entry.Target, entry.Channels.ToArray(), []) with { SemanticSimilarity = null }))
+			.Select(entry => entry.Target.Id).ToHashSet();
+		var ordered = Rank(eligible.Where(entry => !bySimilarityAlone.Contains(entry.Target.Id)).ToArray())
+			.Concat(eligible.Where(entry => bySimilarityAlone.Contains(entry.Target.Id)).OrderBy(entry => semanticRanks[entry.Target.Id]))
+			.DistinctBy(entry => entry.Target.Id).Take(20).ToArray();
 		Guid[] candidateIds = ordered.Select(entry => entry.Target.Id).ToArray();
 		var exampleRows = await active.Where(target => candidateIds.Contains(target.Id)).Select(target => new
 		{

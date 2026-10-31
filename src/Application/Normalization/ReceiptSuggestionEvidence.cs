@@ -5,6 +5,15 @@ namespace Application.Normalization;
 /// <summary>Conservative evidence for suggestions shown during receipt entry.</summary>
 public static class ReceiptSuggestionEvidence
 {
+	/// <summary>
+	/// Cosine similarity at or above which a nearest semantic neighbour is offered without other evidence
+	/// (RECEIPTS-1095). Chosen from the RECEIPTS-1089 recall measurement
+	/// (docs/normalization-evaluation/catalog-recall.md): on real catalog text the nearest wrong name
+	/// reached 0.80 for 0.3% of sources (3.4% at 0.75); on the synthetic fixture 0.80 admitted as many
+	/// missed targets as 0.75 with fewer than half the wrong admissions. Re-check it with that harness.
+	/// </summary>
+	public const double SemanticFloor = 0.80;
+
 	private static readonly HashSet<string> NonProductWords = new(StringComparer.OrdinalIgnoreCase)
 		{
 				"oz", "lb", "lbs", "kg", "g", "ml", "l", "ct", "pc", "pcs", "in", "cm", "mm", "fl",
@@ -19,6 +28,11 @@ public static class ReceiptSuggestionEvidence
 	public static bool IsUseful(NormalizationSourceKey source, NormalizationCatalogCandidate candidate)
 	{
 		if (candidate.Channels.Contains("exact") || candidate.Channels.Contains("approved_example"))
+		{
+			return true;
+		}
+
+		if (candidate.SemanticSimilarity >= SemanticFloor)
 		{
 			return true;
 		}

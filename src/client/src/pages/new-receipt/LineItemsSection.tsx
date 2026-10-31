@@ -9,6 +9,7 @@ import { receiptItemDraftSchema } from "@/lib/receipt-item-draft";
 import { ReceiptNormalizationField } from "@/components/ReceiptNormalizationField";
 import {
   currentNormalizationChoice,
+  inlineProductSuggestions,
   normalizationSourceKey,
   receiptNormalizationSource,
   type ReceiptNormalizationChoice,
@@ -250,7 +251,7 @@ export function LineItemsSection({
   const productSuggestions = useMemo(
     () =>
       productReady && !normalizationChoice
-        ? (productLookup.data ?? []).slice(0, 5)
+        ? inlineProductSuggestions(productLookup.data ?? [])
         : [],
     [productReady, normalizationChoice, productLookup.data],
   );

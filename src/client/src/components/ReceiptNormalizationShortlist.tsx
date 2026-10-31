@@ -17,6 +17,7 @@ const evidenceLabels: Record<string, string> = {
   exact: "Exact name",
   approved_example: "Approved description",
   lexical: "Shared words",
+  semantic: "Similar meaning",
 };
 
 /** Optional retrieval. Selecting a candidate still requires the entry preview and save checks. */
@@ -27,13 +28,11 @@ export function ReceiptNormalizationShortlist({
 }: ReceiptNormalizationShortlistProps) {
   const suggestions = useReceiptNormalizationCandidates(source);
   const [showAll, setShowAll] = useState(false);
-  // Semantic retrieval alone is too weak to offer as an inline product match.
-  // Keep the server's ranking for candidates backed by specific matching evidence.
+  // The server admits semantic-only rows above its similarity floor and ranks them
+  // after rows with specific evidence; keep that ranking and show only known evidence.
   const candidates =
     suggestions.data?.filter((candidate) =>
-      candidate.channels.some((channel) =>
-        ["exact", "approved_example", "lexical"].includes(channel),
-      ),
+      candidate.channels.some((channel) => channel in evidenceLabels),
     ) ?? [];
   if (!suggestions.isPending && !suggestions.isError && !candidates.length)
     return null;
@@ -71,7 +70,6 @@ export function ReceiptNormalizationShortlist({
               </Button>
               <p className="text-xs text-muted-foreground">
                 {candidate.channels
-                  .filter((channel) => channel !== "semantic")
                   .map(
                     (channel) =>
                       evidenceLabels[channel] ?? "Other matching evidence",

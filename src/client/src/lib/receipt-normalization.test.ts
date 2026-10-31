@@ -1,5 +1,6 @@
 import {
   currentNormalizationChoice,
+  inlineProductSuggestions,
   normalizationSourceKey,
   type ReceiptNormalizationChoice,
 } from "./receipt-normalization";
@@ -62,5 +63,28 @@ describe("source-bound receipt choices", () => {
     expect(normalizationSourceKey({ ...source, itemCode: null })).not.toBe(
       normalizationSourceKey(source),
     );
+  });
+});
+
+describe("inline product suggestions", () => {
+  const row = (name: string, channels: string[]) => ({ name, channels });
+
+  it("keeps the server order and at most two semantic-only rows within five", () => {
+    const actual = inlineProductSuggestions([
+      row("exact", ["exact"]),
+      row("lexical", ["lexical", "semantic"]),
+      row("near 1", ["semantic"]),
+      row("near 2", ["semantic"]),
+      row("near 3", ["semantic"]),
+      row("approved", ["approved_example"]),
+      row("lexical 2", ["lexical"]),
+      row("lexical 3", ["lexical"]),
+    ]).map((item) => item.name);
+
+    expect(actual).toEqual(["exact", "lexical", "near 1", "near 2", "approved"]);
+  });
+
+  it("returns an empty list unchanged", () => {
+    expect(inlineProductSuggestions([])).toEqual([]);
   });
 });

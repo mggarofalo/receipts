@@ -163,12 +163,34 @@ it("never publishes a late previous-store candidate after the source changes", a
   );
 });
 
-it("abstains from semantic-only suggestions and empty matches", async () => {
+it("offers a semantic-only suggestion labelled by its evidence, without a score", async () => {
   server.use(
     http.get("*/api/receipt-items/normalization-candidates", () =>
       HttpResponse.json([
-        { ...candidate("Unrelated juice"), channels: ["semantic"] },
+        { ...candidate("Chicken breast"), channels: ["semantic"] },
       ]),
+    ),
+  );
+  const { queryClient, onChoose } = setup();
+  await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+  const choose = screen.getByRole("button", {
+    name: "Choose suggested Chicken breast",
+  });
+  expect(screen.getByText("Similar meaning")).toBeInTheDocument();
+  expect(
+    screen.getByRole("region", { name: "Suggested products" }),
+  ).not.toHaveTextContent(/\d\.\d|%/);
+  await userEvent.setup().click(choose);
+  expect(onChoose).toHaveBeenCalledExactlyOnceWith({
+    ...candidate("Chicken breast"),
+    channels: ["semantic"],
+  });
+});
+
+it("abstains when there are no suggestions", async () => {
+  server.use(
+    http.get("*/api/receipt-items/normalization-candidates", () =>
+      HttpResponse.json([]),
     ),
   );
   const { queryClient, onChoose } = setup();
