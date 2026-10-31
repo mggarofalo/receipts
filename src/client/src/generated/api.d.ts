@@ -3079,7 +3079,7 @@ export interface paths {
         };
         /**
          * Get uncategorized items report
-         * @description Returns active receipt items whose current classification is missing, unclassified, or unresolved.
+         * @description Returns active receipt items whose current classification is missing, unclassified, or unresolved, whatever the state of any Jev attempt for them. Each item carries Jev's latest stored answer when there is one.
          */
         get: operations["GetUncategorizedItemsReport"];
         put?: never;
@@ -5414,6 +5414,26 @@ export interface components {
             /** Format: uuid */
             taxonomyRevisionId?: string | null;
             totalAmountCurrency: string;
+            /** @description The receipt's store. */
+            location: string;
+            /** @description Jev's latest stored answer for this item, whatever its attempt state; null when Jev never answered. */
+            suggestion?: components["schemas"]["UncategorizedItemSuggestion"] | null;
+        };
+        UncategorizedItemSuggestion: {
+            /** Format: uuid */
+            attemptId: string;
+            /** @description The attempt's state now, e.g. suggested, abstained or stale. */
+            state: string;
+            /**
+             * Format: uuid
+             * @description The item type Jev chose; null when it abstained or the result cannot be read.
+             */
+            categoryId?: string | null;
+            /** Format: double */
+            confidence?: number | null;
+            abstentionReason?: string | null;
+            rootCandidates: components["schemas"]["CategoryAssistanceCandidateRead"][];
+            leafCandidates: components["schemas"]["CategoryAssistanceCandidateRead"][];
         };
         SpendingByNormalizedDescriptionResponse: {
             /**
@@ -15836,6 +15856,8 @@ export interface operations {
     GetUncategorizedItemsReport: {
         parameters: {
             query?: {
+                /** @description Limit to items Jev has answered for (a suggestion or an abstention), or to items it has not. */
+                suggestion?: "any" | "with" | "without";
                 /** @description Column to sort by. */
                 sortBy?: "description" | "total" | "itemCode";
                 /** @description Sort direction. */

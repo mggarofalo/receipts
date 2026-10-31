@@ -73,21 +73,8 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		{
 			var preference = preferences.FirstOrDefault(x => x.AttemptId == row.Id);
 			var excluded = CategoryAssistanceReviewPreferenceStore.Excluded(preference);
-			CategoryAssistanceCompletion? completion;
-			try { completion = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(row.ResultJson ?? ""); }
-			catch (JsonException) { completion = null; }
-			var suggestion = completion?.Suggestion;
-			var path = new List<Guid>();
-			if (suggestion?.Path != null)
-			{
-				foreach (var segment in suggestion.Path)
-				{
-					if (!Guid.TryParse(segment, out var id)) { path.Clear(); break; }
-					path.Add(id);
-				}
-			}
-
-			if (row.QuestionPolicyVersion != CategorySuggestionPolicy.Version) { path.Clear(); }
+			var suggestion = StoredSuggestion(row);
+			var path = SuggestedPath(row, suggestion);
 			bool current = suggestion != null && await IsCurrentAsync(db, row, settings, head.RevisionId,
 				connection, path, ct);
 			int affected = (await CategoryAssistanceDecisionStore.GetEligibleObservationsAsync(
@@ -135,7 +122,30 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		return items;
 	}
 
-	private static IReadOnlyList<CategoryAssistanceCandidateRead> Candidates(
+	/// <summary>An attempt's stored suggestion; null when it has none or the result does not parse.</summary>
+	internal static CategorySuggestion? StoredSuggestion(CategoryAssistanceAttemptEntity row)
+	{
+		try { return JsonSerializer.Deserialize<CategoryAssistanceCompletion>(row.ResultJson ?? "")?.Suggestion; }
+		catch (JsonException) { return null; }
+	}
+
+	/// <summary>The suggested root-to-leaf path; empty when a segment does not parse or another question policy produced it.</summary>
+	internal static List<Guid> SuggestedPath(CategoryAssistanceAttemptEntity row, CategorySuggestion? suggestion)
+	{
+		var path = new List<Guid>();
+		if (suggestion?.Path == null || row.QuestionPolicyVersion != CategorySuggestionPolicy.Version)
+		{
+			return path;
+		}
+		foreach (var segment in suggestion.Path)
+		{
+			if (!Guid.TryParse(segment, out var id)) { return []; }
+			path.Add(id);
+		}
+		return path;
+	}
+
+	internal static IReadOnlyList<CategoryAssistanceCandidateRead> Candidates(
 		Entities.CategoryAssistance.CategoryAssistanceAttemptEntity row, IReadOnlyList<SuggestionCandidate>? candidates) =>
 		row.QuestionPolicyVersion != CategorySuggestionPolicy.Version || candidates is null ||
 			candidates.Any(c => c is null || !Guid.TryParse(c.CategoryId, out _))

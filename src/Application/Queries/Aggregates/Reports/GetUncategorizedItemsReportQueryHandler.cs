@@ -14,6 +14,7 @@ public class GetUncategorizedItemsReportQueryHandler(IReportService reportServic
 			request.SortDirection,
 			request.Page,
 			request.PageSize,
+			request.SuggestionFilter,
 			cancellationToken);
 	}
 }

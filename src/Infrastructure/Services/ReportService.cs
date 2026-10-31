@@ -559,42 +559,61 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		string sortDirection,
 		int page,
 		int pageSize,
+		string suggestionFilter,
 		CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
-		var baseQuery = from ri in context.ReceiptItems.AsNoTracking()
-						join receipt in context.Receipts.AsNoTracking() on ri.ReceiptId equals receipt.Id
-						join pointer in context.CurrentClassifications.AsNoTracking() on ri.Id equals pointer.ReceiptItemId into pointers
-						from pointer in pointers.DefaultIfEmpty()
-						join assignment in context.Classifications.AsNoTracking() on pointer.AssignmentId equals assignment.Id into assignments
-						from assignment in assignments.DefaultIfEmpty()
-						where ri.DeletedAt == null && receipt.DeletedAt == null
-						  && (assignment == null || assignment.CategoryId == null
-							  || assignment.LegacyResolution == "unresolved_path"
-							  || context.LegacyMigrationItems.Any(evidence =>
-								  evidence.AssignmentId == assignment.Id && evidence.Resolution == "Unresolved"))
-						select new
-						{
-							ri.Id,
-							ri.ReceiptId,
-							ri.ReceiptItemCode,
-							ri.Description,
-							ri.Quantity,
-							ri.UnitPrice,
-							ri.TotalAmount,
-							ri.Category,
-							ri.Subcategory,
-							ri.TotalAmountCurrency,
-							AssignmentId = assignment == null ? (Guid?)null : assignment.Id,
-							CategoryId = assignment == null ? (Guid?)null : assignment.CategoryId,
-							TaxonomyRevisionId = assignment == null ? (Guid?)null : assignment.TaxonomyRevisionId,
-							ClassificationState = assignment == null ? "missing_assignment"
-															: assignment.LegacyResolution == "unresolved_path"
-															  || context.LegacyMigrationItems.Any(evidence =>
-																  evidence.AssignmentId == assignment.Id && evidence.Resolution == "Unresolved")
-																? "unresolved_legacy" : "unclassified"
-						};
+		var unfilteredQuery = from ri in context.ReceiptItems.AsNoTracking()
+							  join receipt in context.Receipts.AsNoTracking() on ri.ReceiptId equals receipt.Id
+							  join pointer in context.CurrentClassifications.AsNoTracking() on ri.Id equals pointer.ReceiptItemId into pointers
+							  from pointer in pointers.DefaultIfEmpty()
+							  join assignment in context.Classifications.AsNoTracking() on pointer.AssignmentId equals assignment.Id into assignments
+							  from assignment in assignments.DefaultIfEmpty()
+							  where ri.DeletedAt == null && receipt.DeletedAt == null
+								&& (assignment == null || assignment.CategoryId == null
+									|| assignment.LegacyResolution == "unresolved_path"
+									|| context.LegacyMigrationItems.Any(evidence =>
+										evidence.AssignmentId == assignment.Id && evidence.Resolution == "Unresolved"))
+							  select new
+							  {
+								  ri.Id,
+								  ri.ReceiptId,
+								  ri.ReceiptItemCode,
+								  ri.Description,
+								  ri.Quantity,
+								  ri.UnitPrice,
+								  ri.TotalAmount,
+								  ri.Category,
+								  ri.Subcategory,
+								  ri.TotalAmountCurrency,
+								  receipt.Location,
+								  AssignmentId = assignment == null ? (Guid?)null : assignment.Id,
+								  CategoryId = assignment == null ? (Guid?)null : assignment.CategoryId,
+								  TaxonomyRevisionId = assignment == null ? (Guid?)null : assignment.TaxonomyRevisionId,
+								  ClassificationState = assignment == null ? "missing_assignment"
+																  : assignment.LegacyResolution == "unresolved_path"
+																	|| context.LegacyMigrationItems.Any(evidence =>
+																		evidence.AssignmentId == assignment.Id && evidence.Resolution == "Unresolved")
+																	  ? "unresolved_legacy" : "unclassified"
+							  };
+
+		// Jev's answers stay listed whatever the attempt's state, so a suggestion retired by a settings
+		// save still helps the item it was for.
+		IQueryable<Guid> answeredItemIds = (from observation in context.CategoryAssistanceObservations.AsNoTracking()
+											join attempt in context.CategoryAssistanceAttempts.AsNoTracking()
+												on observation.AttemptId equals attempt.Id
+											where attempt.ResultJson != null
+											select observation.ReceiptItemId)
+			.Concat(from attempt in context.CategoryAssistanceAttempts.AsNoTracking()
+					where attempt.ResultJson != null
+					select attempt.ItemId);
+		var baseQuery = suggestionFilter.ToLowerInvariant() switch
+		{
+			"with" => unfilteredQuery.Where(x => answeredItemIds.Contains(x.Id)),
+			"without" => unfilteredQuery.Where(x => !answeredItemIds.Contains(x.Id)),
+			_ => unfilteredQuery,
+		};
 
 		// Count in SQL over the filtered set instead of materializing every uncategorized item
 		// just to read its length (RECEIPTS-791).
@@ -622,14 +641,50 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 	.Skip((page - 1) * pageSize)
 	.Take(pageSize)
 	.ToListAsync(cancellationToken);
+		Dictionary<Guid, UncategorizedItemSuggestion> suggestions = await LatestSuggestionsAsync(context,
+			pageRows.Select(x => x.Id).ToArray(), cancellationToken);
 		List<UncategorizedItemRecord> pagedItems = pageRows.Select(x =>
 				new UncategorizedItemRecord(x.Id, x.ReceiptId, x.ReceiptItemCode,
 						x.Description, x.Quantity, x.UnitPrice, x.TotalAmount,
 						x.Category, x.Subcategory, x.ClassificationState,
 						x.AssignmentId, x.CategoryId, x.TaxonomyRevisionId,
-						x.TotalAmountCurrency.ToString())).ToList();
+						x.TotalAmountCurrency.ToString())
+				{
+					Location = x.Location,
+					Suggestion = suggestions.GetValueOrDefault(x.Id),
+				}).ToList();
 
 		return new UncategorizedItemsResult(pagedItems, totalCount);
+	}
+
+	/// <summary>Each item's most recently completed Jev answer, linked through its save observation or the attempt itself.</summary>
+	private static async Task<Dictionary<Guid, UncategorizedItemSuggestion>> LatestSuggestionsAsync(ApplicationDbContext context,
+		Guid[] itemIds, CancellationToken cancellationToken)
+	{
+		var observed = await (from observation in context.CategoryAssistanceObservations.AsNoTracking()
+							  join attempt in context.CategoryAssistanceAttempts.AsNoTracking()
+								  on observation.AttemptId equals attempt.Id
+							  where itemIds.Contains(observation.ReceiptItemId) && attempt.ResultJson != null
+							  select new { ItemId = observation.ReceiptItemId, Attempt = attempt })
+			.ToListAsync(cancellationToken);
+		var direct = await context.CategoryAssistanceAttempts.AsNoTracking()
+			.Where(attempt => itemIds.Contains(attempt.ItemId) && attempt.ResultJson != null)
+			.Select(attempt => new { ItemId = attempt.ItemId, Attempt = attempt })
+			.ToListAsync(cancellationToken);
+		return observed.Concat(direct)
+			.GroupBy(row => row.ItemId)
+			.ToDictionary(group => group.Key, group =>
+			{
+				Entities.CategoryAssistance.CategoryAssistanceAttemptEntity attempt = group
+					.Select(row => row.Attempt)
+					.OrderByDescending(row => row.CompletedAt).ThenByDescending(row => row.Id).First();
+				Application.Classification.CategorySuggestion? stored = CategoryAssistanceReadStore.StoredSuggestion(attempt);
+				List<Guid> path = CategoryAssistanceReadStore.SuggestedPath(attempt, stored);
+				return new UncategorizedItemSuggestion(attempt.Id, attempt.State,
+					path.Count > 0 ? path[^1] : null, stored?.Confidence, stored?.AbstentionReason,
+					CategoryAssistanceReadStore.Candidates(attempt, stored?.RootCandidates),
+					CategoryAssistanceReadStore.Candidates(attempt, stored?.LeafCandidates));
+			});
 	}
 
 	public async Task<ReportsHealthSummaryResult> GetHealthSummaryAsync(CancellationToken cancellationToken)

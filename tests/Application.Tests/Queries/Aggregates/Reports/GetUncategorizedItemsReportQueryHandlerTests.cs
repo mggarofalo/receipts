@@ -25,7 +25,7 @@ public class GetUncategorizedItemsReportQueryHandlerTests
 		UncategorizedItemsResult expectedResult = new([], 0);
 
 		_reportServiceMock.Setup(s => s.GetUncategorizedItemsAsync(
-			"description", "asc", 1, 50, It.IsAny<CancellationToken>()))
+			"description", "asc", 1, 50, "any", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
 		// Act
@@ -34,7 +34,7 @@ public class GetUncategorizedItemsReportQueryHandlerTests
 		// Assert
 		result.Should().BeSameAs(expectedResult);
 		_reportServiceMock.Verify(s => s.GetUncategorizedItemsAsync(
-			"description", "asc", 1, 50, It.IsAny<CancellationToken>()), Times.Once);
+			"description", "asc", 1, 50, "any", It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -45,7 +45,7 @@ public class GetUncategorizedItemsReportQueryHandlerTests
 		UncategorizedItemsResult expectedResult = new([], 0);
 
 		_reportServiceMock.Setup(s => s.GetUncategorizedItemsAsync(
-			"total", "desc", 3, 25, It.IsAny<CancellationToken>()))
+			"total", "desc", 3, 25, "any", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
 		// Act
@@ -53,7 +53,7 @@ public class GetUncategorizedItemsReportQueryHandlerTests
 
 		// Assert
 		_reportServiceMock.Verify(s => s.GetUncategorizedItemsAsync(
-			"total", "desc", 3, 25, It.IsAny<CancellationToken>()), Times.Once);
+			"total", "desc", 3, 25, "any", It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]
@@ -68,7 +68,7 @@ public class GetUncategorizedItemsReportQueryHandlerTests
 		], 1);
 
 		_reportServiceMock.Setup(s => s.GetUncategorizedItemsAsync(
-			It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(),
+			It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(expectedResult);
 
@@ -78,5 +78,25 @@ public class GetUncategorizedItemsReportQueryHandlerTests
 		// Assert
 		result.TotalCount.Should().Be(1);
 		result.Items.Should().ContainSingle();
+	}
+
+	[Fact]
+	public async Task Handle_PassesSuggestionFilterToService()
+	{
+		// Arrange
+		GetUncategorizedItemsReportQuery query = new("description", "asc", 1, 50, "with");
+		UncategorizedItemsResult expectedResult = new([], 0);
+
+		_reportServiceMock.Setup(s => s.GetUncategorizedItemsAsync(
+			"description", "asc", 1, 50, "with", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(expectedResult);
+
+		// Act
+		UncategorizedItemsResult result = await _handler.Handle(query, CancellationToken.None);
+
+		// Assert
+		result.Should().BeSameAs(expectedResult);
+		_reportServiceMock.Verify(s => s.GetUncategorizedItemsAsync(
+			"description", "asc", 1, 50, "with", It.IsAny<CancellationToken>()), Times.Once);
 	}
 }

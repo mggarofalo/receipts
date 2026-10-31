@@ -19,6 +19,7 @@ const items = [
     id: "item-a",
     receiptId: "receipt-a",
     description: "Apples",
+    location: "Corner Market",
     quantity: 1,
     unitPrice: 1,
     totalAmount: 1,
@@ -32,6 +33,7 @@ const items = [
     id: "item-b",
     receiptId: "receipt-b",
     description: "Bread",
+    location: "Corner Market",
     quantity: 1,
     unitPrice: 2,
     totalAmount: 2,
@@ -115,6 +117,7 @@ it.each([true, false])(
             taxonomyRevisionId: taxonomyFixture.id,
             expectedAssignmentId: null,
             operationId: expect.any(String),
+            reason: "Category selected from unclassified items report",
           }),
         },
         {
@@ -124,6 +127,7 @@ it.each([true, false])(
             taxonomyRevisionId: taxonomyFixture.id,
             expectedAssignmentId: "prior-assignment",
             operationId: expect.any(String),
+            reason: "Category selected from unclassified items report",
           }),
         },
       ]),
@@ -136,7 +140,7 @@ it.each([true, false])(
         ).toBeEnabled(),
       );
       expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-        "1 item classifications could not be confirmed. Refresh and review before retrying.",
+        "1 item's category could not be confirmed. Refresh the list and check before retrying.",
       );
       expect(toast.success).not.toHaveBeenCalled();
       expect(screen.getByText("2 selected on this page")).toBeInTheDocument();

@@ -11,6 +11,7 @@ import {
 } from "@/hooks/useUncategorizedItemsReport";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
 import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
+import { ItemTypeCorrection } from "@/components/reports/ItemTypeCorrection";
 import type { CategoryChoice } from "@/lib/category-paths";
 import { useCsvExport } from "@/hooks/useCsvExport";
 import { useReportSearchParams } from "@/hooks/useReportSearchParams";
@@ -35,15 +36,23 @@ import { toast } from "sonner";
 
 type SortColumn = "description" | "total" | "itemCode";
 type SortDirection = "asc" | "desc";
+type SuggestionFilter = "any" | "with" | "without";
 
 const SORT_COLUMNS = ["description", "total", "itemCode"] as const;
 const SORT_DIRECTIONS = ["asc", "desc"] as const;
+const SUGGESTION_FILTERS = ["any", "with", "without"] as const;
+const SUGGESTION_FILTER_LABELS: Record<SuggestionFilter, string> = {
+  any: "All",
+  with: "Jev answered",
+  without: "Not asked",
+};
 
 interface UncategorizedItemsUrlParams {
   sortBy: SortColumn;
   sortDirection: SortDirection;
   page: number;
   pageSize: number;
+  suggestion: SuggestionFilter;
 }
 
 function parseUncategorizedItemsParams(
@@ -62,6 +71,11 @@ function parseUncategorizedItemsParams(
     ),
     page: parsePositiveIntParam(searchParams.get("page"), 1),
     pageSize: parsePositiveIntParam(searchParams.get("pageSize"), 0),
+    suggestion: parseEnumParam(
+      searchParams.get("suggestion"),
+      SUGGESTION_FILTERS,
+      "any",
+    ),
   };
 }
 
@@ -70,7 +84,7 @@ export default function UncategorizedItems() {
   const [urlParams, updateParams] = useReportSearchParams(
     parseUncategorizedItemsParams,
   );
-  const { sortBy, sortDirection, page } = urlParams;
+  const { sortBy, sortDirection, page, suggestion } = urlParams;
   const { pageSize: preferredPageSize, setPageSize } =
     usePersistedTablePageSize("report-uncategorized", 50);
   const pageSize = isPageSize(urlParams.pageSize)
@@ -84,6 +98,7 @@ export default function UncategorizedItems() {
     sortDirection,
     page,
     pageSize,
+    suggestion,
   };
 
   const { data, isLoading, isError } = useUncategorizedItemsReport(params);
@@ -115,6 +130,7 @@ export default function UncategorizedItems() {
                     sortDirection,
                     page: exportPage,
                     pageSize: exportPageSize,
+                    suggestion,
                   },
                 },
               },
@@ -147,6 +163,10 @@ export default function UncategorizedItems() {
       toast.success("Items categorized successfully");
     },
   });
+  const rowUpdateMutation = useCategorizeReceiptItems({
+    onSuccess: () => toast.success("Item categorized"),
+  });
+  const rowBusy = rowUpdateMutation.isPending || bulkUpdateMutation.isPending;
 
   function handleSort(column: string) {
     const nextColumn = column as SortColumn;
@@ -240,6 +260,43 @@ export default function UncategorizedItems() {
     );
   }
 
+  const filterBar = (
+    <div
+      role="group"
+      aria-label="Jev suggestion filter"
+      className="flex flex-wrap gap-1"
+    >
+      {SUGGESTION_FILTERS.map((value) => (
+        <Button
+          key={value}
+          type="button"
+          size="sm"
+          variant={suggestion === value ? "secondary" : "ghost"}
+          aria-pressed={suggestion === value}
+          onClick={() => {
+            setSelectedIds(new Set());
+            updateParams({ suggestion: value, page: 1 });
+          }}
+        >
+          {SUGGESTION_FILTER_LABELS[value]}
+        </Button>
+      ))}
+    </div>
+  );
+
+  if (data && data.totalCount === 0 && suggestion !== "any") {
+    return (
+      <div className="space-y-4">
+        {filterBar}
+        <div className="rounded-lg border p-6 text-center">
+          <p className="text-muted-foreground">
+            No uncategorized items match this filter.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (!data || data.totalCount === 0) {
     return (
       <div className="rounded-lg border p-6 text-center">
@@ -268,6 +325,8 @@ export default function UncategorizedItems() {
           {isExporting ? "Exporting..." : "Export CSV"}
         </Button>
       </div>
+
+      {filterBar}
 
       {taxonomy.isError && (
         <RequestFailure
@@ -343,7 +402,7 @@ export default function UncategorizedItems() {
               className="text-right"
               align="right"
             />
-            <TableHead>Classification</TableHead>
+            <TableHead>Item type</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -356,7 +415,12 @@ export default function UncategorizedItems() {
                   aria-label={`Select ${item.description}`}
                 />
               </TableCell>
-              <TableCell>{item.description}</TableCell>
+              <TableCell>
+                <div>{item.description}</div>
+                <div className="text-xs text-muted-foreground">
+                  {item.location}
+                </div>
+              </TableCell>
               <TableCell>{item.receiptItemCode ?? "-"}</TableCell>
               <TableCell>
                 <button
@@ -373,8 +437,24 @@ export default function UncategorizedItems() {
                   item.totalAmountCurrency,
                 )}
               </TableCell>
-              <TableCell className="text-muted-foreground">
-                {item.classificationState.replaceAll("_", " ")}
+              <TableCell>
+                <ItemTypeCorrection
+                  description={item.description}
+                  suggestion={item.suggestion}
+                  revision={taxonomy.data}
+                  loading={taxonomy.isLoading}
+                  error={taxonomy.isError}
+                  busy={rowBusy}
+                  onChoose={(next, fromSuggestion) =>
+                    rowUpdateMutation.mutate({
+                      items: [item],
+                      choice: next,
+                      reason: fromSuggestion
+                        ? "Jev's suggestion accepted from unclassified items report"
+                        : undefined,
+                    })
+                  }
+                />
               </TableCell>
             </TableRow>
           ))}

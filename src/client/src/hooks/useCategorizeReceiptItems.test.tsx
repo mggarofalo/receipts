@@ -125,7 +125,7 @@ it.each(["transport failure", "success"] as const)(
       if (outcome === "transport failure") {
         await waitFor(() =>
           expect(failure).toHaveBeenCalledExactlyOnceWith(
-            "1 item classifications could not be confirmed. Refresh and review before retrying.",
+            "1 item's category could not be confirmed. Refresh the list and check before retrying.",
           ),
         );
         await waitFor(() =>
@@ -197,6 +197,7 @@ it.each(["success", "failure"] as const)(
                 id: "old",
                 receiptId: "receipt",
                 description: "Old item",
+                location: "Store",
                 receiptItemCode: null,
                 quantity: 1,
                 unitPrice: 1,
@@ -265,6 +266,7 @@ it("keeps a stable mutation result on rerender and invokes the current completio
             id: "item",
             receiptId: "receipt",
             description: "Item",
+            location: "Store",
             receiptItemCode: null,
             quantity: 1,
             unitPrice: 1,
@@ -286,6 +288,108 @@ it("keeps a stable mutation result on rerender and invokes the current completio
     );
     expect(first).not.toHaveBeenCalled();
     expect(current).toHaveBeenCalledOnce();
+  } finally {
+    unmount();
+    queryClient.clear();
+  }
+});
+
+function reportItem(id: string, assignmentId: string | null = null) {
+  return {
+    id,
+    receiptId: `receipt-${id}`,
+    description: `Item ${id}`,
+    location: "Store",
+    receiptItemCode: null,
+    quantity: 1,
+    unitPrice: 1,
+    totalAmount: 1,
+    totalAmountCurrency: "USD",
+    category: "",
+    classificationState: "missing_assignment",
+    assignmentId,
+    categoryId: null,
+    taxonomyRevisionId: null,
+  };
+}
+
+const foodChoice = {
+  categoryId: taxonomyFixture.nodes[0].id,
+  taxonomyRevisionId: taxonomyFixture.id,
+  path: [taxonomyFixture.nodes[0]],
+};
+
+it.each([
+  [undefined, "Category selected from unclassified items report"],
+  [
+    "Jev's suggestion accepted from unclassified items report",
+    "Jev's suggestion accepted from unclassified items report",
+  ],
+])("records reason %s on each write as %s", async (reason, recorded) => {
+  const queryClient = createAppQueryClient();
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  const bodies: Record<string, unknown>[] = [];
+  server.use(
+    http.put("*/api/receipt-items/:id/classification", async ({ request }) => {
+      bodies.push((await request.json()) as Record<string, unknown>);
+      return new HttpResponse(null, { status: 204 });
+    }),
+  );
+  const { result, unmount } = renderHook(() => useCategorizeReceiptItems(), {
+    wrapper,
+  });
+  try {
+    await act(async () =>
+      result.current.mutateAsync({
+        items: [reportItem("one"), reportItem("two", "assignment-two")],
+        choice: foodChoice,
+        reason,
+      }),
+    );
+    expect(bodies).toHaveLength(2);
+    expect(bodies.map((body) => body.reason)).toEqual([recorded, recorded]);
+  } finally {
+    unmount();
+    queryClient.clear();
+  }
+});
+
+it("counts several unconfirmed writes in the plural", async () => {
+  const queryClient = createAppQueryClient();
+  const onError = vi.fn();
+  const failure = vi.spyOn(toast, "error");
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  server.use(
+    http.put("*/api/receipt-items/:id/classification", ({ params }) =>
+      params.id === "three"
+        ? new HttpResponse(null, { status: 204 })
+        : HttpResponse.json(
+            { status: 409, detail: "Current assignment changed" },
+            { status: 409 },
+          ),
+    ),
+  );
+  const { result, unmount } = renderHook(
+    () => useCategorizeReceiptItems({ onError }),
+    { wrapper },
+  );
+  const message =
+    "2 items' categories could not be confirmed. Refresh the list and check before retrying.";
+  try {
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          items: [reportItem("one"), reportItem("two"), reportItem("three")],
+          choice: foodChoice,
+        }),
+      ).rejects.toThrow(message);
+    });
+    expect(failure).toHaveBeenCalledExactlyOnceWith(message);
+    expect(onError).toHaveBeenCalledOnce();
   } finally {
     unmount();
     queryClient.clear();

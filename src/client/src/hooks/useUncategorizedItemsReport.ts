@@ -6,6 +6,8 @@ export interface UncategorizedItemsParams {
   sortDirection?: "asc" | "desc";
   page?: number;
   pageSize?: number;
+  /** Items Jev has answered for, or not. */
+  suggestion?: "any" | "with" | "without";
 }
 
 export function useUncategorizedItemsReport(
@@ -19,6 +21,7 @@ export function useUncategorizedItemsReport(
       params.sortDirection,
       params.page,
       params.pageSize,
+      params.suggestion,
     ],
     placeholderData: keepPreviousData,
     queryFn: async () => {
@@ -31,6 +34,7 @@ export function useUncategorizedItemsReport(
               sortDirection: params.sortDirection,
               page: params.page,
               pageSize: params.pageSize,
+              suggestion: params.suggestion,
             },
           },
         },
