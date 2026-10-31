@@ -83,7 +83,8 @@ internal static partial class PortableTaxonomyArchive
 			}).OrderBy(n => n.CategoryId).ToList();
 			Require(Equal(nodes, plannedNodes), "Migration snapshot differs from plan.");
 			var crosswalks = s.Crosswalks.Where(c => c.Actor == m.Actor && c.OperationId == m.OperationId).ToList();
-			var outcomes = s.MigrationItems.Where(i => i.Actor == m.Actor && i.OperationId == m.OperationId).ToList();
+			// ValidateUniqueKeys makes (Actor, OperationId, ReceiptItemId) unique, so the item id keys one outcome.
+			var outcomes = s.MigrationItems.Where(i => i.Actor == m.Actor && i.OperationId == m.OperationId).ToDictionary(i => i.ReceiptItemId);
 			Require(crosswalks.Count == plan.Crosswalks.Count && outcomes.Count == plan.Items.Count, "Missing migration evidence.");
 			foreach (var c in plan.Crosswalks)
 			{
@@ -93,7 +94,7 @@ internal static partial class PortableTaxonomyArchive
 			}
 			foreach (var item in plan.Items)
 			{
-				var row = outcomes.SingleOrDefault(r => r.ReceiptItemId == item.Evidence.Id);
+				var row = outcomes.GetValueOrDefault(item.Evidence.Id);
 				Require(row != null && row.AssignmentId == item.AssignmentId && row.Resolution == item.Kind.ToString()
 					&& Equal(DeserializeStrict<LegacyItemResolution>(row.EvidenceJson), item), "Migration outcome differs from plan.");
 				Require(assignments.TryGetValue(item.AssignmentId, out var a) && a.ReceiptItemId == item.Evidence.Id && a.Sequence == 1
@@ -106,8 +107,9 @@ internal static partial class PortableTaxonomyArchive
 			&& s.MigrationItems.All(i => migrations.ContainsKey((i.Actor, i.OperationId))), "Orphan migration evidence.");
 		Require(s.Revisions.Where(r => r.Sequence > 0).All(r => s.Operations.Any(o => o.Actor == r.Actor && o.OperationId == r.OperationId
 			&& o.RevisionId == r.Id && o.AffectedCount == r.AffectedCount) || s.Migrations.Any(m => m.RevisionId == r.Id)), "Revision lacks its authoritative operation.");
-		Require(s.Assignments.All(a => s.ClassificationOperations.Any(o => o.AssignmentId == a.Id)
-			|| s.MigrationItems.Any(i => i.AssignmentId == a.Id) || a.Source == "legacy_write"), "Assignment lacks its authoritative operation.");
+		var authorized = s.ClassificationOperations.Select(o => o.AssignmentId)
+			.Concat(s.MigrationItems.Select(i => i.AssignmentId)).ToHashSet();
+		Require(s.Assignments.All(a => authorized.Contains(a.Id) || a.Source == "legacy_write"), "Assignment lacks its authoritative operation.");
 	}
 
 	// The frozen plan (and its request hash) retains every .NET tick. Its relational

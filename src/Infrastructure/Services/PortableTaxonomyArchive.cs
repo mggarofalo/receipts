@@ -228,6 +228,9 @@ internal static partial class PortableTaxonomyArchive
 					&& revision.AffectedCount == operation.AffectedCount)), "Invalid taxonomy operation result.");
 		}
 		var assignments = state.Assignments.ToDictionary(a => a.Id);
+		// Keys are unique (ValidateUniqueKeys); lookups keep validation linear in archive size.
+		var current = state.Current.ToDictionary(c => c.ReceiptItemId);
+		var snapshotNodes = state.Nodes.Select(n => (n.RevisionId, n.CategoryId)).ToHashSet();
 		foreach (var group in state.Assignments.GroupBy(a => a.ReceiptItemId))
 		{
 			var history = group.OrderBy(a => a.Sequence).ToList();
@@ -241,9 +244,9 @@ internal static partial class PortableTaxonomyArchive
 					&& (i == 0 || assignment.RecordedAt >= history[i - 1].RecordedAt)
 					&& assignment.Sequence == i + 1 && assignment.PreviousAssignmentId == (i == 0 ? null : history[i - 1].Id)
 					&& revisions.ContainsKey(assignment.TaxonomyRevisionId)
-					&& (assignment.CategoryId is null || state.Nodes.Any(n => n.RevisionId == assignment.TaxonomyRevisionId && n.CategoryId == assignment.CategoryId)), "Invalid classification history.");
+					&& (assignment.CategoryId is null || snapshotNodes.Contains((assignment.TaxonomyRevisionId, assignment.CategoryId.Value))), "Invalid classification history.");
 			}
-			Require(state.Current.Count(c => c.ReceiptItemId == group.Key && c.AssignmentId == history[^1].Id) == 1, "Current classification does not match history.");
+			Require(current.TryGetValue(group.Key, out var tip) && tip.AssignmentId == history[^1].Id, "Current classification does not match history.");
 		}
 		Require(state.Current.Count == state.Assignments.Select(a => a.ReceiptItemId).Distinct().Count(), "Extra current classification.");
 		foreach (var operation in state.ClassificationOperations)
