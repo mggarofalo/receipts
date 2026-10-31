@@ -134,36 +134,39 @@ internal static partial class PortableTaxonomyArchive
 
 	private static async Task<State> ReadCoreAsync(SqliteConnection sqlite, CancellationToken ct, int version, bool candidate)
 	{
-		Dictionary<string, List<(string Id, string Payload)>> records = [];
+		// Deserialize each kind while streaming its rows, so a large archive never holds
+		// every raw payload string and its parsed entity at the same time.
+		HashSet<string> kinds = [];
 		await using (var command = sqlite.CreateCommand())
 		{
-			command.CommandText = "SELECT kind,id,payload FROM taxonomy_archive ORDER BY kind,id";
+			command.CommandText = "SELECT DISTINCT kind FROM taxonomy_archive";
+			await using var reader = await command.ExecuteReaderAsync(ct);
+			while (await reader.ReadAsync(ct)) { kinds.Add(reader.GetString(0)); }
+		}
+		async Task<List<T>> Read<T>(string kind)
+		{
+			List<T> values = [];
+			if (!kinds.Remove(kind)) { return values; }
+			await using var command = sqlite.CreateCommand();
+			command.CommandText = "SELECT id,payload FROM taxonomy_archive WHERE kind=$kind ORDER BY id";
+			command.Parameters.AddWithValue("$kind", kind);
 			await using var reader = await command.ExecuteReaderAsync(ct);
 			while (await reader.ReadAsync(ct))
 			{
-				string kind = reader.GetString(0);
-				if (!records.TryGetValue(kind, out var rows)) { records.Add(kind, rows = []); }
-				rows.Add((reader.GetString(1), reader.GetString(2)));
-			}
-		}
-		List<T> Read<T>(string kind)
-		{
-			if (!records.Remove(kind, out var rows)) { return []; }
-			return rows.Select(row =>
-			{
-				T value = DeserializeStrict<T>(row.Payload)
+				T value = DeserializeStrict<T>(reader.GetString(1))
 					?? throw new InvalidDataException("Null taxonomy record.");
-				Require(row.Id == ArchiveKey(value), "Taxonomy archive key differs from payload.");
-				return value;
-			}).ToList();
+				Require(reader.GetString(0) == ArchiveKey(value), "Taxonomy archive key differs from payload.");
+				values.Add(value);
+			}
+			return values;
 		}
-		State state = new(Read<TaxonomyIdentityEntity>("identity"), Read<TaxonomyHeadEntity>("head"),
-			Read<TaxonomyRevisionEntity>("revision"), Read<TaxonomyNodeEntity>("node"),
-			Read<TaxonomyOperationEntity>("operation"), Read<PurchaseClassificationEntity>("assignment"),
-			Read<CurrentClassificationEntity>("current"), Read<ClassificationOperationEntity>("classification_operation"),
-			Read<LegacyMigrationEntity>("migration"), Read<LegacyMigrationCrosswalkEntity>("crosswalk"),
-			Read<LegacyMigrationItemEntity>("migration_item"));
-		Require(records.Count == 0, "Unknown taxonomy archive record kind.");
+		State state = new(await Read<TaxonomyIdentityEntity>("identity"), await Read<TaxonomyHeadEntity>("head"),
+			await Read<TaxonomyRevisionEntity>("revision"), await Read<TaxonomyNodeEntity>("node"),
+			await Read<TaxonomyOperationEntity>("operation"), await Read<PurchaseClassificationEntity>("assignment"),
+			await Read<CurrentClassificationEntity>("current"), await Read<ClassificationOperationEntity>("classification_operation"),
+			await Read<LegacyMigrationEntity>("migration"), await Read<LegacyMigrationCrosswalkEntity>("crosswalk"),
+			await Read<LegacyMigrationItemEntity>("migration_item"));
+		Require(kinds.Count == 0, "Unknown taxonomy archive record kind.");
 		if (version >= 11) { state = await ReadMappingsAsync(sqlite, state, ct); }
 		if (version >= 12)
 		{
