@@ -29,4 +29,21 @@ public sealed partial class NormalizationCatalogTests
 
 		Version.Parse(version).Should().BeGreaterThanOrEqualTo(new Version(0, 8), "NearestNeighbourSearch sets hnsw.iterative_scan");
 	}
+
+	[Fact]
+	public async Task StaleNeighbourhood_PlansTheKnnThroughTheHnswIndex()
+	{
+		await ResetAsync();
+		await StaleNeighbourhood.SeedAsync(fixture, "Chicken breast");
+		await using var db = StaleNeighbourhood.IndexPlanFactory(fixture).CreateDbContext();
+		var vector = new Pgvector.Vector(StaleNeighbourhood.Query);
+
+		var plan = string.Join("\n", await db.Database.SqlQuery<string>($"""
+			EXPLAIN SELECT "Id" FROM matching."NormalizedDescriptions"
+			WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {OnnxEmbeddingService.EmbeddingSpaceFingerprint}
+			ORDER BY "Embedding" <=> {vector}::vector, "Id" LIMIT 20
+			""").ToListAsync());
+
+		plan.Should().Contain("IX_NormalizedDescriptions_Embedding_hnsw", "the completeness tests only mean something on the index plan");
+	}
 }
