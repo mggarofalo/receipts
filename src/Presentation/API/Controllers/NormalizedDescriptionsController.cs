@@ -1,16 +1,21 @@
+using System.Security.Claims;
 using API.Generated.Dtos;
 using API.Services;
 using Application.Commands.NormalizedDescription.LinkTemplate;
 using Application.Commands.NormalizedDescription.Merge;
+using Application.Commands.NormalizedDescription.PromotePendingNames;
 using Application.Commands.NormalizedDescription.Rename;
 using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
+using Application.Commands.NormalizedDescription.UndoPendingNamePromotion;
 using Application.Commands.NormalizedDescription.UpdateStatus;
 using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
 using Application.Queries.NormalizedDescription.GetEmbeddingCoverage;
+using Application.Queries.NormalizedDescription.ListPendingNamePromotions;
+using Application.Queries.NormalizedDescription.PreviewPendingNamePromotion;
 using Application.Queries.NormalizedDescription.PreviewRequeuePending;
 using Asp.Versioning;
 using Domain.NormalizedDescriptions;
@@ -41,6 +46,9 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string RouteLinkTemplate = "{id}/link-template";
 	public const string RouteRequeuePending = "requeue-pending";
 	public const string RouteRequeuePendingPreview = "requeue-pending/preview";
+	public const string RoutePromotions = "promotions";
+	public const string RoutePromotionPreview = "promotions/preview";
+	public const string RoutePromotionUndo = "promotions/{id}/undo";
 
 	public const string IdCannotBeEmpty = "id must not be empty";
 	public const string DiscardIdCannotBeEmpty = "discardId must not be empty";
@@ -57,6 +65,8 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	// must not reach into Infrastructure for a constant.
 	public const int MaxPageSize = 200;
 	public const string ExpectedFingerprintRequired = "expectedFingerprint must not be empty";
+	public const string PromotableSetChanged = "The set of names eligible for promotion changed since it was previewed. Nothing was promoted. Re-read the preview and try again.";
+	public const string PromotionAlreadyUndone = "This promotion was already undone.";
 	public const string PendingSetChanged = "The set of pending-review descriptions changed since it was previewed. Nothing was deleted — re-read the preview and try again.";
 
 	[HttpGet(RouteEmbeddingCoverage)]
@@ -418,6 +428,91 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			UnlinkedItemCount = result.UnlinkedItemCount,
 		});
 	}
+
+	[HttpGet(RoutePromotionPreview)]
+	[EndpointSummary("Preview which pending-review names a promotion would make active")]
+	[EndpointDescription("Lists PendingReview names with enough live purchases, no source key shared with another name and no name collision. Read-only. Admin-only.")]
+	public async Task<Ok<PendingNamePromotionPreviewResponse>> PreviewPendingNamePromotion(CancellationToken cancellationToken)
+	{
+		PendingNamePromotionPreview preview = await mediator.Send(new PreviewPendingNamePromotionQuery(), cancellationToken);
+		return TypedResults.Ok(new PendingNamePromotionPreviewResponse
+		{
+			MinimumPurchases = preview.MinimumPurchases,
+			NameCount = preview.Names.Count,
+			PurchaseCount = preview.PurchaseCount,
+			Fingerprint = preview.Fingerprint,
+			Names = preview.Names.Select(name => new PromotableNameResponse
+			{
+				Id = name.Id,
+				CanonicalName = name.CanonicalName,
+				PurchaseCount = name.PurchaseCount,
+			}).ToList(),
+		});
+	}
+
+	[HttpGet(RoutePromotions)]
+	[EndpointSummary("List recent pending-name promotions")]
+	[EndpointDescription("The 20 most recent promotions, newest first, with their undo state. Admin-only.")]
+	public async Task<Ok<List<PendingNamePromotionResponse>>> ListPendingNamePromotions(CancellationToken cancellationToken)
+	{
+		IReadOnlyList<PendingNamePromotion> promotions = await mediator.Send(new ListPendingNamePromotionsQuery(), cancellationToken);
+		return TypedResults.Ok(promotions.Select(promotion => new PendingNamePromotionResponse
+		{
+			Id = promotion.Id,
+			CreatedBy = promotion.CreatedBy,
+			CreatedAt = promotion.CreatedAt,
+			PromotedCount = promotion.PromotedCount,
+			PurchaseCount = promotion.PurchaseCount,
+			UndoneAt = promotion.UndoneAt,
+			UndoneBy = promotion.UndoneBy,
+			RestoredCount = promotion.RestoredCount,
+			KeptCount = promotion.KeptCount,
+		}).ToList());
+	}
+
+	[HttpPost(RoutePromotions)]
+	[EndpointSummary("Promote the previewed pending-review names to active")]
+	[EndpointDescription("Makes every previewed name Active and records the promotion for undo. Purchases keep their links and review state. Returns 409 when expectedFingerprint no longer matches the eligible set. Admin-only.")]
+	public async Task<Results<Ok<PromotePendingNamesResponse>, BadRequestProblem, ConflictProblem>> PromotePendingNames(
+		[FromBody] PromotePendingNamesRequest request,
+		CancellationToken cancellationToken)
+	{
+		if (string.IsNullOrWhiteSpace(request.ExpectedFingerprint))
+		{
+			return ApiProblem.BadRequest(ExpectedFingerprintRequired);
+		}
+
+		PendingNamePromotionResult? result = await mediator.Send(
+			new PromotePendingNamesCommand(Actor, request.ExpectedFingerprint), cancellationToken);
+		if (result is null)
+		{
+			return ApiProblem.Conflict(PromotableSetChanged);
+		}
+		return TypedResults.Ok(new PromotePendingNamesResponse
+		{
+			PromotionId = result.PromotionId,
+			PromotedCount = result.PromotedCount,
+			PurchaseCount = result.PurchaseCount,
+		});
+	}
+
+	[HttpPost(RoutePromotionUndo)]
+	[EndpointSummary("Return a promotion's names to pending review")]
+	[EndpointDescription("Returns each promoted name to PendingReview while it is unchanged since the promotion; changed names stay active and are counted as kept. Admin-only.")]
+	public async Task<Results<Ok<UndoPendingNamePromotionResponse>, NotFound, ConflictProblem>> UndoPendingNamePromotion(
+		[FromRoute] Guid id,
+		CancellationToken cancellationToken)
+	{
+		PendingNamePromotionUndo undo = await mediator.Send(new UndoPendingNamePromotionCommand(Actor, id), cancellationToken);
+		return undo.Outcome switch
+		{
+			PendingNamePromotionUndoOutcome.NotFound => TypedResults.NotFound(),
+			PendingNamePromotionUndoOutcome.AlreadyUndone => ApiProblem.Conflict(PromotionAlreadyUndone),
+			_ => TypedResults.Ok(new UndoPendingNamePromotionResponse { RestoredCount = undo.RestoredCount, KeptCount = undo.KeptCount }),
+		};
+	}
+
+	private string Actor => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
 	private static NormalizedDescriptionResponse ToResponse(NormalizedDescriptionDetail detail)
 	{

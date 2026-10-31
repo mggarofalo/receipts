@@ -1378,6 +1378,70 @@ namespace Infrastructure.Migrations
                     b.ToTable("NormalizedDescriptions", "matching");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.PendingNamePromotionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("KeptCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinimumPurchases")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PurchaseCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RestoredCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("UndoneAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("UndoneBy")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.ToTable("PendingNamePromotions", "matching");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.PendingNamePromotionEntryEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("NormalizedDescriptionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PromotionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool?>("Restored")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("RevisionAfter")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PromotionId", "NormalizedDescriptionId")
+                        .IsUnique();
+
+                    b.ToTable("PendingNamePromotionEntries", "matching");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.ReceiptEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3791,6 +3855,15 @@ namespace Infrastructure.Migrations
                     b.Navigation("NearestNeighbour");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.PendingNamePromotionEntryEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Core.PendingNamePromotionEntity", null)
+                        .WithMany("Entries")
+                        .HasForeignKey("PromotionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.ReceiptEntity", b =>
                 {
                     b.HasOne("Infrastructure.Entities.Envelopes.OccasionEntity", null)
@@ -4248,6 +4321,11 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Infrastructure.Entities.Core.NormalizationCatalogOperationEntity", b =>
                 {
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Core.PendingNamePromotionEntity", b =>
+                {
+                    b.Navigation("Entries");
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.NormalizationAi.NormalizationAiRunEntity", b =>

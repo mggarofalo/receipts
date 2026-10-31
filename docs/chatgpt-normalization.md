@@ -121,6 +121,14 @@ to refresh its eligibility. If a proposed new name already belongs to a pending
 identity, the rejection provides the same review route. Navigation and model
 suggestions never approve identities automatically.
 
+To approve many pending names at once, use **Promote Consistent Pending Names** on
+the Maintenance tab. It previews every pending name that has at least two purchases,
+none of whose source keys is linked to another name, and that no other name spells
+the same way. One confirmation makes them active. Purchases keep their links and
+review state, and no mapping is created. Undo returns each name to review unless it
+changed afterwards. See
+[the decision](decisions/2026-10-31-promote-consistent-pending-names.md).
+
 ### What the model can and cannot see
 
 The model does not browse the database or search repeatedly on its own. The

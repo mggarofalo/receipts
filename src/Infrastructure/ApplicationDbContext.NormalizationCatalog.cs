@@ -8,6 +8,8 @@ public partial class ApplicationDbContext
 	public DbSet<NormalizationSourceMappingEntity> NormalizationSourceMappings { get; set; } = null!;
 	public DbSet<NormalizationCatalogOperationEntity> NormalizationCatalogOperations { get; set; } = null!;
 	public DbSet<NormalizationCatalogMemberEntity> NormalizationCatalogMembers { get; set; } = null!;
+	public DbSet<PendingNamePromotionEntity> PendingNamePromotions { get; set; } = null!;
+	public DbSet<PendingNamePromotionEntryEntity> PendingNamePromotionEntries { get; set; } = null!;
 
 	private void PrepareNormalizationProvenance()
 	{

@@ -20,8 +20,20 @@ import {
   useRequeuePendingPreview,
 } from "@/hooks/useNormalizedDescriptionMaintenance";
 import { useState } from "react";
-/** Removes explicitly previewed pending catalog records; purchases return to review. */
+import { PendingPromotionCard } from "./PendingPromotionCard";
+
+/** Catalog maintenance: promote consistent pending names, or remove pending records. */
 export function MaintenanceTab() {
+  return (
+    <div className="space-y-6">
+      <PendingPromotionCard />
+      <RequeuePendingCard />
+    </div>
+  );
+}
+
+/** Removes explicitly previewed pending catalog records; purchases return to review. */
+function RequeuePendingCard() {
   const preview = useRequeuePendingPreview();
   const [confirmation, setConfirmation] = useState<null | {
     pendingDescriptionCount: number;
@@ -46,7 +58,7 @@ export function MaintenanceTab() {
   const nothingToDo = pendingDescriptionCount === 0;
 
   return (
-    <div className="space-y-6">
+    <>
       <Card>
         <CardHeader>
           <CardTitle>Requeue Pending Descriptions</CardTitle>
@@ -115,7 +127,7 @@ export function MaintenanceTab() {
           onClose={() => setConfirmation(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 interface RequeueConfirmDialogProps {

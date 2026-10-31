@@ -1723,6 +1723,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/normalized-descriptions/promotions/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview which pending-review names a promotion would make active
+         * @description Lists every `PendingReview` name with at least `minimumPurchases` live purchases,
+         *     none of whose source keys (store, description, item code) is also linked to another
+         *     name, and with no other name spelling the same letters and digits. Read-only.
+         *     Admin-only. See docs/decisions/2026-10-31-promote-consistent-pending-names.md.
+         */
+        get: operations["PreviewPendingNamePromotion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalized-descriptions/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List recent pending-name promotions
+         * @description The 20 most recent promotions, newest first, with their undo state. Admin-only.
+         */
+        get: operations["ListPendingNamePromotions"];
+        put?: never;
+        /**
+         * Promote the previewed pending-review names to active
+         * @description Makes every name in the previewed set `Active` and records the promotion so it can
+         *     be undone. Purchases keep their links and review state, and no scoped mapping is
+         *     created. `expectedFingerprint` must equal the preview's `fingerprint`; a changed set
+         *     returns 409 and nothing is promoted. With nothing eligible, nothing is recorded and
+         *     `promotionId` is null. Admin-only.
+         */
+        post: operations["PromotePendingNames"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/normalized-descriptions/promotions/{id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Return a promotion's names to pending review
+         * @description Returns each promoted name to `PendingReview` while it is still active and unchanged
+         *     since the promotion. A name that was renamed, merged, rejected, mapped, or given a
+         *     verified purchase since then stays active and is counted as kept. Admin-only.
+         */
+        post: operations["UndoPendingNamePromotion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/normalized-descriptions": {
         parameters: {
             query?: never;
@@ -6144,6 +6217,75 @@ export interface components {
              * @description Number of live ReceiptItems whose NormalizedDescriptionId was nulled.
              */
             unlinkedItemCount: number;
+        };
+        PendingNamePromotionPreviewResponse: {
+            /**
+             * Format: int32
+             * @description Live purchases a name needs to qualify.
+             */
+            minimumPurchases: number;
+            /** Format: int32 */
+            nameCount: number;
+            /**
+             * Format: int32
+             * @description Live purchases linked to the eligible names.
+             */
+            purchaseCount: number;
+            /** @description Opaque digest of the exact eligible set. Echo it back on the promote request. */
+            fingerprint: string;
+            names: components["schemas"]["PromotableNameResponse"][];
+        };
+        PromotableNameResponse: {
+            /** Format: uuid */
+            id: string;
+            canonicalName: string;
+            /** Format: int32 */
+            purchaseCount: number;
+        };
+        PromotePendingNamesRequest: {
+            /** @description The `fingerprint` the caller last previewed. */
+            expectedFingerprint: string;
+        };
+        PromotePendingNamesResponse: {
+            /**
+             * Format: uuid
+             * @description Null when nothing was eligible, so nothing was recorded.
+             */
+            promotionId?: string | null;
+            /** Format: int32 */
+            promotedCount: number;
+            /** Format: int32 */
+            purchaseCount: number;
+        };
+        PendingNamePromotionResponse: {
+            /** Format: uuid */
+            id: string;
+            createdBy: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: int32 */
+            promotedCount: number;
+            /** Format: int32 */
+            purchaseCount: number;
+            /** Format: date-time */
+            undoneAt?: string | null;
+            undoneBy?: string | null;
+            /** Format: int32 */
+            restoredCount: number | null;
+            /** Format: int32 */
+            keptCount: number | null;
+        };
+        UndoPendingNamePromotionResponse: {
+            /**
+             * Format: int32
+             * @description Names returned to pending review.
+             */
+            restoredCount: number;
+            /**
+             * Format: int32
+             * @description Names kept active because they changed after the promotion.
+             */
+            keptCount: number;
         };
         CreateReceiptRequest: {
             /**
@@ -12629,6 +12771,126 @@ export interface operations {
                 };
             };
             /** @description The pending-review count changed since the caller previewed it. Nothing was deleted. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    PreviewPendingNamePromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingNamePromotionPreviewResponse"];
+                };
+            };
+        };
+    };
+    ListPendingNamePromotions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingNamePromotionResponse"][];
+                };
+            };
+        };
+    };
+    PromotePendingNames: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromotePendingNamesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotePendingNamesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description The eligible set changed since the caller previewed it. Nothing was promoted. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    UndoPendingNamePromotion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UndoPendingNamePromotionResponse"];
+                };
+            };
+            /** @description No promotion has this id. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The promotion was already undone. */
             409: {
                 headers: {
                     [name: string]: unknown;

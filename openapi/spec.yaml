@@ -4701,6 +4701,119 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+  /api/normalized-descriptions/promotions/preview:
+    get:
+      operationId: PreviewPendingNamePromotion
+      tags: [NormalizedDescriptions]
+      summary: Preview which pending-review names a promotion would make active
+      description: |
+        Lists every `PendingReview` name with at least `minimumPurchases` live purchases,
+        none of whose source keys (store, description, item code) is also linked to another
+        name, and with no other name spelling the same letters and digits. Read-only.
+        Admin-only. See docs/decisions/2026-10-31-promote-consistent-pending-names.md.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingNamePromotionPreviewResponse"
+
+  /api/normalized-descriptions/promotions:
+    get:
+      operationId: ListPendingNamePromotions
+      tags: [NormalizedDescriptions]
+      summary: List recent pending-name promotions
+      description: The 20 most recent promotions, newest first, with their undo state. Admin-only.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingNamePromotionResponse"
+    post:
+      operationId: PromotePendingNames
+      tags: [NormalizedDescriptions]
+      summary: Promote the previewed pending-review names to active
+      description: |
+        Makes every name in the previewed set `Active` and records the promotion so it can
+        be undone. Purchases keep their links and review state, and no scoped mapping is
+        created. `expectedFingerprint` must equal the preview's `fingerprint`; a changed set
+        returns 409 and nothing is promoted. With nothing eligible, nothing is recorded and
+        `promotionId` is null. Admin-only.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotePendingNamesRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromotePendingNamesResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "409":
+          description: The eligible set changed since the caller previewed it. Nothing was promoted.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /api/normalized-descriptions/promotions/{id}/undo:
+    post:
+      operationId: UndoPendingNamePromotion
+      tags: [NormalizedDescriptions]
+      summary: Return a promotion's names to pending review
+      description: |
+        Returns each promoted name to `PendingReview` while it is still active and unchanged
+        since the promotion. A name that was renamed, merged, rejected, mapped, or given a
+        verified purchase since then stays active and is counted as kept. Admin-only.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UndoPendingNamePromotionResponse"
+        "404":
+          description: No promotion has this id.
+        "409":
+          description: The promotion was already undone.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
   /api/normalized-descriptions:
     get:
       operationId: GetAllNormalizedDescriptions
@@ -13816,6 +13929,109 @@ components:
           type: integer
           format: int32
           description: Number of live ReceiptItems whose NormalizedDescriptionId was nulled.
+
+    PendingNamePromotionPreviewResponse:
+      type: object
+      required: [minimumPurchases, nameCount, purchaseCount, fingerprint, names]
+      properties:
+        minimumPurchases:
+          type: integer
+          format: int32
+          description: Live purchases a name needs to qualify.
+        nameCount:
+          type: integer
+          format: int32
+        purchaseCount:
+          type: integer
+          format: int32
+          description: Live purchases linked to the eligible names.
+        fingerprint:
+          type: string
+          description: Opaque digest of the exact eligible set. Echo it back on the promote request.
+        names:
+          type: array
+          items:
+            $ref: "#/components/schemas/PromotableNameResponse"
+
+    PromotableNameResponse:
+      type: object
+      required: [id, canonicalName, purchaseCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        canonicalName:
+          type: string
+        purchaseCount:
+          type: integer
+          format: int32
+
+    PromotePendingNamesRequest:
+      type: object
+      required: [expectedFingerprint]
+      properties:
+        expectedFingerprint:
+          type: string
+          minLength: 1
+          description: The `fingerprint` the caller last previewed.
+
+    PromotePendingNamesResponse:
+      type: object
+      required: [promotedCount, purchaseCount]
+      properties:
+        promotionId:
+          type: ["string", "null"]
+          format: uuid
+          description: Null when nothing was eligible, so nothing was recorded.
+        promotedCount:
+          type: integer
+          format: int32
+        purchaseCount:
+          type: integer
+          format: int32
+
+    PendingNamePromotionResponse:
+      type: object
+      required: [id, createdBy, createdAt, promotedCount, purchaseCount, restoredCount, keptCount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        promotedCount:
+          type: integer
+          format: int32
+        purchaseCount:
+          type: integer
+          format: int32
+        undoneAt:
+          type: ["string", "null"]
+          format: date-time
+        undoneBy:
+          type: ["string", "null"]
+        restoredCount:
+          type: ["integer", "null"]
+          format: int32
+        keptCount:
+          type: ["integer", "null"]
+          format: int32
+
+    UndoPendingNamePromotionResponse:
+      type: object
+      required: [restoredCount, keptCount]
+      properties:
+        restoredCount:
+          type: integer
+          format: int32
+          description: Names returned to pending review.
+        keptCount:
+          type: integer
+          format: int32
+          description: Names kept active because they changed after the promotion.
 
     # â”€â”€ Receipt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
