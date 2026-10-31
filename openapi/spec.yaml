@@ -9592,8 +9592,12 @@ components:
           format: date-time
     HistoricalOperationSummary:
       type: object
-      required: [operationId, state, capturedAt, taxonomyRevisionId, reason, groups, progress]
+      required: [operationId, state, capturedAt, taxonomyRevisionId, reason, groups, progress, source]
       properties:
+        source:
+          type: string
+          enum: [manual, approved_mapping, jev]
+          description: Who decided the change. `jev` operations are strong Jev matches written automatically.
         undoTaxonomyRevisionId:
           type: [string, 'null']
           format: uuid
@@ -9953,8 +9957,11 @@ components:
           items: { $ref: "#/components/schemas/CategoryAssistanceHistoricalProgress" }
     CategoryAssistanceSettings:
       type: object
-      required: [enabled, provider, model, dailyLimit, pendingLimit, revision]
+      required: [enabled, provider, model, dailyLimit, pendingLimit, revision, autoApply]
       properties:
+        autoApply:
+          type: boolean
+          description: Write strong Jev matches automatically (undoable in automatic activity). Has effect only while consent is enabled. Defaults to true.
         enabled: { type: boolean }
         provider: { type: [string, "null"] }
         model: { type: [string, "null"] }
@@ -9972,6 +9979,9 @@ components:
         dailyLimit: { type: integer, format: int32, minimum: 1, maximum: 5000 }
         pendingLimit: { type: integer, format: int32, minimum: 1, maximum: 20 }
         expectedRevision: { type: string, format: uuid }
+        autoApply:
+          type: [boolean, "null"]
+          description: Omit or send null to keep the saved choice.
     CategoryAssistanceSuggestionPage:
       type: object
       required: [total, offset, limit, items]
@@ -10004,6 +10014,8 @@ components:
           categoryProbability,
           selectedPathSupport,
           probabilityScope,
+          rootCandidates,
+          leafCandidates,
         ]
       properties:
         attemptId: { type: string, format: uuid }
@@ -10017,6 +10029,16 @@ components:
         categoryProbability: { type: [number, "null"], format: double }
         selectedPathSupport: { type: [number, "null"], format: double }
         probabilityScope: { type: string, enum: [global_choice, local_choice] }
+        rootCandidates:
+          description: Stage-1 top roots in rank order with their stage-1 probability. Empty for results of earlier policies.
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/CategoryAssistanceCandidateRead" }
+        leafCandidates:
+          description: Stage-2 top choices among the children of the top roots, with their stage-2 probability. Empty when stage 2 did not run.
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/CategoryAssistanceCandidateRead" }
         state: { type: string }
         reviewState: { type: string, enum: [active, later, left_as_is] }
         reviewRevision: { type: string, format: uuid }
@@ -10024,6 +10046,12 @@ components:
         isCurrent: { type: boolean }
         createdAt: { type: string, format: date-time }
         completedAt: { type: [string, "null"], format: date-time }
+    CategoryAssistanceCandidateRead:
+      type: object
+      required: [categoryId, probability]
+      properties:
+        categoryId: { type: string, format: uuid }
+        probability: { type: number, format: double, minimum: 0, maximum: 1 }
     CategoryAssistanceSavedReviewPage:
       type: object
       required: [total, offset, limit, items]
@@ -10077,6 +10105,7 @@ components:
           failed,
           stale,
           indeterminate,
+          applied,
           todayAttempts,
           recentFailures,
         ]
@@ -10088,6 +10117,10 @@ components:
         failed: { type: integer, format: int32 }
         stale: { type: integer, format: int32 }
         indeterminate: { type: integer, format: int32 }
+        applied:
+          type: integer
+          format: int32
+          description: Strong matches written automatically; they no longer wait for review.
         todayAttempts: { type: integer, format: int32 }
         recentFailures:
           type: array

@@ -107,8 +107,10 @@ internal static partial class PortableTaxonomyArchive
 			var state = await ReadAsync(sqlite, ct);
 			state = state with
 			{
-				HistoricalOperations = await source.HistoricalOperations.AsNoTracking().ToListAsync(ct),
-				HistoricalItems = await source.HistoricalOperationItems.AsNoTracking().ToListAsync(ct),
+				// Automatic Jev activity is deployment-local, like the assistance attempts it came from; its
+				// classification history (source `jev`, evidence reason) is exported with every other assignment.
+				HistoricalOperations = await PortableHistoricalOperations(source).ToListAsync(ct),
+				HistoricalItems = await PortableHistoricalItems(source).ToListAsync(ct),
 				IncludesReviewPreferences = true,
 				ReviewPreferences = await source.CategoryAssistanceReviewPreferences.AsNoTracking().ToListAsync(ct),
 				ReviewOperations = await source.CategoryAssistanceReviewOperations.AsNoTracking().ToListAsync(ct),

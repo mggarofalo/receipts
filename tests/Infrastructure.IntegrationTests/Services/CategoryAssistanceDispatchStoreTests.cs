@@ -16,6 +16,7 @@ using Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -122,10 +123,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		var firstWork = (await store.ClaimQueuedAsync(default))!;
 		var otherWork = (await store.ClaimQueuedAsync(default))!;
 		var claim = (await store.TryStartDispatchAsync(firstWork, Ready, clock.Now, default))!;
-		var category = firstWork.Request.Categories.First();
-		var baseline = new CategorySuggestion(category.Id, CategorySuggestionPolicy.PathFor(firstWork.Request, category.Id), null,
-				0.9, 0.8, 0.8, new(firstWork.Provider, firstWork.Model, firstWork.QuestionPolicyVersion,
-						firstWork.Request.TaxonomyRevision, 8, 2));
+		var baseline = Stage1Baseline(firstWork);
 		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Staged);
 		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed), Ready, default);
 		await using (var db = fixture.CreateDbContext())
@@ -168,10 +166,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
 		var work = (await store.ClaimQueuedAsync(default))!;
 		var claim = (await store.TryStartDispatchAsync(work, Ready, clock.Now, default))!;
-		var category = work.Request.Categories.First();
-		var baseline = new CategorySuggestion(category.Id, CategorySuggestionPolicy.PathFor(work.Request, category.Id), null,
-				0.9, 0.8, 0.8, new(work.Provider, work.Model, work.QuestionPolicyVersion,
-						work.Request.TaxonomyRevision, 8, 2));
+		var baseline = Stage1Baseline(work);
 		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Staged);
 		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Rejected);
 		await Connection().InvalidateAsync();
@@ -201,10 +196,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
 		var work = (await store.ClaimQueuedAsync(default))!;
 		var claim = (await store.TryStartDispatchAsync(work, Ready, clock.Now, default))!;
-		var category = work.Request.Categories.First();
-		var baseline = new CategorySuggestion(category.Id, CategorySuggestionPolicy.PathFor(work.Request, category.Id), null,
-				0.9, 0.8, 0.8, new(work.Provider, work.Model, work.QuestionPolicyVersion,
-						work.Request.TaxonomyRevision, 8, 2));
+		var baseline = Stage1Baseline(work);
 		(await store.TryStartOrStageSecondDispatchAsync(claim, Ready, baseline, default)).Should().Be(CategoryAssistanceSecondDispatchDecision.Staged);
 		clock.Now = new DateTimeOffset(2026, 10, 29, 0, 0, 0, TimeSpan.Zero);
 		CategoryAssistanceQueuedWork? resumed = corruptAfterClaim ? await store.ClaimQueuedAsync(default) : null;
@@ -462,6 +454,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			registrations.AddSingleton<ICategoryAssistanceCapabilitySource>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
 			registrations.AddSingleton<TimeProvider>(TimeProvider.System);
 			registrations.AddScoped<CategoryAssistanceDispatcher>();
+			AddAutoWriter(registrations);
 			using ServiceProvider services = registrations.BuildServiceProvider();
 			var worker = new CategoryAssistanceWorker(services.GetRequiredService<IServiceScopeFactory>(),
 					monitor.Object, NullLogger<CategoryAssistanceWorker>.Instance);
@@ -484,7 +477,10 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 				attempt.State.Should().Be("suggested");
 				attempt.ResultJson.Should().NotBeNull();
 				var completion = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(attempt.ResultJson!);
-				completion!.Suggestion!.SelectedPathSupport.Should().Be(0.9);
+				completion!.Suggestion!.SelectedPathSupport.Should().BeNull();
+				completion.Suggestion.CategoryId.Should().Be(seed.CategoryId.ToString("D"));
+				completion.Suggestion.RootCandidates![0].Should().Be(new SuggestionCandidate(seed.CategoryId.ToString("D"), 1.0));
+				completion.Suggestion.LeafCandidates![0].Should().Be(new SuggestionCandidate(seed.CategoryId.ToString("D"), 1.0));
 				completion.Suggestion.Provenance.InputTokens.Should().Be(3);
 				(await verify.CategoryAssistanceDailyUsage.Where(x => x.UtcDay == DateOnly.FromDateTime(DateTime.UtcNow))
 						.Select(x => x.DispatchAttempts).SingleAsync()).Should().Be(2);
@@ -550,6 +546,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		registrations.AddSingleton<ICategoryAssistanceCapabilitySource>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
 		registrations.AddSingleton<TimeProvider>(TimeProvider.System);
 		registrations.AddScoped<CategoryAssistanceDispatcher>();
+		AddAutoWriter(registrations);
 		using ServiceProvider services = registrations.BuildServiceProvider();
 		var worker = new CategoryAssistanceWorker(services.GetRequiredService<IServiceScopeFactory>(), monitor.Object,
 			NullLogger<CategoryAssistanceWorker>.Instance);
@@ -558,8 +555,13 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		await using var db = fixture.CreateDbContext();
 		var row = await db.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.ItemId == seed.ItemId);
 		row.State.Should().Be(state);
+		// A revocation during stage 1 discards its answer after the send, but the response was billed, so its usage is
+		// still recorded on completion even though the result itself is stale.
 		row.FirstStageInputTokens.Should().Be(1);
 		row.FirstStageOutputTokens.Should().Be(1);
+		// The failed second send returned no response body, so it reported no usage.
+		row.SecondStageInputTokens.Should().BeNull();
+		row.SecondStageOutputTokens.Should().BeNull();
 		row.SecondSendStartedAt.HasValue.Should().Be(calls == 2);
 		if (state == "failed")
 		{
@@ -607,6 +609,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		registrations.AddSingleton<ICategoryAssistanceCapabilitySource>(p => p.GetRequiredService<JevCategoryAssistanceSelectedProvider>());
 		registrations.AddSingleton<TimeProvider>(clock);
 		registrations.AddScoped<CategoryAssistanceDispatcher>();
+		AddAutoWriter(registrations);
 		using ServiceProvider services = registrations.BuildServiceProvider();
 		var worker = new CategoryAssistanceWorker(services.GetRequiredService<IServiceScopeFactory>(), monitor.Object,
 			NullLogger<CategoryAssistanceWorker>.Instance);
@@ -630,11 +633,17 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		await using var verify = fixture.CreateDbContext();
 		var completed = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == attemptId);
 		completed.State.Should().Be("suggested");
-		JsonSerializer.Deserialize<CategoryAssistanceCompletion>(completed.ResultJson!)!.Suggestion!.SelectedPathSupport.Should().Be(0.9);
+		completed.FirstStageInputTokens.Should().Be(1); completed.FirstStageOutputTokens.Should().Be(1);
+		completed.SecondStageInputTokens.Should().Be(2); completed.SecondStageOutputTokens.Should().Be(2);
+		var refined = JsonSerializer.Deserialize<CategoryAssistanceCompletion>(completed.ResultJson!)!.Suggestion!;
+		refined.LeafCandidates.Should().ContainSingle().Which.CategoryId.Should().Be(seed.CategoryId.ToString("D"));
+		refined.Provenance.InputTokens.Should().Be(3);
 		(await verify.CategoryAssistanceDailyUsage.OrderBy(x => x.UtcDay).Select(x => x.DispatchAttempts).ToArrayAsync()).Should().Equal(1, 1);
 		(await reads.GetSuggestionAsync(attemptId, default)).Should().NotBeNull();
 	}
 
+	// Answers the two-stage wire format: stage 1 ("category" + "fits") then stage 2 ("subcategory"), always choosing
+	// the seeded root, which has no children and is therefore offered as itself in stage 2.
 	private sealed class CountingSuggestionHandler(Guid categoryId, bool failSecond = false, Func<Task>? afterFirst = null) : HttpMessageHandler
 	{
 		public int Calls { get; private set; }
@@ -643,53 +652,44 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			Calls++;
 			request.RequestUri!.AbsoluteUri.Should().Be("https://api.typesafe.ai/v1/systemone");
 			request.Headers.Authorization!.Parameter.Should().Be("jev-test-key");
-			string id = categoryId.ToString("D");
+			string key = "Category " + categoryId;
 			using var requestBody = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+			var purchase = requestBody.RootElement.GetProperty("state").GetProperty("purchase");
+			purchase.GetProperty("store").GetString().Should().Be("Dispatch store");
 			var questions = requestBody.RootElement.GetProperty("questions");
-			if (Calls == 2)
+			bool second = questions.TryGetProperty("subcategory", out _);
+			second.Should().Be(Calls == 2);
+			if (second && failSecond)
 			{
-				if (failSecond)
-				{
-					return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
-				}
-
-				string selectedId = questions.EnumerateObject().Single().Name;
-				string selectedBody = JsonSerializer.Serialize(new
-				{
-					model = "jev-1.14.0",
-					answers = new Dictionary<string, object> { [selectedId] = new { type = "noul", noul = 0.9 } },
-					usage = new { input_tokens = 2, output_tokens = 2 }
-				});
-				return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(selectedBody, Encoding.UTF8, "application/json") };
+				return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
 			}
-			var answers = new Dictionary<string, object>();
-			foreach (var question in questions.EnumerateObject())
-			{
-				if (question.Name == "fits")
-				{
-					continue;
-				}
 
-				string[] ids = question.Value.GetProperty("criteria").EnumerateObject()
-						.Select(criterion => criterion.Name).ToArray();
-				ids.Should().Contain(id);
-				answers[question.Name] = new
+			string question = second ? "subcategory" : "category";
+			string[] keys = questions.GetProperty(question).GetProperty("criteria").EnumerateObject()
+					.Select(criterion => criterion.Name).ToArray();
+			keys.Should().Contain(key);
+			var answers = new Dictionary<string, object>
+			{
+				[question] = new
 				{
 					type = "choice",
-					choice = id,
+					choice = key,
 					confidence = 0.9,
-					probabilities = ids.ToDictionary(category => category,
-								category => category == id ? 1.0 : 0.0)
-				};
+					probabilities = keys.ToDictionary(option => option, option => option == key ? 1.0 : 0.0)
+				}
+			};
+			if (!second)
+			{
+				answers["fits"] = new { type = "noul", noul = 0.9 };
 			}
-			answers["fits"] = new { type = "noul", noul = 0.9 };
+
 			string body = JsonSerializer.Serialize(new
 			{
 				model = "jev-1.14.0",
 				answers,
-				usage = new { input_tokens = 1, output_tokens = 1 }
+				usage = second ? new { input_tokens = 2, output_tokens = 2 } : new { input_tokens = 1, output_tokens = 1 }
 			});
-			if (afterFirst is not null)
+			if (!second && afterFirst is not null)
 			{
 				await afterFirst();
 			}
@@ -721,6 +721,29 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		=> new("jev", "jev-1.14.0", credential, new Uri(server), "pinned-transport");
 	private CategoryAssistanceSettingsStore Settings() => new(new Factory(fixture), TimeProvider.System);
 	private static CategoryAssistanceCapability Ready => new("jev", CategoryAssistanceCapabilityState.Ready, ["jev-1.14.0"]);
+
+	// A validated stage-1 result (fit 0.9, first root chosen) that may start stage 2.
+	private static CategorySuggestion Stage1Baseline(CategoryAssistanceQueuedWork work)
+	{
+		var roots = CategorySuggestionPolicy.Roots(work.Request);
+		var judgment = new CategoryStageJudgment(work.Model, roots[0].Id, 0.8,
+			roots.ToDictionary(r => r.Id, r => r.Id == roots[0].Id ? 1.0 : 0.0), 0.9, 8, 2);
+		var baseline = CategorySuggestionPolicy.DecideStage1(work.Request, judgment, work.Provider).Suggestion!;
+		CategorySuggestionPolicy.IsBaseline(work.Request, baseline).Should().BeTrue();
+		return baseline;
+	}
+
+	// The worker also runs automatic writes; these tests keep them off to observe dispatch alone.
+	private void AddAutoWriter(ServiceCollection registrations, bool writesEnabled = false)
+	{
+		registrations.TryAddSingleton<IDbContextFactory<ApplicationDbContext>>(new Factory(fixture));
+		var autoWrite = new Mock<IOptionsMonitor<CategoryAutoWriteOptions>>();
+		autoWrite.SetupGet(x => x.CurrentValue).Returns(new CategoryAutoWriteOptions());
+		registrations.AddSingleton(autoWrite.Object);
+		registrations.AddSingleton(Options.Create(new ClassificationOptions { WritesEnabled = writesEnabled }));
+		registrations.AddSingleton<CategoryAssistanceAutoWriteCursor>();
+		registrations.AddScoped<CategoryAssistanceAutoWriter>();
+	}
 
 	private async Task ImportCurrentBackupAsync()
 	{
@@ -979,7 +1002,8 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			(await Connection().IsCurrentAsync(Binding(), claim.Work.Fence.ConnectionGeneration)).Should().BeFalse();
 			await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Suggested,
 				new("some-category", ["some-category"], null, 0.9, 0.9, 0.9,
-					new("jev", "jev-1.14.0", CategorySuggestionPolicy.Version, seed.Taxonomy.ToString("D"), 1, 1))), Ready, default);
+					new("jev", "jev-1.14.0", CategorySuggestionPolicy.Version, seed.Taxonomy.ToString("D"), 1, 1), "local_choice",
+					RootCandidates: [new("some-category", 0.9)], LeafCandidates: [new("some-category", 0.9)])), Ready, default);
 			await using var verify = fixture.CreateDbContext();
 			var final = await verify.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == inFlight.AttemptId);
 			final.State.Should().Be("stale"); final.ResultJson.Should().BeNull();
@@ -1011,6 +1035,127 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			(await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId)).DebitUtcDay.Should().Be(today);
 		}
 		finally { await DisableAsync(seed.Actor); }
+	}
+
+	[Fact]
+	public async Task CompletionPersistsBothStagesUsageOnSuccess()
+	{
+		var seed = await SeedAsync("usage success " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		CategorySuggestion suggestion = new("some-category", ["some-category"], null, 0.9, 0.9, 0.9,
+			new("jev", "jev-1.14.0", CategorySuggestionPolicy.Version, seed.Taxonomy.ToString("D"), 13, 6), "local_choice",
+			RootCandidates: [new("some-category", 0.9)], LeafCandidates: [new("some-category", 0.9)]);
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Suggested, suggestion,
+			FirstStageUsage: new(8, 2), SecondStageUsage: new(5, 4)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("suggested");
+		row.FirstStageInputTokens.Should().Be(8); row.FirstStageOutputTokens.Should().Be(2);
+		row.SecondStageInputTokens.Should().Be(5); row.SecondStageOutputTokens.Should().Be(4);
+	}
+
+	[Fact]
+	public async Task CompletionPersistsFirstStageUsageOnAbstention()
+	{
+		await SeedAsync("usage abstention " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Abstained, FirstStageUsage: new(9, 3)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("abstained");
+		row.FirstStageInputTokens.Should().Be(9); row.FirstStageOutputTokens.Should().Be(3);
+		row.SecondStageInputTokens.Should().BeNull(); row.SecondStageOutputTokens.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task StaleCompletionStillPersistsBilledUsage()
+	{
+		await SeedAsync("usage stale " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.CategoryAssistanceSettings.SingleAsync()).Revision = Guid.NewGuid();
+			await db.SaveChangesAsync();
+		}
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable,
+			FirstStageUsage: new(10, 4), SecondStageUsage: new(6, 1)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("stale"); row.ResultJson.Should().BeNull();
+		row.FirstStageInputTokens.Should().Be(10); row.FirstStageOutputTokens.Should().Be(4);
+		row.SecondStageInputTokens.Should().Be(6); row.SecondStageOutputTokens.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task CompletionAfterLeaseExpiryPersistsUsageOnIndeterminateRow()
+	{
+		await SeedAsync("usage indeterminate " + Guid.NewGuid());
+		var clock = new MutableClock(DateTimeOffset.UtcNow);
+		var store = new CategoryAssistanceDispatchStore(new Factory(fixture), clock);
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, clock.Now, default))!;
+		clock.Now = clock.Now.AddMinutes(3);
+		(await store.ClaimQueuedAsync(default)).Should().BeNull(); // Expiry cleanup marks the dispatch indeterminate.
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Abstained, FirstStageUsage: new(11, 2)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("indeterminate"); row.ResultJson.Should().BeNull();
+		row.FirstStageInputTokens.Should().Be(11); row.FirstStageOutputTokens.Should().Be(2);
+		row.SecondStageInputTokens.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task CompletionNeverOverwritesRecordedUsage()
+	{
+		await SeedAsync("usage overwrite " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+		(await store.TryStartSecondDispatchAsync(claim, Ready, 12, 4, default)).Should().BeTrue();
+
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable,
+			FirstStageUsage: new(99, 99), SecondStageUsage: new(5, 1)), Ready, default);
+		// A repeated completion for the same dispatch is stale, and must not replace either stage.
+		await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Failed, Failure: SuggestionFailure.Unavailable,
+			FirstStageUsage: new(77, 77), SecondStageUsage: new(66, 66)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("failed");
+		row.FirstStageInputTokens.Should().Be(12); row.FirstStageOutputTokens.Should().Be(4);
+		row.SecondStageInputTokens.Should().Be(5); row.SecondStageOutputTokens.Should().Be(1);
+	}
+
+	[Fact]
+	public async Task CompletionWithAnotherDispatchTokenRecordsNothing()
+	{
+		await SeedAsync("usage token " + Guid.NewGuid());
+		var store = Dispatch();
+		var work = (await store.ClaimQueuedAsync(default))!;
+		var claim = (await store.TryStartDispatchAsync(work, Ready, DateTimeOffset.UtcNow, default))!;
+
+		await store.CompleteAsync(claim with { ClaimToken = Guid.NewGuid() }, new(CategoryAssistanceAttemptOutcome.Abstained,
+			FirstStageUsage: new(9, 3), SecondStageUsage: new(4, 2)), Ready, default);
+
+		await using var verify = fixture.CreateDbContext();
+		var row = await verify.CategoryAssistanceAttempts.SingleAsync(x => x.Id == work.AttemptId);
+		row.State.Should().Be("dispatching"); row.ClaimToken.Should().Be(claim.ClaimToken);
+		row.FirstStageInputTokens.Should().BeNull(); row.FirstStageOutputTokens.Should().BeNull();
+		row.SecondStageInputTokens.Should().BeNull(); row.SecondStageOutputTokens.Should().BeNull();
 	}
 
 	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description, int dailyLimit = 100)
@@ -1125,7 +1270,8 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			}
 			await store.CompleteAsync(claim, new(CategoryAssistanceAttemptOutcome.Suggested,
 				new("some-category", ["some-category"], null, 0.9, 0.9, 0.9,
-					new("jev", "jev-1.14.0", CategorySuggestionPolicy.Version, seed.Taxonomy.ToString("D"), 1, 1))), Ready, default);
+					new("jev", "jev-1.14.0", CategorySuggestionPolicy.Version, seed.Taxonomy.ToString("D"), 1, 1), "local_choice",
+					RootCandidates: [new("some-category", 0.9)], LeafCandidates: [new("some-category", 0.9)])), Ready, default);
 			await using var verify = fixture.CreateDbContext();
 			var attempt = await verify.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == work.AttemptId);
 			attempt.State.Should().Be("stale"); attempt.ResultJson.Should().BeNull();

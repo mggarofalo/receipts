@@ -54,7 +54,7 @@ public class TwoStageEvaluationTests : IDisposable
 		{
 			string path = Path.Combine(Packet, name);
 			File.WriteAllText(path, JsonSerializer.Serialize(value, ProductionParity.JsonOptions));
-			hashes[name] = OfflinePairedEvaluation.Hash(File.ReadAllBytes(path));
+			hashes[name] = Hashing.Hash(File.ReadAllBytes(path));
 		}
 		Write("policy.private.json", policy);
 		Write("cases.private.json", Enumerable.Range(0, cases).Select(i => Case(i)).ToArray());

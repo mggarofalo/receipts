@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Infrastructure.Entities.CategoryAssistance;
 using Infrastructure.IntegrationTests.Fixtures;
@@ -27,7 +28,7 @@ public class OrganizerMigrationOrderTests(PostgresFixture fixture)
 		string[] mainSchema = await Schema(db);
 		Guid attemptId = Guid.NewGuid();
 		Guid dispatchToken = Guid.NewGuid();
-		db.Add(new CategoryAssistanceAttemptEntity
+		var seeded = new CategoryAssistanceAttemptEntity
 		{
 			Id = attemptId,
 			RequestId = Guid.NewGuid(),
@@ -39,8 +40,12 @@ public class OrganizerMigrationOrderTests(PostgresFixture fixture)
 			DispatchToken = dispatchToken,
 			FirstStageInputTokens = 42,
 			FirstStageOutputTokens = 11
-		});
-		await db.SaveChangesAsync();
+		};
+		// This schema predates later attempt columns; populate only the columns it has.
+		await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO category_assistance."Attempts"
+            SELECT * FROM json_populate_record(NULL::category_assistance."Attempts", {JsonSerializer.Serialize(seeded)}::json)
+            """);
 
 		if (useScript)
 		{

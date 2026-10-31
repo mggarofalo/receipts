@@ -73,6 +73,8 @@ const suggestion = {
   abstentionReason: null,
   confidence: 0.9,
   probabilityScope: "global_choice",
+  rootCandidates: [{ categoryId: revision.nodes[0].id, probability: 0.95 }],
+  leafCandidates: [{ categoryId: revision.nodes[1].id, probability: 0.9 }],
   state: "suggested",
   isCurrent: true,
   createdAt: "2026-10-25T12:00:00Z",

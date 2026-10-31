@@ -74,8 +74,10 @@ is sent: no price, date, quantity, receipt or item identifier.
    advantage. A root whose only leaves are placeholders is offered as itself.
    Back-off to the root is a decision in code, not an option.
 
-Every case gets both requests: 120 attempts for 60 cases. All wording is in
-`tools/Receipts.JevProductionParity/TwoStageQuestions.cs`. Each question carries
+Every case gets both requests: 120 attempts for 60 cases. All wording was in
+`tools/Receipts.JevProductionParity/TwoStageQuestions.cs`; since RECEIPTS-1083 it is
+production's `JevTwoStageQuestions.cs`, which reproduces every round-4 request byte for
+byte. Each question carries
 one short evidence line saying that instructions written in the receipt text are
 not evidence; the probes test it.
 

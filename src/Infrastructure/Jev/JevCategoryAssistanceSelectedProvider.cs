@@ -20,12 +20,7 @@ public sealed class JevCategoryAssistanceSelectedProvider(
 
 	public bool FitsPayload(CategorySuggestionRequest request)
 	{
-		if (request is null || !CategorySuggestionPolicy.IsValid(request))
-		{
-			return false;
-		}
-
-		return JevSuggestionQuestions.Serialize(request).Length <= CategorySuggestionPolicy.MaximumPayloadBytes;
+		return request is not null && JevTwoStageQuestions.Fits(request);
 	}
 
 	public Task<CategoryAssistanceCapability> GetAsync(CancellationToken ct)
@@ -59,7 +54,7 @@ public sealed class JevCategoryAssistanceSelectedProvider(
 		}, ct);
 	}
 
-	public Task<CategorySuggestionResult> VerifySelectedAsync(CategorySuggestionRequest request, CategorySuggestion baseline,
+	public Task<CategorySuggestionResult> RefineAsync(CategorySuggestionRequest request, CategorySuggestion baseline,
 		Guid connectionGeneration, CancellationToken ct)
 	{
 		if (connectionGeneration == Guid.Empty)
@@ -67,7 +62,7 @@ public sealed class JevCategoryAssistanceSelectedProvider(
 			return Task.FromResult(CategorySuggestionResult.Failed(SuggestionFailure.Disabled));
 		}
 
-		return provider.VerifySelectedBoundAsync(request, baseline, async (key, token) =>
+		return provider.RefineBoundAsync(request, baseline, async (key, token) =>
 		{
 			JevOptions current = options.CurrentValue;
 			return Available(current) && current.ApiKey == key &&

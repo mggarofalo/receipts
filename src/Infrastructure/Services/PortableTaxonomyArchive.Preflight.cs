@@ -31,8 +31,9 @@ internal static partial class PortableTaxonomyArchive
 			ReviewDispositions = candidate ? await db.HistoricalGroupDispositions.AsNoTracking().ToListAsync(ct) : [],
 			ReviewDispositionOperations = candidate ? await db.HistoricalDispositionOperations.AsNoTracking().ToListAsync(ct) : [],
 			IncludesHistorical = true,
-			HistoricalOperations = await db.HistoricalOperations.AsNoTracking().ToListAsync(ct),
-			HistoricalItems = await db.HistoricalOperationItems.AsNoTracking().ToListAsync(ct),
+			// Destination Jev activity is local and never archived, so it takes no part in restore validation.
+			HistoricalOperations = await PortableHistoricalOperations(db).AsNoTracking().ToListAsync(ct),
+			HistoricalItems = await PortableHistoricalItems(db).AsNoTracking().ToListAsync(ct),
 			IncludesMappings = true,
 			MappingRevisions = await db.CategoryMappingRevisions.AsNoTracking().ToListAsync(ct),
 			MappingHeads = await db.CategoryMappingHeads.AsNoTracking().ToListAsync(ct)

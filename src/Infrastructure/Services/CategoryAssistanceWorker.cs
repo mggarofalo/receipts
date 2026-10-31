@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
-/// <summary>Sequential, bounded polling of post-consent save observations.</summary>
+/// <summary>Sequential, bounded polling of post-consent save observations, then of strong matches to write.</summary>
 public sealed class CategoryAssistanceWorker(
 		IServiceScopeFactory scopes,
 		IOptionsMonitor<JevOptions> options,
@@ -50,7 +50,10 @@ public sealed class CategoryAssistanceWorker(
 
 		await scope.ServiceProvider.GetRequiredService<ICategoryAssistanceConnectionReconciler>()
 				.ReconcileAsync(JevCategoryAssistanceSelectedProvider.ConfigurationFor(current.ApiKey), ct);
-		return await scope.ServiceProvider.GetRequiredService<CategoryAssistanceDispatcher>()
+		bool dispatched = await scope.ServiceProvider.GetRequiredService<CategoryAssistanceDispatcher>()
 				.DispatchOneAsync(ct);
+		bool applied = await scope.ServiceProvider.GetRequiredService<CategoryAssistanceAutoWriter>()
+				.ApplyNextAsync(ct);
+		return dispatched || applied;
 	}
 }

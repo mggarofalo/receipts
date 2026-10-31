@@ -31,20 +31,22 @@ public sealed class LiveDryRunTests : IDisposable
 		Assert.False(File.Exists(packet.Journal));
 		JsonElement report = Report();
 		Assert.Equal("dry-run-no-dispatch", report.GetProperty("mode").GetString());
-		Assert.Equal(4, report.GetProperty("totalCases").GetInt32());
-		Assert.Equal(8, report.GetProperty("maximumAttempts").GetInt32());
-		Assert.Equal(8 * 2_752_512L, report.GetProperty("combinedMaximumReservationNanodollars").GetInt64());
-		Assert.Equal(0.8, report.GetProperty("autoWriteSelectedGate").GetDouble());
+		JsonElement numbers = report.GetProperty("numbers");
+		Assert.Equal(4, numbers.GetProperty("totalCases").GetInt32());
+		Assert.Equal(8, numbers.GetProperty("maximumAttempts").GetInt32());
+		Assert.Equal(SyntheticPacket.Create().CombinedMaximumReservationNanodollars,
+			numbers.GetProperty("combinedMaximumReservationNanodollars").GetInt64());
 		Assert.True(report.GetProperty("credentialPresent").GetBoolean());
 		Assert.True(report.GetProperty("approval").GetProperty("valid").GetBoolean());
 		Assert.Equal("absent", report.GetProperty("journal").GetProperty("status").GetString());
-		Assert.Equal(4, report.GetProperty("baselineRequests").GetInt32());
-		Assert.Equal(4, report.GetProperty("requestSha256s").GetArrayLength());
-		Assert.True(report.GetProperty("requestBytes").GetProperty("total").GetInt64() > 0);
+		Assert.Equal(4, numbers.GetProperty("stage1Requests").GetInt32());
+		Assert.Equal(4, report.GetProperty("stage1RequestSha256s").GetArrayLength());
+		Assert.True(numbers.GetProperty("stage1Bytes").GetProperty("total").GetInt64() > 0);
 		string text = File.ReadAllText(Output);
 		Assert.DoesNotContain(Key, text);
 		Assert.DoesNotContain("synthetic apple", text);
 		Assert.DoesNotContain("synthetic-0", text);
+		Assert.DoesNotContain("Synthetic Store", text);
 	}
 
 	[Fact]
@@ -63,7 +65,7 @@ public sealed class LiveDryRunTests : IDisposable
 	public async Task ApprovalOutsidePolicyIsReportedByCategory()
 	{
 		packet.Prepare();
-		string approval = packet.WriteApproval(priorCarry: 4_750_000_000);
+		string approval = packet.WriteApproval(priorCarry: 0);
 		Assert.Equal(0, await Run(approval, new() { ["TYPESAFE_API_KEY"] = Key }, "--dry-run"));
 		Assert.Equal("budget-mismatch", Report().GetProperty("approval").GetProperty("status").GetString());
 	}
@@ -95,6 +97,15 @@ public sealed class LiveDryRunTests : IDisposable
 		Assert.Equal(2, await Run(approval, new() { ["TYPESAFE_API_KEY"] = Key }));
 		File.WriteAllText(Output, "{}");
 		Assert.Equal(2, await Run(approval, new() { ["TYPESAFE_API_KEY"] = Key }, "--dry-run"));
+		Assert.False(File.Exists(packet.Journal));
+	}
+
+	[Fact]
+	public async Task RoundThreePacketIsRejectedWithoutReport()
+	{
+		packet.Prepare(policy => policy["packetKind"] = "owner-labels-v1");
+		Assert.Equal(2, await Run(packet.WriteApproval(), new() { ["TYPESAFE_API_KEY"] = Key }, "--dry-run"));
+		Assert.False(File.Exists(Output));
 		Assert.False(File.Exists(packet.Journal));
 	}
 

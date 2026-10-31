@@ -99,8 +99,10 @@ purchases. The long-running API host registers it alongside the Classification
 workspace's automatic activity and conditional undo surface. There is no new setting
 or consent toggle, and this worker
 never resolves a suggestion provider. Existing classification-write configuration and
-migration readiness still apply. This activates reuse of explicit approvals; Jev
-automatic classification remains unimplemented.
+migration readiness still apply. This activates reuse of explicit approvals. Strong Jev
+matches are written by the category assistance worker instead (see
+[the Jev adapter](jev-suggestion-adapter.md)); they share this activity list and undo, and
+never create or approve a mapping.
 
 Each pass advances at most one 100-purchase frozen sweep page. A rotating scan of
 current mapping heads revisits sources to find later purchases, including item IDs

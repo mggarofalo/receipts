@@ -3978,6 +3978,11 @@ export interface components {
             updatedAt: string;
         };
         HistoricalOperationSummary: {
+            /**
+             * @description Who decided the change. `jev` operations are strong Jev matches written automatically.
+             * @enum {string}
+             */
+            source: "manual" | "approved_mapping" | "jev";
             /** Format: uuid */
             undoTaxonomyRevisionId?: string | null;
             /** Format: uuid */
@@ -4155,6 +4160,8 @@ export interface components {
             items: components["schemas"]["CategoryAssistanceHistoricalProgress"][];
         };
         CategoryAssistanceSettings: {
+            /** @description Write strong Jev matches automatically (undoable in automatic activity). Has effect only while consent is enabled. Defaults to true. */
+            autoApply: boolean;
             enabled: boolean;
             provider: string | null;
             model: string | null;
@@ -4175,6 +4182,8 @@ export interface components {
             pendingLimit: number;
             /** Format: uuid */
             expectedRevision: string;
+            /** @description Omit or send null to keep the saved choice. */
+            autoApply?: boolean | null;
         };
         CategoryAssistanceSuggestionPage: {
             /** Format: int32 */
@@ -4204,6 +4213,10 @@ export interface components {
             selectedPathSupport: number | null;
             /** @enum {string} */
             probabilityScope: "global_choice" | "local_choice";
+            /** @description Stage-1 top roots in rank order with their stage-1 probability. Empty for results of earlier policies. */
+            rootCandidates: components["schemas"]["CategoryAssistanceCandidateRead"][];
+            /** @description Stage-2 top choices among the children of the top roots, with their stage-2 probability. Empty when stage 2 did not run. */
+            leafCandidates: components["schemas"]["CategoryAssistanceCandidateRead"][];
             state: string;
             /** @enum {string} */
             reviewState?: "active" | "later" | "left_as_is";
@@ -4216,6 +4229,12 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             completedAt: string | null;
+        };
+        CategoryAssistanceCandidateRead: {
+            /** Format: uuid */
+            categoryId: string;
+            /** Format: double */
+            probability: number;
         };
         CategoryAssistanceSavedReviewPage: {
             /** Format: int32 */
@@ -4271,6 +4290,11 @@ export interface components {
             stale: number;
             /** Format: int32 */
             indeterminate: number;
+            /**
+             * Format: int32
+             * @description Strong matches written automatically; they no longer wait for review.
+             */
+            applied: number;
             /** Format: int32 */
             todayAttempts: number;
             recentFailures: components["schemas"]["CategoryAssistanceFailureRead"][];

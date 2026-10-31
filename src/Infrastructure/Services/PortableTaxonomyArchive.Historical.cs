@@ -11,7 +11,7 @@ internal static partial class PortableTaxonomyArchive
 {
 	private static async Task ExportHistoricalAsync(ApplicationDbContext db, SqliteConnection sqlite, CancellationToken ct)
 	{
-		if (await db.HistoricalOperations.AnyAsync(x => x.Kind != HistoricalOperationKind.ManualV1, ct))
+		if (await PortableHistoricalOperations(db).AnyAsync(x => x.Kind != HistoricalOperationKind.ManualV1, ct))
 		{ throw new InvalidDataException("Automatic historical operations cannot be exported yet."); }
 		async Task Rows<T>(string kind, IQueryable<T> rows) where T : class
 		{
@@ -25,9 +25,16 @@ internal static partial class PortableTaxonomyArchive
 				await command.ExecuteNonQueryAsync(ct);
 			}
 		}
-		await Rows("operation", db.HistoricalOperations);
-		await Rows("item", db.HistoricalOperationItems);
+		await Rows("operation", PortableHistoricalOperations(db));
+		await Rows("item", PortableHistoricalItems(db));
 	}
+
+	// Jev operations stay with the deployment: their evidence is the local attempt, which is never archived.
+	internal static IQueryable<HistoricalOperationEntity> PortableHistoricalOperations(ApplicationDbContext db) =>
+		db.HistoricalOperations.Where(x => x.Kind != HistoricalOperationKind.JevSuggestionV1);
+
+	internal static IQueryable<HistoricalOperationItemEntity> PortableHistoricalItems(ApplicationDbContext db) =>
+		db.HistoricalOperationItems.Where(i => PortableHistoricalOperations(db).Any(h => h.Id == i.OperationId));
 
 
 	// The public archive format predates automatic provenance. Keep its exact manual

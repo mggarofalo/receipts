@@ -254,7 +254,7 @@ public sealed class CategoryAssistanceHistoricalRequestStore(
 			};
 		}).ToArray();
 		var allStates = progress.SelectMany(x => x.States).ToArray();
-		string state = allStates.All(x => x is "suggested" or "abstained" or "accepted" or "dismissed") ? "ready" :
+		string state = allStates.All(x => x is "suggested" or "abstained" or "accepted" or "dismissed" or "applied") ? "ready" :
 			allStates.All(x => x is "stale" or "failed" or "indeterminate") ? "failed" :
 			allStates.Any(x => x is "waiting" or "queued" or "dispatching") ? "pending" : "partial";
 		return new(request.OperationId, request.CreatedAt, groups.Length, request.ItemCount, state, progress);

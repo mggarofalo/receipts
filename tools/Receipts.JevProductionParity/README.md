@@ -1,135 +1,19 @@
-# Offline Jev production question and decision parity
+# Jev evaluation and production parity
 
-The original single-fixture mode references the shipped Infrastructure/Application assemblies and calls
-`JevSuggestionQuestions.Serialize` and the hierarchical `CategorySuggestionPolicy.Decide`
-directly. There is no copied question wording or decision policy. It instantiates
-no provider, HTTP client, application host, database, or model. It reads only the
-explicit fixture file and writes one JSON result to stdout; it reads no credentials
-or application configuration.
+Offline and opt-in live evaluation of the production Jev request. The tool references
+the shipped Infrastructure/Application assemblies and builds every request with the
+production builder (`Infrastructure.Jev.JevTwoStageQuestions`), so evaluation and
+production send the same bytes. There is no copied question wording or decision
+policy.
 
-From the repository root:
-
-```powershell
-dotnet run --project tools/Receipts.JevProductionParity -- tools/Receipts.JevProductionParity/fixtures/synthetic-fruit.json
-dotnet test tests/Infrastructure.Tests/Infrastructure.Tests.csproj --filter FullyQualifiedName~JevProductionParityTests
-```
-
-Build/restore may access package feeds. After building, run the tool DLL directly
-to avoid build/restore and to obtain clean machine-readable stdout:
-
-```powershell
-dotnet tools/Receipts.JevProductionParity/bin/Debug/net10.0/Receipts.JevProductionParity.dll tools/Receipts.JevProductionParity/fixtures/synthetic-fruit.json
-```
-
-Supply synthetic or independently sanitized descriptions, taxonomy labels, and
-judgments. The tool does not sanitize or certify input. Its output includes the
-exact serialized request, so handle it with the same care as the fixture.
-
-The fixture contains `id`, production `request`, and a typed production hierarchy
-`judgment`. The checked-in example is entirely synthetic. Preserve taxonomy order:
-production branch question names depend on it. A judgment must cover every root
-and branch Choice, including branches the final path does not visit. Invalid
-judgments remain production `InvalidResponse` results; invalid requests and
-oversized payloads exit with code 2. Valid execution exits 0 even when the policy
-rejects a judgment or abstains, since those are recorded evaluation outcomes.
-
-`questionSha256` hashes the exact production UTF-8 request bytes, including state,
-question order, and options. `decisionSha256` hashes the compact camelCase JSON of
-the entire production decision, including provenance and usage. Both are lowercase
-SHA-256 hex and exclude fixture id, filenames, timestamps, and environment values.
-The fingerprints are stable for identical inputs and the same code/runtime; they
-are not a canonical cross-language JSON standard. Compare records at a recorded
-git revision and .NET SDK/runtime version. Model and policy version come directly
-from production constants. No evaluation accuracy is implied by matching hashes.
-
-This adapter covers question serialization and typed judgment policy only. It
-does not validate raw provider-response parsing, authorization, concurrency,
-credential lifecycle, transport errors, end-to-end orchestration, or model quality.
-Those remain separate provider/integration tests. It cannot send inference calls.
-
-## Packet policy
-
-Every packet carries a frozen `policy.private.json`. Its SHA256 (and that of
-`cases.private.json`) must appear in `freeze.private.json` `filesSha256`. All
-fields are required; extra fields are ignored:
-
-```json
-{"packetKind":"owner-labels-v1","cases":12,"maximumAttempts":24,"reservationNanodollarsPerAttempt":2752512,"conservativePriorCarryNanodollars":4873863040,"cumulativeCeilingNanodollars":5000000000,"baselineGate":0.7,"autoWriteGlobalGate":0.9,"autoWriteSelectedGate":0.8,"liveAuthorized":false}
-```
-
-Rules: 1–48 cases; `maximumAttempts` = 2 × cases (one baseline plus one
-conditional selected-path attempt each); per-attempt reservation fixed at
-65,536 input tokens × USD 0.042/million = 2,752,512 nanodollars; carry >= 0;
-ceiling <= USD 5; carry + maximum reservation <= ceiling; `baselineGate` 0.7;
-auto-write gates finite in [0.7, 1]; `liveAuthorized` false (dispatch is
-authorized only by a separate approval file). `freeze.private.json` records a
-40-character lowercase `sourceCommit`, but the real pin is the six
-`production-source/` snapshots, which must be byte-identical to the checkout.
-`filesSha256` paths must stay inside the packet.
-
-The auto-write gates are scoring inputs. Replay applies only the production
-gates (global fit 0.7, selected-path support 0.7); treatment output carries
-`selectedPathSupport` so a scorer can apply the stricter policy gates.
-
-## Offline paired packet runner
-
-`offline-plan` verifies the packet freeze, policy and source snapshots against
-the supplied checkout, requires exactly `cases` cases sharing one ordered
-taxonomy, and writes the policy numbers, gates and exact baseline payloads to a
-new private file. It does not read annotation labels or evaluate cases.
-
-Every offline command takes the repository root and rejects an output path
-inside it, the same guard `live-run` applies. Outputs and the live journal are
-created owner-only (`0600` on Unix) and never replace an existing file.
-
-```powershell
-dotnet run --project tools/Receipts.JevProductionParity -- offline-plan <private-packet-directory> <repository-root> <new-private-plan.json>
-dotnet run --project tools/Receipts.JevProductionParity -- offline-replay <policy.private.json> <private-cases.json> <private-exchanges.json> <repository-root> <new-private-replay.json>
-dotnet test tests/Infrastructure.Tests/Infrastructure.Tests.csproj --filter FullyQualifiedName~Jev
-```
-
-Cases have `id` and production `request` fields. Exchanges are a sequential JSON
-array of `{ "body": "<exact raw HTTP response text>", "statusCode": 200,
-"requestSha256": "<lowercase SHA256 of exact request bytes>" }` objects.
-The CLI requires every exchange to have a request fingerprint. Replay validates
-the policy file but not a packet freeze; use the validated plan and independently
-verify input provenance before interpreting a real replay. Replay accepts 1 to
-`cases` cases to support synthetic fixtures and preserves every supplied case in
-its denominator.
-
-Replay invokes the actual `JevCategoryAssistanceSelectedProvider.SuggestAsync`
-and `VerifySelectedAsync` with a fixed synthetic binding and placeholder key.
-Its `HttpClient` has an in-memory handler with no network transport. Environment
-credentials, application configuration, database and real connection bindings
-are never loaded. Production payload serialization, raw Choice validation,
-hierarchy reduction and the bound selected-path parser all execute unchanged.
-This verifies offline production semantics; real authorization revocation and
-HTTP networking still need separate integration evidence.
-
-The baseline is shared between arms. Valid global abstentions skip the second
-exchange. Treatment is the baseline suggestion with the same full path kept at
-selected support >=0.7 (including useful parent stops), otherwise category
-cleared with `uncertain-selected-path`. Missing or request-mismatched exchanges
-are `unknown`; invalid or HTTP error responses are `failed`. Either stops
-processing, preserves the suffix as `unattempted`, and retains the attempt
-reservation. No retries, response repair, real write, labeling, scoring or
-acceptance conclusion occurs. A completed artifact exits 0 even when replay
-records a stopped run; inspect `stopped` and outcome statuses. Input/artifact
-errors exit 2 without echoing private contents.
-
-Replay simulates the policy reservation: at most `maximumAttempts` attempts at
-USD 0.002752512 each, plus the prior carry, never above the ceiling. This is
-offline accounting, not a live ledger or account balance check. Actual remaining
-provider credit is unknown. The offline commands never dispatch. Request
-payloads and outcome identifiers are written only to the exclusive-created
-output; keep all real input/output files outside git. Run the DLL directly after
-build to avoid restore.
+Round 3 (`owner-labels-v1`, the paired baseline/selected-path runner and the single
+fixture mode) was bound to the retired `classification-questions-v6` policy and has
+been removed; its frozen journals and reports remain the record of that round.
 
 ## Opt-in sequential live controller
 
-`live-run` is an explicit opt-in transport; preparing/building/testing it sends no
-requests. It uses the same production replay parser to determine each exact next
-payload, then posts those bytes to the pinned `/v1/systemone` endpoint with Bearer
+`live-run` is an explicit opt-in transport for round-4 packets; preparing/building/testing it sends no
+requests. It uses the same replay to determine each exact next payload, then posts those bytes to the pinned `/v1/systemone` endpoint with Bearer
 authentication and JSON content type. There are no redirects, application retries,
 long-context headers, fallback calls or production writes. Never print the key or
 private artifacts.
@@ -180,7 +64,7 @@ performs every check that needs no network and writes a report
 `unreadable`, `not-authorized`, `pricing-unverified`, `freeze-mismatch`,
 `expired` or `budget-mismatch`), journal status (`absent`, `empty`, `resumable`,
 `outstanding-intent`, `invalid` or `locked-or-unreadable`, with completed
-exchanges and whether its identity matches), and baseline request count, byte
+exchanges and whether its identity matches), and stage-1 request count, byte
 sizes and SHA256s. It never contains request bodies, descriptions or the key,
 never creates a transport and never creates or modifies the journal. A missing
 approval or credential is reported, not fatal; packet, path or output errors exit 2.
@@ -202,8 +86,7 @@ remain charged, including failed/unknown attempts, up to the policy maximum.
 The controller reuses saved responses through the production parsers on resume.
 A missing response, partial journal, parse/HTTP failure, request drift (on any
 saved exchange, including the last) or ambiguous send stops; an outstanding intent is never resent automatically.
-Complete successful prefixes can resume, preserving the original ordering and
-conditional selected-path calls. Do not resume failed/unknown holdouts for
+Complete successful prefixes can resume, preserving the original ordering. Do not resume failed/unknown holdouts for
 tuning. Disk corruption, deletion, manual edits and separate copies of a packet
 require operator investigation.
 
@@ -217,9 +100,11 @@ the production application and does not authorize automatic classification.
 
 ## Round-4 two-stage packets (`owner-labels-v4`)
 
-An evaluation-only request shape, `two-stage-v1`, built in this tool
-(`TwoStageQuestions.cs` holds all wording). Production code is not called or
-changed. A packet holds `policy.private.json`, `cases.private.json`
+The round-4 request shape (`two-stage-v1` in the packet) is now production's
+`classification-questions-v7`. `TwoStageQuestions.cs` only adapts a packet to the
+production request; all wording lives in `src/Infrastructure/Jev/JevTwoStageQuestions.cs`.
+An evaluation asks stage 2 for every case, where production skips it after a stage-1
+abstention. A packet holds `policy.private.json`, `cases.private.json`
 (`id`, `description`, nullable `store`) and `taxonomy.private.json` (item roots
 only, placeholder leaves removed), all three bound by `freeze.private.json`.
 `offline-plan` and `live-run` recognise the packet kind; there are no production
@@ -234,6 +119,7 @@ source snapshots to pin.
 ```bash
 dotnet <dll> offline-plan <packet-directory> <repository-root> <new-private-plan.json>
 dotnet <dll> offline-replay-v4 <packet-directory> <exchanges.json> <repository-root> <new-private-replay.json>
+dotnet <dll> offline-production-v4 <packet-directory> <exchanges.json> <repository-root> <new-private-report.json>
 dotnet <dll> live-run <packet-directory> <repository-root> <approval.json> <packet-directory>/live.journal.jsonl <new-output.json> --dry-run
 ```
 
@@ -261,3 +147,11 @@ whose carry plus maximum exceeds the ceiling, and an approval must restate the
 same carry and ceiling. Every other live safeguard (pinned model, durable intent
 before each send, no retries, ten-second deadline, key bound to the journal) is
 the shared journalled loop used by round 3.
+
+**Production parity.** `offline-production-v4` rebuilds every recorded request with the
+production builder and checks it against the recorded request hash, then replays the
+recorded responses through the production parser, `CategorySuggestionPolicy` and
+`CategoryAutoWritePolicy` at the default thresholds. The private report counts matched
+request bytes, stage-2 requests production would send, abstentions, suggestions, and
+automatic root and leaf writes (with leaf writes off, as configured, and on, for
+comparison). It sends nothing and reads no configuration or credential.

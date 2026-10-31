@@ -18,7 +18,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		{ throw new ArgumentException("Actor, nonnegative offset and limit of 1 to 25 are required."); }
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		List<HistoricalOperationEntity> rows = await db.HistoricalOperations.AsNoTracking()
-			.Where(x => x.Actor == actor && x.Kind == HistoricalOperationKind.ApprovedMappingV1)
+			.Where(x => x.Actor == actor && (x.Kind == HistoricalOperationKind.ApprovedMappingV1 || x.Kind == HistoricalOperationKind.JevSuggestionV1))
 			.OrderByDescending(x => x.CapturedAt).ThenByDescending(x => x.Id)
 			.Skip(offset).Take(limit + 1).ToListAsync(ct);
 		List<HistoricalOperationSummary> summaries = [];
@@ -218,7 +218,15 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	{
 		var selections = JsonSerializer.Deserialize<HistoricalGroupSelection[]>(row.SelectionJson) ?? [];
 		return new(row.Id, row.State, row.CapturedAt, row.TaxonomyRevisionId,
-				row.Reason, selections, await ProgressAsync(db, row, ct), row.UndoTaxonomyRevisionId);
+				row.Reason, selections, await ProgressAsync(db, row, ct), row.UndoTaxonomyRevisionId)
+		{
+			Source = row.Kind switch
+			{
+				HistoricalOperationKind.ApprovedMappingV1 => "approved_mapping",
+				HistoricalOperationKind.JevSuggestionV1 => "jev",
+				_ => "manual"
+			}
+		};
 	}
 
 	public async Task<HistoricalItemPage> ReadItemsAsync(string actor, Guid id, int offset, int limit, CancellationToken ct = default)
@@ -242,7 +250,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		ArgumentNullException.ThrowIfNull(command);
 		await using var db = await factory.CreateDbContextAsync(ct);
 		var operation = await OwnedAsync(db, actor, id, false, ct);
-		Guid? generation = operation.Kind == HistoricalOperationKind.ApprovedMappingV1
+		Guid? generation = IsAutomatic(operation.Kind)
 			? await db.CategoryAssistanceSettings.AsNoTracking().Select(x => (Guid?)x.RestoreGeneration).SingleAsync(ct) : null;
 		return await RunChunkAsync(actor, id, command, limit, ct, operation.Kind, generation);
 	}
@@ -276,7 +284,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
-		if (kind == HistoricalOperationKind.ApprovedMappingV1)
+		if (IsAutomatic(kind))
 		{
 			Guid currentGeneration = await db.CategoryAssistanceSettings.AsNoTracking()
 				.Select(x => x.RestoreGeneration).SingleAsync(ct);
@@ -288,6 +296,9 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		{ throw new TaxonomyException(409, "Historical operation kind does not match the execution path."); }
 		if (kind == HistoricalOperationKind.ApprovedMappingV1 && operation.ApprovedMappingRevisionId is null)
 		{ throw new TaxonomyException(409, "Automatic historical capture lacks mapping identity."); }
+		// Jev operations are written whole by the auto-writer; only their undo runs here.
+		if (kind == HistoricalOperationKind.JevSuggestionV1 && (undo == null || operation.ApprovedMappingRevisionId is not null))
+		{ throw new TaxonomyException(409, "Automatic Jev operations can only be undone."); }
 		bool reverting = undo != null;
 		if (reverting && operation.UndoTaxonomyRevisionId != null &&
 			(operation.UndoTaxonomyRevisionId != undo!.TaxonomyRevisionId || operation.UndoReason != undo.Reason))
@@ -298,7 +309,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		TaxonomyHeadEntity head = await HeadAsync(db, ct);
 		// Only an initial automatic undo can refresh its taxonomy intent. A resumed
 		// undo keeps its saved revision so subsequent taxonomy changes still conflict.
-		if (reverting && kind == HistoricalOperationKind.ApprovedMappingV1 &&
+		if (reverting && IsAutomatic(kind) &&
 				operation.UndoTaxonomyRevisionId == null && head.RevisionId != undo!.TaxonomyRevisionId)
 		{
 			throw new TaxonomyException(409, "Categories changed. Try Undo again.",
@@ -345,6 +356,9 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		await transaction.CommitAsync(ct);
 		return await ProgressAsync(db, operation, ct);
 	}
+
+	private static bool IsAutomatic(HistoricalOperationKind kind) =>
+		kind is HistoricalOperationKind.ApprovedMappingV1 or HistoricalOperationKind.JevSuggestionV1;
 
 	private static IQueryable<HistoricalOperationItemEntity> Pending(ApplicationDbContext db, Guid id, bool undo) =>
 		db.HistoricalOperationItems.Where(x => x.OperationId == id && (undo

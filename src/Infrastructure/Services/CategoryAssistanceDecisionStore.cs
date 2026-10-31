@@ -245,7 +245,8 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 	}
 
 	internal static async Task<List<CategoryAssistanceObservationEntity>> GetEligibleObservationsAsync(
-		ApplicationDbContext db, CategoryAssistanceAttemptEntity attempt, Guid[]? itemIds, CancellationToken ct)
+		ApplicationDbContext db, CategoryAssistanceAttemptEntity attempt, Guid[]? itemIds, CancellationToken ct,
+		bool uncategorizedOnly = false)
 	{
 		var query = db.CategoryAssistanceObservations.AsNoTracking().Where(x => x.AttemptId == attempt.Id &&
 			(attempt.RequestScope == Guid.Empty || x.SaveId == attempt.RequestScope));
@@ -261,7 +262,7 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		var eligible = new List<CategoryAssistanceObservationEntity>();
 		foreach (var marker in latest)
 		{
-			if (await IsEligibleAsync(db, attempt, marker, ct))
+			if (await IsEligibleAsync(db, attempt, marker, ct, uncategorizedOnly))
 			{
 				eligible.Add(marker);
 			}
@@ -300,8 +301,11 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		}
 	}
 
-	private static async Task<bool> IsEligibleAsync(ApplicationDbContext db,
-		CategoryAssistanceAttemptEntity attempt, CategoryAssistanceObservationEntity marker, CancellationToken ct)
+	// An explicit history request may replace an existing category when a person accepts it; uncategorizedOnly (automatic
+	// writes) holds every marker to the post-save rule instead, so nothing already categorized is ever overwritten.
+	internal static async Task<bool> IsEligibleAsync(ApplicationDbContext db,
+		CategoryAssistanceAttemptEntity attempt, CategoryAssistanceObservationEntity marker, CancellationToken ct,
+		bool uncategorizedOnly = false)
 	{
 		if ((attempt.RequestScope == Guid.Empty && marker.Evidence != "post_consent_no_choice_save") ||
 			(attempt.RequestScope != Guid.Empty &&
@@ -319,7 +323,7 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		if (item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null ||
 			receipt.DeletedAt != null || item.NormalizationRevision != marker.ItemRevision ||
 						receipt.NormalizationRevision != marker.ReceiptRevision ||
-						marker.Evidence == "post_consent_no_choice_save" && (!string.IsNullOrEmpty(item.Category) ||
+						(uncategorizedOnly || marker.Evidence == "post_consent_no_choice_save") && (!string.IsNullOrEmpty(item.Category) ||
 						!string.IsNullOrEmpty(item.Subcategory)))
 		{
 			return false;
@@ -339,7 +343,7 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 								join history in db.Classifications.AsNoTracking() on current.AssignmentId equals history.Id
 								where current.ReceiptItemId == item.Id
 								select history).SingleOrDefaultAsync(ct);
-		if (assignment?.Id != marker.AssignmentId || assignment != null && marker.Evidence != "explicit_history_request" && !(assignment.CategoryId == null &&
+		if (assignment?.Id != marker.AssignmentId || assignment != null && (uncategorizedOnly || marker.Evidence != "explicit_history_request") && !(assignment.CategoryId == null &&
 				(assignment.Source == "legacy_import" || assignment.Source == "legacy_write" &&
 				 assignment.LegacyResolution == "unresolved_path")))
 		{

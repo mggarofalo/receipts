@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Application.Classification;
 using Infrastructure.Jev;
@@ -10,48 +9,202 @@ namespace Infrastructure.Tests.Jev;
 
 public class JevSuggestionProviderTests
 {
-	private static readonly CategorySuggestionRequest Request = new("test purchase", "revision-1", [new("parent", "Parent", "All purchases", null)]);
-	private const string ValidResponse = """{"model":"jev-1.14.0","answers":{"category":{"type":"choice","choice":"parent","confidence":0.8,"probabilities":{"parent":1}},"fits":{"type":"noul","noul":0.9}},"usage":{"input_tokens":100,"output_tokens":10}}""";
+	private static readonly CategorySuggestionRequest Request = new("gala apples", "revision-1",
+	[
+		new("fruit", "Fruit", "Fresh or dried fruit", null),
+		new("apples", "Apples", "Apples", "fruit"),
+		new("citrus", "Citrus", "Oranges and lemons", "fruit"),
+		new("dairy", "Dairy", "Dairy", null),
+		new("milk", "Milk", "Milk", "dairy")
+	], "Corner Market");
+
+	private const string ValidStage1 = """{"model":"jev-1.14.0","answers":{"category":{"type":"choice","choice":"Fruit","confidence":0.8,"probabilities":{"Fruit":0.9,"Dairy":0.1}},"fits":{"type":"noul","noul":0.9}},"usage":{"input_tokens":100,"output_tokens":10}}""";
+	private const string ValidStage2 = """{"model":"jev-1.14.0","answers":{"subcategory":{"type":"choice","choice":"Fruit / Apples","confidence":0.7,"probabilities":{"Fruit / Apples":0.8,"Fruit / Citrus":0.1,"Dairy / Milk":0.1}}},"usage":{"input_tokens":60,"output_tokens":4}}""";
+
+	private static readonly Func<string, CancellationToken, Task<bool>> Current = (_, _) => Task.FromResult(true);
 
 	private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
 	{
 		public int Calls { get; private set; }
 		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) { Calls++; return send(request, cancellationToken); }
 	}
+
 	private static JevSuggestionProvider Provider(Handler handler, bool enabled = true, JevSuggestionConcurrency? concurrency = null)
 	{
 		Mock<IOptionsMonitor<JevOptions>> options = new();
-		options.SetupGet(value => value.CurrentValue).Returns(new JevOptions { ApiKey = "test-key", InferenceEnabled = enabled });
+		options.SetupGet(value => value.CurrentValue).Returns(new JevOptions { ApiKey = "test-key", Enabled = enabled });
 		return new(new HttpClient(handler), options.Object, concurrency ?? new());
 	}
-	private static HttpResponseMessage Response(string body = ValidResponse) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
+
+	private static HttpResponseMessage Response(string body = ValidStage1) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
+
+	private static Task<CategorySuggestionResult> Suggest(Handler handler, CategorySuggestionRequest? request = null, CancellationToken ct = default) =>
+		Provider(handler).SuggestBoundAsync(request ?? Request, Current, ct);
+
+	private static CategorySuggestion Baseline() =>
+		CategorySuggestionPolicy.DecideStage1(Request, JevTwoStageQuestions.ParseStage1(System.Text.Encoding.UTF8.GetBytes(ValidStage1), Request)!, "jev").Suggestion!;
 
 	[Fact]
-	public void PayloadContainsIndependentRootAndBranchChoices()
+	public async Task StageOnePostsTheExactProductionBytesWithAuthenticationAndReturnsABaseline()
 	{
-		JsonNode expected = JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "jev-suggestion-v4.json")))!;
-		JsonNode state = expected["state"]!;
-		SuggestionCategory[] categories = state["categories"]!.AsArray().Select(node =>
+		byte[]? sent = null;
+		Handler handler = new(async (message, token) =>
 		{
-			string[] path = node!["path"]!.Deserialize<string[]>()!;
-			return new SuggestionCategory(node["id"]!.GetValue<string>(), node["name"]!.GetValue<string>(), node["definition"]!.GetValue<string>(), path.Length > 1 ? path[^2] : null);
-		}).ToArray();
-		CategorySuggestionRequest request = new(state["receiptLine"]!["untrustedDescription"]!.GetValue<string>(), state["taxonomyRevision"]!.GetValue<string>(), categories);
-		JsonNode actual = JsonNode.Parse(JevSuggestionQuestions.Serialize(request))!;
-		Assert.Equal("jev-1.14.0", actual["model"]!.GetValue<string>());
-		Assert.Equal(categories.Count(x => x.ParentId is null), actual["questions"]!["category"]!["criteria"]!.AsObject().Count);
-		Assert.Equal(1 + categories.Count(x => categories.Any(y => y.ParentId == x.Id)) + 1, actual["questions"]!.AsObject().Count);
-		Assert.NotNull(actual["questions"]!["fits"]);
+			Assert.Equal(HttpMethod.Post, message.Method);
+			Assert.Equal("https://api.typesafe.ai/v1/systemone", message.RequestUri!.AbsoluteUri);
+			Assert.Equal("Bearer", message.Headers.Authorization!.Scheme);
+			Assert.Equal("test-key", message.Headers.Authorization.Parameter);
+			Assert.Equal("application/json", message.Content!.Headers.ContentType!.MediaType);
+			sent = await message.Content.ReadAsByteArrayAsync(token);
+			return Response();
+		});
+
+		CategorySuggestionResult actual = await Suggest(handler);
+
+		Assert.Equal(JevTwoStageQuestions.Stage1(Request), sent);
+		Assert.Null(actual.Failure);
+		Assert.Equal("fruit", actual.Suggestion!.CategoryId);
+		Assert.Equal(["fruit", "dairy"], actual.Suggestion.RootCandidates!.Select(c => c.CategoryId));
+		Assert.Equal(CategorySuggestionPolicy.Version, actual.Suggestion.Provenance.QuestionPolicy);
+		Assert.Equal("jev", actual.Suggestion.Provenance.Provider);
+		Assert.True(CategorySuggestionPolicy.IsBaseline(Request, actual.Suggestion));
+		Assert.Equal(new SuggestionUsage(100, 10), actual.Usage);
+		Assert.Equal(1, handler.Calls);
 	}
 
 	[Fact]
-	public async Task KeyAloneDoesNotEnableInference()
+	public async Task StageTwoPostsTheBaselineRootsOptionsAndReturnsTheFinalSuggestion()
+	{
+		CategorySuggestion baseline = Baseline();
+		byte[]? sent = null;
+		Handler handler = new(async (message, token) =>
+		{
+			sent = await message.Content!.ReadAsByteArrayAsync(token);
+			return Response(ValidStage2);
+		});
+
+		CategorySuggestionResult actual = await Provider(handler).RefineBoundAsync(Request, baseline, Current, default);
+
+		Assert.Equal(JevTwoStageQuestions.Stage2(Request, ["fruit", "dairy"]), sent);
+		Assert.Null(actual.Failure);
+		Assert.Equal("apples", actual.Suggestion!.CategoryId);
+		Assert.Equal(["fruit", "apples"], actual.Suggestion.Path);
+		Assert.Equal(["apples", "citrus", "milk"], actual.Suggestion.LeafCandidates!.Select(c => c.CategoryId));
+		Assert.Equal(160, actual.Suggestion.Provenance.InputTokens);
+		Assert.Equal(14, actual.Suggestion.Provenance.OutputTokens);
+		Assert.Equal(new SuggestionUsage(60, 4), actual.Usage);
+	}
+
+	[Fact]
+	public async Task RefineWithoutAValidBaselineIsInvalidInputWithoutSending()
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response(ValidStage2)));
+		CategorySuggestion baseline = Baseline();
+
+		foreach (CategorySuggestion invalid in new[] { baseline with { RootCandidates = null }, baseline with { CategoryId = "dairy", Path = ["dairy"] },
+			baseline with { LeafCandidates = [new("apples", 1)] } })
+		{
+			Assert.Equal(SuggestionFailure.InvalidInput, (await Provider(handler).RefineBoundAsync(Request, invalid, Current, default)).Failure);
+		}
+
+		Assert.Equal(0, handler.Calls);
+	}
+
+	[Fact]
+	public async Task StageOneResponseIsNotAcceptedAsStageTwo()
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response(ValidStage1)));
+		Assert.Equal(SuggestionFailure.InvalidResponse, (await Provider(handler).RefineBoundAsync(Request, Baseline(), Current, default)).Failure);
+	}
+
+	[Fact]
+	public async Task DisabledProviderDoesNotSend()
 	{
 		Handler handler = new((_, _) => Task.FromResult(Response()));
-		JevSuggestionProvider provider = Provider(handler, false);
-		Assert.False(provider.IsAvailable);
-		Assert.Equal(SuggestionFailure.Disabled, (await provider.SuggestAsync(Request, default)).Failure);
+		Assert.Equal(SuggestionFailure.Disabled, (await Provider(handler, enabled: false).SuggestBoundAsync(Request, Current, default)).Failure);
 		Assert.Equal(0, handler.Calls);
+	}
+
+	[Fact]
+	public async Task InvalidRequestIsRejectedBeforeSending()
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response()));
+		CategorySuggestionRequest deep = Request with { Categories = [.. Request.Categories, new("gala", "Gala", "Gala apples", "apples")] };
+
+		Assert.Equal(SuggestionFailure.InvalidInput, (await Suggest(handler, deep)).Failure);
+		Assert.Equal(SuggestionFailure.InvalidInput, (await Suggest(handler, Request with { Categories = null! })).Failure);
+		Assert.Equal(0, handler.Calls);
+	}
+
+	[Fact]
+	public async Task StaleBindingBeforeSendDoesNotSendAndAfterResponseDiscardsTheResult()
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response()));
+		int checks = 0;
+
+		CategorySuggestionResult before = await Provider(handler).SuggestBoundAsync(Request, (_, _) => Task.FromResult(false), default);
+		Assert.Equal(SuggestionFailure.Disabled, before.Failure);
+		Assert.Null(before.Usage);
+		Assert.Equal(0, handler.Calls);
+
+		CategorySuggestionResult after = await Provider(handler).SuggestBoundAsync(Request, (key, _) =>
+		{
+			Assert.Equal("test-key", key);
+			return Task.FromResult(++checks == 1);
+		}, default);
+		Assert.Equal(SuggestionFailure.Disabled, after.Failure);
+		Assert.Null(after.Suggestion);
+		// The response was received and billed before the fence discarded it.
+		Assert.Equal(new SuggestionUsage(100, 10), after.Usage);
+		Assert.Equal(1, handler.Calls);
+		Assert.Equal(2, checks);
+	}
+
+	public static TheoryData<Exception> PostResponseFenceFaults => new()
+	{
+		new InvalidOperationException("synthetic"),
+		// A fence-owned cancellation (its own deadline, not the caller's) must not read as a usage-free transport timeout.
+		new OperationCanceledException("synthetic fence deadline"),
+	};
+
+	[Theory]
+	[MemberData(nameof(PostResponseFenceFaults))]
+	public async Task PostResponseFenceFaultIsUnavailableAndKeepsBilledUsage(Exception fault)
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response()));
+		int checks = 0;
+
+		CategorySuggestionResult actual = await Provider(handler).SuggestBoundAsync(Request, (_, _) =>
+			++checks == 1 ? Task.FromResult(true) : Task.FromException<bool>(fault), default);
+
+		Assert.Equal(SuggestionFailure.Unavailable, actual.Failure);
+		Assert.Null(actual.Suggestion);
+		Assert.Equal(new SuggestionUsage(100, 10), actual.Usage);
+		Assert.Equal(1, handler.Calls);
+		Assert.Equal(2, checks);
+	}
+
+	[Fact]
+	public async Task CallerCancellationDuringPostResponseFencePropagates()
+	{
+		Handler handler = new((_, _) => Task.FromResult(Response()));
+		using CancellationTokenSource cancellation = new();
+		int checks = 0;
+
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Provider(handler).SuggestBoundAsync(Request, async (_, token) =>
+		{
+			if (++checks == 1)
+			{
+				return true;
+			}
+
+			cancellation.Cancel();
+			await Task.Delay(Timeout.Infinite, token);
+			return true;
+		}, cancellation.Token));
+
+		Assert.Equal(1, handler.Calls);
+		Assert.Equal(2, checks);
 	}
 
 	[Theory]
@@ -63,10 +216,18 @@ public class JevSuggestionProviderTests
 	public async Task HttpErrorsAreOneAttemptFailures(int status, SuggestionFailure expected)
 	{
 		Handler handler = new((_, _) => Task.FromResult(new HttpResponseMessage((HttpStatusCode)status)));
-		CategorySuggestionResult actual = await Provider(handler).SuggestAsync(Request, default);
+		CategorySuggestionResult actual = await Suggest(handler);
 		Assert.Equal(expected, actual.Failure);
 		Assert.Null(actual.Suggestion);
+		Assert.Null(actual.Usage);
 		Assert.Equal(1, handler.Calls);
+	}
+
+	[Fact]
+	public async Task TransportExceptionsAreUnavailable()
+	{
+		Assert.Equal(SuggestionFailure.Unavailable, (await Suggest(new((_, _) => throw new HttpRequestException("synthetic")))).Failure);
+		Assert.Equal(SuggestionFailure.Unavailable, (await Suggest(new((_, _) => throw new IOException("synthetic")))).Failure);
 	}
 
 	[Theory]
@@ -76,17 +237,60 @@ public class JevSuggestionProviderTests
 	public async Task MalformedResponsesAreFailures(string body)
 	{
 		Handler handler = new((_, _) => Task.FromResult(Response(body)));
-		Assert.Equal(SuggestionFailure.InvalidResponse, (await Provider(handler).SuggestAsync(Request, default)).Failure);
+		CategorySuggestionResult actual = await Suggest(handler);
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Usage);
 	}
 
 	[Fact]
-	public async Task ProviderDriftUnknownCategoryAndMissingUsageAreFailures()
+	public async Task StructurallyInvalidResponseWithUsageCarriesNoUsage()
 	{
-		string[] bodies = [ValidResponse.Replace("jev-1.14.0", "other-model"), ValidResponse.Replace("\"choice\":\"parent\"", "\"choice\":\"unknown\""), ValidResponse.Replace("\"input_tokens\":100", "\"wrong_tokens\":100"), ValidResponse.Replace("\"input_tokens\":100", "\"input_tokens\":-1"), ValidResponse.Replace("\"confidence\":0.8", "\"confidence\":2")];
+		// The usage block is well formed, but the answer names no offered option, so nothing was parsed.
+		Handler handler = new((_, _) => Task.FromResult(Response(ValidStage1.Replace("\"choice\":\"Fruit\"", "\"choice\":\"Unknown\""))));
+		CategorySuggestionResult actual = await Suggest(handler);
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Usage);
+	}
+
+	[Theory]
+	[InlineData("\"confidence\":0.8", "\"confidence\":2")]
+	[InlineData("\"Dairy\":0.1", "\"Dairy\":0.2")]
+	public async Task PolicyRejectedStageOneJudgmentStillCarriesItsBilledUsage(string from, string to)
+	{
+		string body = ValidStage1.Replace(from, to);
+		Assert.NotNull(JevTwoStageQuestions.ParseStage1(System.Text.Encoding.UTF8.GetBytes(body), Request));
+
+		CategorySuggestionResult actual = await Suggest(new((_, _) => Task.FromResult(Response(body))));
+
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Suggestion);
+		Assert.Equal(new SuggestionUsage(100, 10), actual.Usage);
+	}
+
+	[Fact]
+	public async Task PolicyRejectedStageTwoJudgmentStillCarriesItsBilledUsage()
+	{
+		string body = ValidStage2.Replace("\"Dairy / Milk\":0.1", "\"Dairy / Milk\":0.2");
+		Assert.NotNull(JevTwoStageQuestions.ParseStage2(System.Text.Encoding.UTF8.GetBytes(body), Request, ["fruit", "dairy"]));
+
+		CategorySuggestionResult actual = await Provider(new((_, _) => Task.FromResult(Response(body))))
+			.RefineBoundAsync(Request, Baseline(), Current, default);
+
+		Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
+		Assert.Null(actual.Suggestion);
+		Assert.Equal(new SuggestionUsage(60, 4), actual.Usage);
+	}
+
+	[Fact]
+	public async Task ProviderDriftUnknownCategoryAndBadUsageAreFailures()
+	{
+		string[] bodies = [ValidStage1.Replace("jev-1.14.0", "other-model"), ValidStage1.Replace("\"choice\":\"Fruit\"", "\"choice\":\"Unknown\""),
+			ValidStage1.Replace("\"input_tokens\":100", "\"wrong_tokens\":100"), ValidStage1.Replace("\"input_tokens\":100", "\"input_tokens\":-1"),
+			ValidStage1.Replace("\"confidence\":0.8", "\"confidence\":2"), ValidStage1.Replace("\"Dairy\":0.1", "\"Dairy\":0.2")];
 		foreach (string body in bodies)
 		{
 			Handler handler = new((_, _) => Task.FromResult(Response(body)));
-			CategorySuggestionResult actual = await Provider(handler).SuggestAsync(Request, default);
+			CategorySuggestionResult actual = await Suggest(handler);
 			Assert.Equal(SuggestionFailure.InvalidResponse, actual.Failure);
 			Assert.Null(actual.Suggestion);
 		}
@@ -95,8 +299,8 @@ public class JevSuggestionProviderTests
 	[Fact]
 	public async Task ValidNoFitIsAnAbstentionWithUsage()
 	{
-		Handler handler = new((_, _) => Task.FromResult(Response(ValidResponse.Replace("\"noul\":0.9", "\"noul\":0.1"))));
-		CategorySuggestionResult actual = await Provider(handler).SuggestAsync(Request, default);
+		Handler handler = new((_, _) => Task.FromResult(Response(ValidStage1.Replace("\"noul\":0.9", "\"noul\":0.1"))));
+		CategorySuggestionResult actual = await Suggest(handler);
 		Assert.Null(actual.Failure);
 		Assert.Null(actual.Suggestion!.CategoryId);
 		Assert.Equal("no-fit", actual.Suggestion.AbstentionReason);
@@ -104,112 +308,39 @@ public class JevSuggestionProviderTests
 	}
 
 	[Fact]
-	public async Task PostsBoundedPayloadWithAuthenticationAndReturnsValidatedProvenance()
-	{
-		Handler handler = new(async (message, token) =>
-		{
-			Assert.Equal(HttpMethod.Post, message.Method);
-			Assert.Equal("https://api.typesafe.ai/v1/systemone", message.RequestUri!.AbsoluteUri);
-			Assert.Equal("Bearer", message.Headers.Authorization!.Scheme);
-			Assert.Equal("test-key", message.Headers.Authorization.Parameter);
-			Assert.True(JsonNode.DeepEquals(JsonNode.Parse(JevSuggestionQuestions.Serialize(Request)), JsonNode.Parse(await message.Content!.ReadAsStringAsync(token))));
-			return Response();
-		});
-		CategorySuggestionResult actual = await Provider(handler).SuggestAsync(Request, default);
-		Assert.Null(actual.Failure);
-		Assert.Equal("parent", actual.Suggestion!.CategoryId);
-		Assert.Equal(100, actual.Suggestion.Provenance.InputTokens);
-	}
-
-	[Fact]
 	public async Task OversizePayloadIsRejectedWithoutTruncatingTaxonomyOrSending()
 	{
 		Handler handler = new((_, _) => Task.FromResult(Response()));
-		CategorySuggestionRequest request = Request with { Categories = [new("parent", "Parent", new string('x', 65500), null)] };
-		Assert.Equal(SuggestionFailure.PayloadTooLarge, (await Provider(handler).SuggestAsync(request, default)).Failure);
+		CategorySuggestionRequest request = Request with { Categories = [new("fruit", "Fruit", new string('x', 65500), null), new("dairy", "Dairy", "Dairy", null)] };
+		Assert.Equal(SuggestionFailure.PayloadTooLarge, (await Suggest(handler, request)).Failure);
 		Assert.Equal(0, handler.Calls);
 	}
 
 	[Fact]
-	public async Task LargeHierarchyIsCompleteAndUsesOneRequest()
+	public async Task CallerSnapshotIsIsolatedFromLaterMutation()
 	{
-		SuggestionCategory[] roots = Enumerable.Range(0, 68)
-				.Select(i => new SuggestionCategory($"r{i}", $"Root {i}", $"General purchases of type {i}", null)).ToArray();
-		SuggestionCategory[] children = Enumerable.Range(0, 241)
-				.Select(i => new SuggestionCategory($"c{i}", $"Child {i}", $"Specific purchases of type {i}", $"r{i % 68}")).ToArray();
-		CategorySuggestionRequest request = Request with { Categories = [.. roots, .. children] };
-		byte[] payload = JevSuggestionQuestions.Serialize(request);
-		JsonNode questions = JsonNode.Parse(payload)!["questions"]!;
-		Assert.InRange(payload.Length, 1, CategorySuggestionPolicy.MaximumPayloadBytes);
-		Assert.Equal(70, questions.AsObject().Count);
-		Assert.Equal(68, questions["category"]!["criteria"]!.AsObject().Count);
-		Assert.Equal(309, questions.AsObject().Where(x => x.Key != "fits")
-				.Sum(x => x.Value!["criteria"]!.AsObject().Count) - 68);
-		string response = ResponseFor(questions, "r0", "c0");
-		Handler handler = new((_, _) => Task.FromResult(Response(response)));
-		CategorySuggestionResult result = await Provider(handler).SuggestAsync(request, default);
-		Assert.Null(result.Failure);
-		Assert.Equal("c0", result.Suggestion!.CategoryId);
-		Assert.Equal(new[] { "r0", "c0" }, result.Suggestion.Path);
-		Assert.Equal("local_choice", result.Suggestion.ProbabilityScope);
-		Assert.Equal(1, handler.Calls);
-	}
-
-	[Fact]
-	public async Task MissingExtraAndMalformedBranchAnswersFail()
-	{
-		CategorySuggestionRequest request = Request with { Categories = [new("r", "Root", "Broad", null), new("c", "Child", "Specific", "r")] };
-		JsonNode questions = JsonNode.Parse(JevSuggestionQuestions.Serialize(request))!["questions"]!;
-		JsonNode valid = JsonNode.Parse(ResponseFor(questions, "r", "c"))!;
-		var bad = new List<JsonNode>();
-		JsonNode missing = valid.DeepClone(); missing["answers"]!.AsObject().Remove("branch_0"); bad.Add(missing);
-		JsonNode extra = valid.DeepClone(); extra["answers"]!["branch_extra"] = valid["answers"]!["branch_0"]!.DeepClone(); bad.Add(extra);
-		JsonNode distribution = valid.DeepClone(); distribution["answers"]!["branch_0"]!["probabilities"]!["unknown"] = 0.1; bad.Add(distribution);
-		JsonNode choice = valid.DeepClone(); choice["answers"]!["branch_0"]!["choice"] = "unknown"; bad.Add(choice);
-		foreach (JsonNode body in bad)
+		List<SuggestionCategory> categories = [.. Request.Categories];
+		CategorySuggestionRequest request = Request with { Categories = categories };
+		Handler handler = new((_, _) =>
 		{
-			Handler handler = new((_, _) => Task.FromResult(Response(body.ToJsonString())));
-			Assert.Equal(SuggestionFailure.InvalidResponse, (await Provider(handler).SuggestAsync(request, default)).Failure);
-		}
-	}
-
-	private static string ResponseFor(JsonNode questions, string root, string child)
-	{
-		var answers = new Dictionary<string, object>();
-		foreach (var (key, node) in questions.AsObject())
-		{
-			if (key == "fits")
-			{
-				continue;
-			}
-
-			string[] ids = node!["criteria"]!.AsObject().Select(x => x.Key).ToArray();
-			string selected = key == "category" ? root : ids.Contains(child) && ids.Contains(root) ? child : ids[0];
-			answers[key] = new
-			{
-				type = "choice",
-				choice = selected,
-				confidence = 0.8,
-				probabilities = ids.ToDictionary(id => id, id => id == selected ? 1.0 : 0.0)
-			};
-		}
-		answers["fits"] = new { type = "noul", noul = 0.9 };
-		return JsonSerializer.Serialize(new
-		{
-			model = CategorySuggestionPolicy.Model,
-			answers,
-			usage = new { input_tokens = 100L, output_tokens = 10L }
+			categories.Clear();
+			return Task.FromResult(Response());
 		});
+
+		CategorySuggestionResult actual = await Suggest(handler, request);
+
+		Assert.Null(actual.Failure);
+		Assert.Equal("fruit", actual.Suggestion!.CategoryId);
 	}
 
 	[Fact]
 	public async Task TimeoutIsFailureAndCallerCancellationPropagates()
 	{
 		Handler timeout = new((_, _) => throw new TaskCanceledException());
-		Assert.Equal(SuggestionFailure.Timeout, (await Provider(timeout).SuggestAsync(Request, default)).Failure);
+		Assert.Equal(SuggestionFailure.Timeout, (await Suggest(timeout)).Failure);
 		using CancellationTokenSource cancellation = new();
 		Handler handler = new((_, _) => { cancellation.Cancel(); throw new OperationCanceledException(cancellation.Token); });
-		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Provider(handler).SuggestAsync(Request, cancellation.Token));
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Suggest(handler, ct: cancellation.Token));
 	}
 
 	[Fact]
@@ -218,12 +349,20 @@ public class JevSuggestionProviderTests
 		TaskCompletionSource<HttpResponseMessage> pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		Handler handler = new((_, _) => pending.Task);
 		using JevSuggestionConcurrency concurrency = new();
-		Task<CategorySuggestionResult> first = Provider(handler, concurrency: concurrency).SuggestAsync(Request, default);
-		CategorySuggestionResult second = await Provider(handler, concurrency: concurrency).SuggestAsync(Request, default);
+		Task<CategorySuggestionResult> first = Provider(handler, concurrency: concurrency).SuggestBoundAsync(Request, Current, default);
+		CategorySuggestionResult second = await Provider(handler, concurrency: concurrency).RefineBoundAsync(Request, Baseline(), Current, default);
 		Assert.Equal(SuggestionFailure.Busy, second.Failure);
 		pending.SetResult(Response());
 		Assert.Null((await first).Failure);
-		Assert.Null((await Provider(new Handler((_, _) => Task.FromResult(Response())), concurrency: concurrency).SuggestAsync(Request, default)).Failure);
+		Assert.Null((await Provider(new Handler((_, _) => Task.FromResult(Response())), concurrency: concurrency).SuggestBoundAsync(Request, Current, default)).Failure);
 		Assert.Equal(1, handler.Calls);
+	}
+
+	[Fact]
+	public void StageTwoRequestCarriesOnlyTheSubcategoryQuestion()
+	{
+		JsonNode payload = JsonNode.Parse(JevTwoStageQuestions.Stage2(Request, ["fruit", "dairy"]))!;
+		Assert.Equal(["subcategory"], payload["questions"]!.AsObject().Select(p => p.Key));
+		Assert.Equal("Corner Market", payload["state"]!["purchase"]!["store"]!.GetValue<string>());
 	}
 }

@@ -127,11 +127,19 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 				ReviewState = preference?.State ?? "active",
 				ReviewRevision = preference?.Revision ?? Guid.Empty,
 				ExcludedItemCount = excluded.Length,
-				ProbabilityScope = suggestion?.ProbabilityScope ?? "global_choice"
+				ProbabilityScope = suggestion?.ProbabilityScope ?? "global_choice",
+				RootCandidates = Candidates(row, suggestion?.RootCandidates),
+				LeafCandidates = Candidates(row, suggestion?.LeafCandidates)
 			});
 		}
 		return items;
 	}
+
+	private static IReadOnlyList<CategoryAssistanceCandidateRead> Candidates(
+		Entities.CategoryAssistance.CategoryAssistanceAttemptEntity row, IReadOnlyList<SuggestionCandidate>? candidates) =>
+		row.QuestionPolicyVersion != CategorySuggestionPolicy.Version || candidates is null ||
+			candidates.Any(c => c is null || !Guid.TryParse(c.CategoryId, out _))
+			? [] : [.. candidates.Select(c => new CategoryAssistanceCandidateRead(Guid.Parse(c.CategoryId), c.Probability))];
 
 	public async Task<CategoryAssistanceActivity> GetActivityAsync(CancellationToken ct)
 	{
@@ -153,6 +161,7 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		return new(Count("queued"), Count("dispatching"), Count("suggested"), Count("abstained"),
 				Count("failed"), Count("stale"), Count("indeterminate"), attempts)
 		{
+			Applied = Count("applied"),
 			RecentFailures = recent.Select(x => new CategoryAssistanceFailureRead(x.Id,
 					CategoryAssistanceFailureCode.Read(x.ResultJson) ?? "Unknown",
 					x.CompletedAt!.Value)).ToArray()

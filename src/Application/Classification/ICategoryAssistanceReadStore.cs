@@ -15,7 +15,14 @@ public sealed record CategoryAssistanceSuggestionRead(Guid AttemptId, Normalizat
 	public int ExcludedItemCount { get; init; }
 	[JsonRequired]
 	public string ProbabilityScope { get; init; } = "global_choice";
+	/// <summary>Stage-1 top roots and stage-2 top choices with their own stage's probability; empty for older policies.</summary>
+	[JsonRequired]
+	public IReadOnlyList<CategoryAssistanceCandidateRead> RootCandidates { get; init; } = [];
+	[JsonRequired]
+	public IReadOnlyList<CategoryAssistanceCandidateRead> LeafCandidates { get; init; } = [];
 }
+
+public sealed record CategoryAssistanceCandidateRead(Guid CategoryId, double Probability);
 
 public sealed record CategoryAssistanceSuggestionPage(int Total, int Offset, int Limit,
 	IReadOnlyList<CategoryAssistanceSuggestionRead> Items);
@@ -27,6 +34,9 @@ public sealed record CategoryAssistanceActivity(int Queued, int Dispatching, int
 {
 	[JsonRequired]
 	public IReadOnlyList<CategoryAssistanceFailureRead> RecentFailures { get; init; } = [];
+	/// <summary>Strong matches written automatically; they no longer wait for review.</summary>
+	[JsonRequired]
+	public int Applied { get; init; }
 }
 
 /// <summary>Read-only operational projection. Never invokes an inference provider.</summary>

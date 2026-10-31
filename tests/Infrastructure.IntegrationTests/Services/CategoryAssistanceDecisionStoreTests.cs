@@ -681,7 +681,8 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 				CategoryAssistanceAttemptOutcome.Suggested,
 				new CategorySuggestion(seed.Category.ToString(), [Guid.NewGuid().ToString(), seed.Category.ToString()],
 					null, 0.9, 0.9, 0.9, new SuggestionProvenance("jev", CategorySuggestionPolicy.Model,
-						CategorySuggestionPolicy.Version, seed.Taxonomy.ToString(), 1, 1))));
+						CategorySuggestionPolicy.Version, seed.Taxonomy.ToString(), 1, 1), "local_choice",
+					RootCandidates: [new(seed.Category.ToString(), 0.9)], LeafCandidates: [new(seed.Category.ToString(), 0.9)])));
 			await db.SaveChangesAsync();
 		}
 		var store = CreateStore(fixture);
@@ -816,7 +817,8 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 				CategoryAssistanceAttemptOutcome.Suggested,
 				new CategorySuggestion(category.ToString(), [category.ToString()], null, 0.9, 0.9, 0.9,
 					new SuggestionProvenance("jev", CategorySuggestionPolicy.Model,
-						CategorySuggestionPolicy.Version, taxonomy.ToString(), 1, 1))))
+						CategorySuggestionPolicy.Version, taxonomy.ToString(), 1, 1), "local_choice",
+					RootCandidates: [new(category.ToString(), 0.9)], LeafCandidates: [new(category.ToString(), 0.9)])))
 		});
 		db.CategoryAssistanceObservations.Add(new CategoryAssistanceObservationEntity
 		{

@@ -9,8 +9,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
+/// <summary>Omitting AutoApply keeps the saved choice, so older clients do not change it.</summary>
 public sealed record CategoryAssistanceSettingsRequest(bool Enabled, string? Provider, string? Model,
-	int DailyLimit, int PendingLimit, Guid ExpectedRevision);
+	int DailyLimit, int PendingLimit, Guid ExpectedRevision, bool? AutoApply = null);
 public sealed record CategoryAssistanceStatusResponse(string Capability, bool ConsentEnabled,
 		bool SuggestionsAvailable, string Provider, IReadOnlyList<string> Models,
 		int DailyLimit, int PendingLimit);
@@ -53,8 +54,10 @@ public sealed class CategoryAssistanceController(ICategoryAssistanceSettingsStor
 	{
 		try
 		{
+			// A stale read cannot leak through: the store rejects any revision other than the expected one.
+			bool autoApply = request.AutoApply ?? (await settingsStore.GetAsync(ct)).AutoApply;
 			var proposed = new CategoryAssistanceSettings(request.Enabled, request.Provider, request.Model,
-				request.DailyLimit, request.PendingLimit, request.ExpectedRevision);
+				request.DailyLimit, request.PendingLimit, request.ExpectedRevision, autoApply);
 			var saved = await settingsStore.UpdateAsync(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "",
 				request.ExpectedRevision, proposed, ct);
 			return TypedResults.Ok(saved);

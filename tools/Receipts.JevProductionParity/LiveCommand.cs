@@ -1,7 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using Infrastructure.Jev;
 
 namespace Receipts.JevProductionParity;
 
@@ -14,14 +13,6 @@ public static class LiveCommand
 	private const string SendFlag = "--send-authorized";
 	private const string DryRunFlag = "--dry-run";
 	private const string UserSecretsFlag = "--api-user-secrets";
-
-	/// <summary>Returns a non-sensitive reason category, or null when the approval authorizes this packet.</summary>
-	public static string? ApprovalProblem(LiveApproval? approval, string freezeHash, EvaluationPolicy policy, DateTimeOffset now)
-	{
-		ArgumentNullException.ThrowIfNull(policy);
-		return ApprovalProblem(approval, freezeHash, policy.PriorCarryNanodollars, policy.CeilingNanodollars,
-			policy.MaximumReservationNanodollars, now);
-	}
 
 	/// <summary>
 	/// Budget-only form: the approval must restate the frozen carry and ceiling, and the carry plus the
@@ -41,18 +32,10 @@ public static class LiveCommand
 				? "budget-mismatch"
 			: null;
 
-	public static void ValidateApproval(LiveApproval? approval, string freezeHash, EvaluationPolicy policy, DateTimeOffset now)
-	{
-		if (ApprovalProblem(approval, freezeHash, policy, now) is not null)
-		{
-			throw new InvalidOperationException("Authorization stale or insufficient.");
-		}
-	}
-
 	// Persist only a one-way fingerprint, never the credential. Rotation requires investigation,
 	// even when the replacement key might belong to the same provider account.
 	public static string BindCredential(string identity, string key) => identity + ":" +
-		OfflinePairedEvaluation.Hash(Encoding.UTF8.GetBytes("receipts-live-credential-v1\0" + key));
+		Hashing.Hash(Encoding.UTF8.GetBytes("receipts-live-credential-v1\0" + key));
 
 	public static async Task<ReplayExchange> SendAsync(HttpClient client, byte[] payload, string key, CancellationToken ct)
 	{
@@ -100,43 +83,14 @@ public static class LiveCommand
 				throw new ArgumentException("Use the single packet journal.");
 			}
 
-			if (OfflineCommand.PacketKindOf(packet) == TwoStagePolicy.PacketKind)
+			// Round 4 is the only live protocol; earlier rounds were bound to a retired production policy.
+			if (OfflineCommand.PacketKindOf(packet) != TwoStagePolicy.PacketKind)
 			{
-				return await RunTwoStageAsync(packet, repository, approvalPath, journalPath, outputPath, dryRun, apiUserSecrets,
-					environment, isWindows);
+				throw new ArgumentException("Unsupported packet.");
 			}
 
-			EvaluationPolicy policy = OfflineCommand.ValidateFreeze(packet, repository);
-			string freezeHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(packet, "freeze.private.json")));
-			OfflineCase[] cases = JsonSerializer.Deserialize<OfflineCase[]>(File.ReadAllText(Path.Combine(packet, "cases.private.json")), ProductionParity.JsonOptions)!;
-			OfflinePairedEvaluation.ValidateCases(cases, policy, requireFullPacket: true);
-			string? key = ApiCredential.Resolve(repository, apiUserSecrets, environment, isWindows);
-			if (dryRun)
-			{
-				// Returns before any transport exists; never opens the journal for writing.
-				await WriteDryRunAsync(outputPath, policy, cases, freezeHash, approvalPath, journalPath, key);
-				Console.WriteLine("Dry run report created. No provider request was sent.");
-				return 0;
-			}
-
-			if (key is null)
-			{
-				throw new InvalidOperationException("Missing key.");
-			}
-
-			string approvalHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(approvalPath));
-			Action authorize = Authorizer(approvalPath, approvalHash, repository, apiUserSecrets, environment, isWindows, key,
-				approval => ApprovalProblem(approval, freezeHash, policy, DateTimeOffset.UtcNow));
-			authorize();
-			using SocketsHttpHandler handler = new() { AllowAutoRedirect = false, UseCookies = false, PooledConnectionLifetime = TimeSpan.Zero };
-			using HttpClient client = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
-			OfflineReplay result = await LiveEvaluation.RunAsync(cases, policy, journalPath, BindCredential(Identity(freezeHash, approvalHash, cases), key),
-				(payload, ct) => SendAsync(client, payload, key, ct), authorize);
-			using FileStream output = PrivateEvidence.CreateNew(outputPath);
-			await JsonSerializer.SerializeAsync(output, result, ProductionParity.JsonOptions);
-			output.Flush(flushToDisk: true);
-			Console.WriteLine(result.Stopped ? "Evaluation stopped. Inspect private evidence." : "Evaluation completed. Private evidence saved.");
-			return result.Stopped ? 3 : 0;
+			return await RunTwoStageAsync(packet, repository, approvalPath, journalPath, outputPath, dryRun, apiUserSecrets,
+				environment, isWindows);
 		}
 		catch (Exception)
 		{
@@ -151,7 +105,7 @@ public static class LiveCommand
 		string outputPath, bool dryRun, bool apiUserSecrets, Func<string, string?> environment, bool isWindows)
 	{
 		TwoStagePacket twoStage = TwoStagePacket.Load(packet);
-		string freezeHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(Path.Combine(packet, "freeze.private.json")));
+		string freezeHash = Hashing.Hash(File.ReadAllBytes(Path.Combine(packet, "freeze.private.json")));
 		string? key = ApiCredential.Resolve(repository, apiUserSecrets, environment, isWindows);
 		if (dryRun)
 		{
@@ -165,7 +119,7 @@ public static class LiveCommand
 			throw new InvalidOperationException("Missing key.");
 		}
 
-		string approvalHash = OfflinePairedEvaluation.Hash(File.ReadAllBytes(approvalPath));
+		string approvalHash = Hashing.Hash(File.ReadAllBytes(approvalPath));
 		Action authorize = Authorizer(approvalPath, approvalHash, repository, apiUserSecrets, environment, isWindows, key,
 			approval => TwoStageCommand.ApprovalProblem(approval, twoStage, freezeHash, DateTimeOffset.UtcNow));
 		authorize();
@@ -189,53 +143,12 @@ public static class LiveCommand
 	{
 		byte[] bytes = File.ReadAllBytes(approvalPath);
 		LiveApproval approval = JsonSerializer.Deserialize<LiveApproval>(bytes, ProductionParity.JsonOptions)!;
-		if (OfflinePairedEvaluation.Hash(bytes) != approvalHash ||
+		if (Hashing.Hash(bytes) != approvalHash ||
 			ApiCredential.Resolve(repository, apiUserSecrets, environment, isWindows) != key || problem(approval) is not null)
 		{
 			throw new InvalidOperationException("Authorization stale or insufficient.");
 		}
 	};
-
-	private static string Identity(string freezeHash, string approvalHash, OfflineCase[] cases) =>
-		freezeHash + ":" + approvalHash + ":" + OfflinePairedEvaluation.Hash(JsonSerializer.SerializeToUtf8Bytes(cases, ProductionParity.JsonOptions)) + ":" +
-		OfflinePairedEvaluation.Hash(File.ReadAllBytes(typeof(LiveCommand).Assembly.Location)) + ":" +
-		OfflinePairedEvaluation.Hash(File.ReadAllBytes(typeof(JevSuggestionProvider).Assembly.Location)) + ":" +
-		OfflinePairedEvaluation.Hash(File.ReadAllBytes(typeof(Application.Classification.CategorySuggestionPolicy).Assembly.Location));
-
-	/// <summary>Reports readiness without request bodies, descriptions, identifiers or the credential.</summary>
-	private static async Task WriteDryRunAsync(string outputPath, EvaluationPolicy policy, OfflineCase[] cases, string freezeHash,
-		string approvalPath, string journalPath, string? key)
-	{
-		(string? approvalHash, string approvalStatus) = ReadApprovalStatus(approvalPath,
-			approval => ApprovalProblem(approval, freezeHash, policy, DateTimeOffset.UtcNow));
-		(string journalStatus, int completedExchanges, bool? identityMatches) = ReadJournalStatus(journalPath,
-			approvalHash is not null && key is not null ? BindCredential(Identity(freezeHash, approvalHash, cases), key) : null);
-
-		byte[][] payloads = [.. cases.Select(c => JevSuggestionQuestions.Serialize(c.Request))];
-		object report = new
-		{
-			mode = "dry-run-no-dispatch",
-			totalCases = cases.Length,
-			maximumAttempts = policy.MaximumAttempts,
-			perAttemptNanodollars = EvaluationPolicy.PerAttemptNanodollars,
-			maximumReservationNanodollars = policy.MaximumReservationNanodollars,
-			priorCarryNanodollars = policy.PriorCarryNanodollars,
-			combinedMaximumReservationNanodollars = policy.CombinedMaximumReservationNanodollars,
-			ceilingNanodollars = policy.CeilingNanodollars,
-			baselineGate = EvaluationPolicy.BaselineGate,
-			autoWriteGlobalGate = policy.AutoWriteGlobalGate,
-			autoWriteSelectedGate = policy.AutoWriteSelectedGate,
-			credentialPresent = key is not null,
-			approval = new { present = approvalHash is not null, valid = approvalStatus == "valid", status = approvalStatus },
-			journal = new { status = journalStatus, completedExchanges, identityMatches },
-			baselineRequests = payloads.Length,
-			requestBytes = new { minimum = payloads.Min(p => p.Length), maximum = payloads.Max(p => p.Length), total = payloads.Sum(p => (long)p.Length) },
-			requestSha256s = payloads.Select(OfflinePairedEvaluation.Hash).ToArray()
-		};
-		using FileStream output = PrivateEvidence.CreateNew(outputPath);
-		await JsonSerializer.SerializeAsync(output, report, ProductionParity.JsonOptions);
-		output.Flush(flushToDisk: true);
-	}
 
 	/// <summary>Approval file hash and a non-sensitive status; a missing or unreadable file is reported, not fatal.</summary>
 	internal static (string? Hash, string Status) ReadApprovalStatus(string approvalPath, Func<LiveApproval, string?> problem)
@@ -249,7 +162,7 @@ public static class LiveCommand
 		LiveApproval? approval;
 		try { approval = JsonSerializer.Deserialize<LiveApproval>(bytes, ProductionParity.JsonOptions); }
 		catch (JsonException) { approval = null; }
-		return (OfflinePairedEvaluation.Hash(bytes), approval is null ? "unreadable" : problem(approval) ?? "valid");
+		return (Hashing.Hash(bytes), approval is null ? "unreadable" : problem(approval) ?? "valid");
 	}
 
 	/// <summary>Reads the journal without creating, locking for write, or modifying it.</summary>

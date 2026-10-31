@@ -31,7 +31,7 @@ public static class TwoStageCommand
 			priorCarryNanodollars = policy.PriorCarryNanodollars,
 			combinedMaximumReservationNanodollars = packet.CombinedMaximumReservationNanodollars,
 			ceilingNanodollars = policy.CeilingNanodollars,
-			fixedReservationComparisonNanodollars = policy.MaximumAttempts * EvaluationPolicy.PerAttemptNanodollars,
+			fixedReservationComparisonNanodollars = policy.MaximumAttempts * TwoStagePolicy.FixedReservationNanodollarsPerAttempt,
 			pricingVerified = false,
 			liveAuthorized = false
 		};
@@ -47,7 +47,7 @@ public static class TwoStageCommand
 			cases = packet.Cases.Select((c, i) => new
 			{
 				c.Id,
-				requestSha256 = OfflinePairedEvaluation.Hash(packet.Stage1Payloads[i]),
+				requestSha256 = Hashing.Hash(packet.Stage1Payloads[i]),
 				requestJson = Encoding.UTF8.GetString(packet.Stage1Payloads[i]),
 				maximumStage2Bytes = packet.MaximumStage2Bytes[i]
 			}).ToArray()
@@ -56,7 +56,7 @@ public static class TwoStageCommand
 
 	/// <summary>Journal identity: the frozen packet, the exact approval, and this tool's build. The credential is bound separately.</summary>
 	public static string Identity(string freezeHash, string approvalHash) => freezeHash + ":" + approvalHash + ":" +
-		OfflinePairedEvaluation.Hash(File.ReadAllBytes(typeof(TwoStageCommand).Assembly.Location));
+		Hashing.Hash(File.ReadAllBytes(typeof(TwoStageCommand).Assembly.Location));
 
 	public static string? ApprovalProblem(LiveApproval? approval, TwoStagePacket packet, string freezeHash, DateTimeOffset now)
 	{
@@ -80,7 +80,7 @@ public static class TwoStageCommand
 			credentialPresent = key is not null,
 			approval = new { present = approvalHash is not null, valid = approvalStatus == "valid", status = approvalStatus },
 			journal = new { status = journalStatus, completedExchanges, identityMatches },
-			stage1RequestSha256s = packet.Stage1Payloads.Select(OfflinePairedEvaluation.Hash).ToArray()
+			stage1RequestSha256s = packet.Stage1Payloads.Select(Hashing.Hash).ToArray()
 		};
 		using FileStream output = PrivateEvidence.CreateNew(outputPath);
 		await JsonSerializer.SerializeAsync(output, report, ProductionParity.JsonOptions);
