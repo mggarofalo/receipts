@@ -2,8 +2,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSessionMutation } from "@/hooks/useSessionMutation";
 import client from "@/lib/api-client";
 import { toApiError } from "@/lib/problem-details";
-import { repairDomainChange } from "@/lib/query-invalidation";
-import { getSessionVersion } from "@/lib/auth";
 import type { components } from "@/generated/api";
 
 export const normalizationAiKey = ["normalization-ai"] as const;
@@ -21,25 +19,6 @@ export function useAiConnection() {
     },
     retry: false,
     refetchInterval: (query) => (query.state.data?.busy ? 2000 : false),
-  });
-}
-export function useAiCandidates(
-  q: string,
-  offset: number,
-  limit: number,
-  enabled: boolean,
-) {
-  return useQuery({
-    queryKey: [...normalizationAiKey, "candidates", q, offset, limit],
-    enabled,
-    queryFn: async ({ signal }) => {
-      const { data, error, response } = await client.GET(
-        "/api/normalization-ai/candidates",
-        { signal, params: { query: { q, offset, limit } } },
-      );
-      if (!response.ok) throw toApiError(response.status, error);
-      return data!;
-    },
   });
 }
 export function useAiRuns(enabled: boolean) {
@@ -82,22 +61,6 @@ export function useAiActions(onRunCreated?: (run: AiRun) => void) {
   const cache = useQueryClient();
   const invalidate = () =>
     cache.invalidateQueries({ queryKey: normalizationAiKey });
-  const start = useSessionMutation({
-    mutationFn: async (
-      body: components["schemas"]["StartNormalizationAiRunRequest"],
-    ) => {
-      const { data, error, response } = await client.POST(
-        "/api/normalization-ai/runs",
-        { body },
-      );
-      if (!response.ok) throw toApiError(response.status, error);
-      return data!;
-    },
-    onSuccess: async (run) => {
-      onRunCreated?.(run);
-      await invalidate();
-    },
-  });
   const cancel = useSessionMutation({
     mutationFn: async (id: string) => {
       const { data, error, response } = await client.POST(
@@ -129,31 +92,5 @@ export function useAiActions(onRunCreated?: (run: AiRun) => void) {
       await invalidate();
     },
   });
-  const apply = useSessionMutation({
-    mutationFn: async ({
-      id,
-      ...body
-    }: components["schemas"]["ApplyNormalizationAiRunRequest"] & {
-      id: string;
-    }) => {
-      const { data, error, response } = await client.POST(
-        "/api/normalization-ai/runs/{id}/apply",
-        { params: { path: { id } }, body },
-      );
-      if (!response.ok) throw toApiError(response.status, error);
-      return data!;
-    },
-    onSuccess: async () => {
-      const version = getSessionVersion();
-      await Promise.all([
-        invalidate(),
-        repairDomainChange(
-          cache,
-          "normalized-description",
-          () => getSessionVersion() === version,
-        ),
-      ]);
-    },
-  });
-  return { start, cancel, retry, apply };
+  return { cancel, retry };
 }

@@ -2792,72 +2792,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-  /api/normalization-ai/candidates:
-    get:
-      operationId: ListNormalizationAiCandidates
-      tags:
-        - NormalizationAi
-      summary: List unresolved items for explicit selection
-      description: >-
-        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
-        Suggestions never change receipts until explicitly applied.
-      security:
-        - BearerAuth: []
-        - ApiKey: []
-      responses:
-        "200":
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NormalizationAiCandidatePageResponse"
-        "400":
-          description: Invalid request
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "403":
-          description: Forbidden
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "404":
-          description: Not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "409":
-          description: Operation or source state conflict
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "503":
-          description: ChatGPT is unavailable
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-      parameters:
-        - name: q
-          in: query
-          schema:
-            type: [string, "null"]
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            format: int32
-            default: 0
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            format: int32
-            default: 25
   /api/normalization-ai/runs:
     get:
       operationId: ListNormalizationAiRuns
@@ -2909,60 +2843,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
-    post:
-      operationId: StartNormalizationAiRun
-      tags:
-        - NormalizationAi
-      summary: Request suggestions for selected items
-      description: >-
-        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
-        Suggestions never change receipts until explicitly applied.
-      security:
-        - BearerAuth: []
-        - ApiKey: []
-      responses:
-        "200":
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/NormalizationAiRunResponse"
-        "400":
-          description: Invalid request
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "403":
-          description: Forbidden
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "404":
-          description: Not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "409":
-          description: Operation or source state conflict
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-        "503":
-          description: ChatGPT is unavailable
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/StartNormalizationAiRunRequest"
   /api/normalization-ai/runs/{id}:
     get:
       operationId: GetNormalizationAiRun
@@ -3080,10 +2960,11 @@ paths:
       operationId: RetryNormalizationAiRun
       tags:
         - NormalizationAi
-      summary: Explicitly retry a normalization run
+      summary: Explicitly retry a catalog normalization run
       description: >-
         Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
-        Suggestions never change receipts until explicitly applied.
+        Suggestions never change receipts until explicitly applied. Runs from the retired per-purchase workflow
+        cannot be retried and answer 409 with `code` `workflow_retired`.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -3142,10 +3023,12 @@ paths:
       operationId: ApplyNormalizationAiRun
       tags:
         - NormalizationAi
-      summary: Atomically apply reviewed suggestions
+      summary: Apply suggestions from a retired per-purchase run (always rejected)
+      deprecated: true
       description: >-
-        Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection.
-        Suggestions never change receipts until explicitly applied.
+        Retired. Per-purchase ChatGPT runs can no longer be applied; this endpoint always answers 409 with a
+        problem document whose `code` is `workflow_retired` (or `catalog_review_required` for a catalog run).
+        Review catalog source suggestions through the catalog preview and approval endpoints instead.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -11057,41 +10940,6 @@ components:
             type: string
         busy:
           type: boolean
-    NormalizationAiCandidateResponse:
-      type: object
-      required:
-        - id
-        - receiptId
-        - description
-        - location
-        - date
-      properties:
-        id:
-          type: string
-          format: uuid
-        receiptId:
-          type: string
-          format: uuid
-        description:
-          type: string
-        location:
-          type: string
-        date:
-          type: string
-          format: date
-    NormalizationAiCandidatePageResponse:
-      type: object
-      required:
-        - items
-        - total
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/NormalizationAiCandidateResponse"
-        total:
-          type: integer
-          format: int32
     NormalizationAiUsageResponse:
       type: object
       required:
@@ -11213,28 +11061,6 @@ components:
           oneOf:
             - $ref: "#/components/schemas/NormalizationAiUsageResponse"
             - type: "null"
-    StartNormalizationAiRunRequest:
-      type: object
-      required:
-        - clientRequestId
-        - itemIds
-        - model
-      properties:
-        clientRequestId:
-          type: string
-          format: uuid
-        itemIds:
-          type: array
-          minItems: 1
-          maxItems: 50
-          uniqueItems: true
-          items:
-            type: string
-            format: uuid
-        model:
-          type: string
-          minLength: 1
-          maxLength: 200
     RetryNormalizationAiRunRequest:
       type: object
       required:

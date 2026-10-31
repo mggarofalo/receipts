@@ -126,7 +126,7 @@ public sealed partial class NormalizationAiWorkflowTests
 		var ids = await SeedAsync();
 		var target = await SeedAssignedLabelTargetAsync(ids[0]);
 		SetupLabelResponse(target.Id, label);
-		var ai = new NormalizationAiService(new Factory(fixture), runner.Object, matching.Object,
+		var ai = new NormalizationAiService(new Factory(fixture), runner.Object,
 			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = Owner, PendingRunLimit = 1 }),
 			TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
 		var selection = new NormalizationAiSourceSelection(new("Synthetic store", "Milk", null), false, true);

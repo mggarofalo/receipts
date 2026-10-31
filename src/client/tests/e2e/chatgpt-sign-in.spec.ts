@@ -60,7 +60,6 @@ for (const width of [1280, 375]) {
           models: ["synthetic-model"],
         });
       if (path.endsWith("/runs")) return respond([]);
-      if (path.endsWith("/candidates")) return respond({ items: [], total: 0 });
       if (path.includes("/sign-in/")) {
         if (pollState === "success") connected = true;
         return respond({ ...waiting(), state: pollState });
@@ -142,10 +141,10 @@ for (const width of [1280, 375]) {
     await expect(page.getByText(/Another ChatGPT operation/)).toBeVisible();
     pollState = "success";
     await expect(
-      page.getByText(/ChatGPT connected\. Select a model/),
+      page.getByText(/ChatGPT connected\. Request suggestions from Catalog/),
     ).toBeVisible();
     await expect(
-      page.getByRole("combobox", { name: "ChatGPT model" }),
+      page.getByRole("button", { name: "Request suggestions in Catalog" }),
     ).toBeVisible();
     await expect(page.getByText("SYNTHETIC-1059", { exact: true })).toHaveCount(
       0,

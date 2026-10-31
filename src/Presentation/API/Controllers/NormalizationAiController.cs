@@ -27,11 +27,6 @@ public class NormalizationAiController(INormalizationAiService service) : Contro
 	public Task<Results<Ok<NormalizationAiConnectionResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem, ServiceUnavailableProblem>> GetConnection(CancellationToken cancellationToken) =>
 		Execute(async () => { NormalizationAiConnection value = await service.GetConnectionAsync(Actor, cancellationToken); return new NormalizationAiConnectionResponse { Busy = value.Busy, Configured = value.Configured, IsOwner = value.IsOwner, CredentialsPresent = value.CredentialsPresent, Generation = value.Generation, Models = value.Models.ToList() }; });
 
-	[HttpGet("candidates")]
-	[EndpointSummary("List unresolved items for explicit selection")]
-	public Task<Results<Ok<NormalizationAiCandidatePageResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem, ServiceUnavailableProblem>> ListCandidates(string? q = null, int offset = 0, int limit = 25, CancellationToken cancellationToken = default) =>
-		Execute(async () => { NormalizationAiCandidatePage value = await service.ListCandidatesAsync(Actor, q, offset, limit, cancellationToken); return new NormalizationAiCandidatePageResponse { Total = value.Total, Items = value.Items.Select(item => new NormalizationAiCandidateResponse { Id = item.Id, ReceiptId = item.ReceiptId, Description = item.Description, Location = item.Location, Date = item.Date }).ToList() }; });
-
 	[HttpGet("runs")]
 	[EndpointSummary("List recent normalization runs")]
 	public Task<Results<Ok<List<NormalizationAiRunResponse>>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem, ServiceUnavailableProblem>> ListRuns(CancellationToken cancellationToken) =>
@@ -41,11 +36,6 @@ public class NormalizationAiController(INormalizationAiService service) : Contro
 	[EndpointSummary("Get a resumable normalization run")]
 	public Task<Results<Ok<NormalizationAiRunResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem, ServiceUnavailableProblem>> GetRun(Guid id, CancellationToken cancellationToken) =>
 		Execute(async () => Map(await service.GetRunAsync(Actor, id, cancellationToken) ?? throw new NormalizationAiException(404, "not_found", "Normalization run not found.")));
-
-	[HttpPost("runs")]
-	[EndpointSummary("Request suggestions for selected items")]
-	public Task<Results<Ok<NormalizationAiRunResponse>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem, ServiceUnavailableProblem>> Start([FromBody] StartNormalizationAiRunRequest request, CancellationToken cancellationToken) =>
-		Execute(async () => Map(await service.StartAsync(Actor, request.ClientRequestId, request.ItemIds.ToList(), request.Model, cancellationToken)));
 
 	[HttpPost("source-runs")]
 	[EndpointSummary("Request suggestions for distinct scoped source descriptions")]

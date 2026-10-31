@@ -1,11 +1,9 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { createQueryWrapper } from "@/test/test-utils";
 import client from "@/lib/api-client";
-import { repairDomainChange } from "@/lib/query-invalidation";
 import { extractErrorMessage } from "@/lib/problem-details";
 import {
   useAiActions,
-  useAiCandidates,
   useAiConnection,
   useAiRun,
   useAiRuns,
@@ -13,9 +11,6 @@ import {
 
 vi.mock("@/lib/api-client", () => ({
   default: { GET: vi.fn(), POST: vi.fn() },
-}));
-vi.mock("@/lib/query-invalidation", () => ({
-  repairDomainChange: vi.fn().mockResolvedValue(undefined),
 }));
 const api = vi.mocked(client);
 const id = "10000000-0000-0000-0000-000000000001";
@@ -75,34 +70,6 @@ it("does not retry or hide the connection's RFC9457 error reason", async () => {
   expect(api.GET).toHaveBeenCalledTimes(1);
 });
 
-it("keeps candidate fetching disabled until authorized and keys the requested page", async () => {
-  api.GET.mockResolvedValue(ok({ items: [], total: 0 }) as never);
-  const { result, rerender } = renderHook(
-    ({ enabled, q }) => useAiCandidates(q, 25, 25, enabled),
-    {
-      initialProps: { enabled: false, q: "milk" },
-      wrapper: createQueryWrapper(),
-    },
-  );
-  expect(api.GET).not.toHaveBeenCalled();
-  rerender({ enabled: true, q: "milk" });
-  await waitFor(() => expect(result.current.isSuccess).toBe(true));
-  expect(api.GET).toHaveBeenLastCalledWith("/api/normalization-ai/candidates", {
-    signal: expect.any(AbortSignal),
-    params: { query: { q: "milk", offset: 25, limit: 25 } },
-  });
-  rerender({ enabled: true, q: "bread" });
-  await waitFor(() =>
-    expect(api.GET).toHaveBeenLastCalledWith(
-      "/api/normalization-ai/candidates",
-      {
-        signal: expect.any(AbortSignal),
-        params: { query: { q: "bread", offset: 25, limit: 25 } },
-      },
-    ),
-  );
-});
-
 it("loads run history only when enabled", async () => {
   api.GET.mockResolvedValue(ok([run]) as never);
   const { result, rerender } = renderHook(({ enabled }) => useAiRuns(enabled), {
@@ -135,17 +102,11 @@ it("does not request a null run and loads the selected run with its ID", async (
   });
 });
 
-it("starts, cancels and explicitly retries using the supplied operation identity", async () => {
+it("cancels and explicitly retries using the supplied operation identity", async () => {
   api.POST.mockResolvedValue(ok(run) as never);
-  const { result } = renderHook(useAiActions, {
+  const created = vi.fn();
+  const { result } = renderHook(() => useAiActions(created), {
     wrapper: createQueryWrapper(),
-  });
-  const body = { clientRequestId: id, itemIds: [id], model: "test-model" };
-  await act(async () => {
-    await result.current.start.mutateAsync(body);
-  });
-  expect(api.POST).toHaveBeenLastCalledWith("/api/normalization-ai/runs", {
-    body,
   });
   await act(async () => {
     await result.current.cancel.mutateAsync(id);
@@ -154,6 +115,7 @@ it("starts, cancels and explicitly retries using the supplied operation identity
     "/api/normalization-ai/runs/{id}/cancel",
     { params: { path: { id } } },
   );
+  expect(created).not.toHaveBeenCalled();
   await act(async () => {
     await result.current.retry.mutateAsync({ id, clientRequestId: revision });
   });
@@ -161,57 +123,37 @@ it("starts, cancels and explicitly retries using the supplied operation identity
     "/api/normalization-ai/runs/{id}/retry",
     { params: { path: { id } }, body: { clientRequestId: revision } },
   );
-  expect(repairDomainChange).not.toHaveBeenCalled();
+  expect(created).toHaveBeenCalledWith(run);
 });
 
-it("applies the selected proposals and repairs dependent domain projections only after success", async () => {
-  api.POST.mockResolvedValue(ok({ ...run, state: "applied" }) as never);
-  const { result } = renderHook(useAiActions, {
+it("exposes no way to start per-purchase runs or apply their suggestions", () => {
+  const { result } = renderHook(() => useAiActions(), {
     wrapper: createQueryWrapper(),
   });
-  await act(async () => {
-    await result.current.apply.mutateAsync({
-      id,
-      proposalIds: [id],
-      expectedRevision: revision,
-    });
-  });
-  expect(api.POST).toHaveBeenCalledWith(
-    "/api/normalization-ai/runs/{id}/apply",
-    {
-      params: { path: { id } },
-      body: { proposalIds: [id], expectedRevision: revision },
-    },
-  );
-  expect(repairDomainChange).toHaveBeenCalledTimes(1);
-  expect(repairDomainChange).toHaveBeenCalledWith(
-    expect.anything(),
-    "normalized-description",
-    expect.any(Function),
-  );
+  expect(Object.keys(result.current).sort()).toEqual(["cancel", "retry"]);
 });
 
-it("preserves failed apply as an error without success invalidation or automatic retry", async () => {
+it("preserves a retired-workflow retry rejection as an error without notifying the caller", async () => {
   api.POST.mockResolvedValue({
     data: undefined,
-    error: { status: 409, detail: "Selected items changed; refresh this run." },
+    error: {
+      status: 409,
+      detail: "Per-purchase ChatGPT suggestions are retired.",
+    },
     response: new Response(null, { status: 409 }),
   } as never);
-  const { result } = renderHook(useAiActions, {
+  const created = vi.fn();
+  const { result } = renderHook(() => useAiActions(created), {
     wrapper: createQueryWrapper(),
   });
   await act(async () => {
     await expect(
-      result.current.apply.mutateAsync({
-        id,
-        proposalIds: [id],
-        expectedRevision: revision,
-      }),
+      result.current.retry.mutateAsync({ id, clientRequestId: revision }),
     ).rejects.toMatchObject({
       status: 409,
-      detail: "Selected items changed; refresh this run.",
+      detail: "Per-purchase ChatGPT suggestions are retired.",
     });
   });
   expect(api.POST).toHaveBeenCalledTimes(1);
-  expect(repairDomainChange).not.toHaveBeenCalled();
+  expect(created).not.toHaveBeenCalled();
 });

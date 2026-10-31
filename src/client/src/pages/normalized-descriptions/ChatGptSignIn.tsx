@@ -7,7 +7,7 @@ const messages: Record<string, string> = {
   waiting:
     "Complete sign-in in the OpenAI window. This page checks for completion automatically.",
   success:
-    "ChatGPT connected. Select a model below to request suggestions. Model access depends on your plan.",
+    "ChatGPT connected. Request suggestions from Catalog. Model access depends on your plan.",
   cancelled:
     "Sign-in cancelled. Credentials may already have been saved; refresh status or explicitly disconnect to remove them.",
   expired:

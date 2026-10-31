@@ -21,9 +21,7 @@ public class NormalizationAiHttpTests
 {
 	[Theory]
 	[InlineData("connection", "GET")]
-	[InlineData("candidates", "GET")]
 	[InlineData("runs", "GET")]
-	[InlineData("runs", "POST")]
 	[InlineData("source-runs", "POST")]
 	[InlineData("runs/10000000-0000-0000-0000-000000000001/apply", "POST")]
 	public async Task AnonymousAndNonAdminCannotReachService(string path, string method)
@@ -64,15 +62,15 @@ public class NormalizationAiHttpTests
 	}
 
 	[Fact]
-	public async Task StartUsesAuthenticatedActorAndSerializesDurableRunContract()
+	public async Task GetRunUsesAuthenticatedActorAndSerializesDurableRunContract()
 	{
-		Guid intent = Guid.NewGuid(), item = Guid.NewGuid(), revision = Guid.NewGuid(), runId = Guid.NewGuid();
+		Guid intent = Guid.NewGuid(), revision = Guid.NewGuid(), runId = Guid.NewGuid();
 		var service = new Mock<INormalizationAiService>(MockBehavior.Strict);
-		service.Setup(x => x.StartAsync("owner", intent, It.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(new[] { item })), "model-a", It.IsAny<CancellationToken>()))
+		service.Setup(x => x.GetRunAsync("owner", runId, It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new NormalizationAiRun(runId, revision, intent, "queued", "model-a", DateTimeOffset.Parse("2026-01-01T00:00:00Z"), null, null, null, [], null));
 		await using var app = await Start(service);
 		using var client = app.GetTestClient(); client.DefaultRequestHeaders.Add("Test-Role", "Admin");
-		using var response = await client.PostAsJsonAsync("/api/normalization-ai/runs", new { clientRequestId = intent, itemIds = new[] { item }, model = "model-a", actor = "attacker" });
+		using var response = await client.GetAsync($"/api/normalization-ai/runs/{runId}");
 		response.StatusCode.Should().Be(HttpStatusCode.OK);
 		using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 		json.RootElement.GetProperty("id").GetGuid().Should().Be(runId);
@@ -83,15 +81,36 @@ public class NormalizationAiHttpTests
 		service.VerifyAll();
 	}
 
-	[Fact]
-	public async Task MissingRequiredStartBodyIsRejectedBeforeUseCase()
+	[Theory]
+	[InlineData("candidates", "GET", HttpStatusCode.NotFound)]
+	[InlineData("runs", "POST", HttpStatusCode.MethodNotAllowed)]
+	public async Task RetiredPerPurchaseRoutesNoLongerReachService(string path, string method, HttpStatusCode expected)
 	{
 		var service = new Mock<INormalizationAiService>(MockBehavior.Strict);
 		await using var app = await Start(service);
 		using var client = app.GetTestClient(); client.DefaultRequestHeaders.Add("Test-Role", "Admin");
-		using var response = await client.PostAsJsonAsync("/api/normalization-ai/runs", new { });
-		response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+		using var response = await client.SendAsync(new(new HttpMethod(method), "/api/normalization-ai/" + path)
+		{ Content = JsonContent.Create(new { clientRequestId = Guid.NewGuid(), itemIds = new[] { Guid.NewGuid() }, model = "model-a" }) });
+		response.StatusCode.Should().Be(expected);
 		service.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task ApplyingRetiredPerPurchaseRunAnswersConflictProblemWithReason()
+	{
+		Guid runId = Guid.NewGuid(), proposal = Guid.NewGuid(), revision = Guid.NewGuid();
+		var service = new Mock<INormalizationAiService>(MockBehavior.Strict);
+		service.Setup(x => x.ApplyAsync("owner", runId, It.Is<IReadOnlyList<Guid>>(ids => ids.SequenceEqual(new[] { proposal })), revision, It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new NormalizationAiException(409, "workflow_retired", "Per-purchase ChatGPT suggestions are retired."));
+		await using var app = await Start(service);
+		using var client = app.GetTestClient(); client.DefaultRequestHeaders.Add("Test-Role", "Admin");
+		using var response = await client.PostAsJsonAsync($"/api/normalization-ai/runs/{runId}/apply", new { proposalIds = new[] { proposal }, expectedRevision = revision });
+		response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+		response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+		using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		json.RootElement.GetProperty("code").GetString().Should().Be("workflow_retired");
+		json.RootElement.GetProperty("detail").GetString().Should().Be("Per-purchase ChatGPT suggestions are retired.");
+		service.VerifyAll();
 	}
 
 	[Fact]

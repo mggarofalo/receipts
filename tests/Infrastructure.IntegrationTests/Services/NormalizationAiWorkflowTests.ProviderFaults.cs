@@ -16,7 +16,7 @@ public sealed partial class NormalizationAiWorkflowTests
 	{
 		var ids = await SeedAsync();
 		var service = Service();
-		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		var run = await StartSourcesAsync(service);
 		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ChatGptRunnerException("busy", requestMayHaveStarted: false));
 		await service.ProcessNextAsync(CancellationToken.None);
@@ -66,7 +66,7 @@ public sealed partial class NormalizationAiWorkflowTests
 	{
 		var ids = await SeedAsync();
 		var service = Service();
-		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		var run = await StartSourcesAsync(service);
 		int attempts = 0;
 		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
 			.Returns((ChatGptInferenceRequest request, CancellationToken _) => ++attempts == 1
@@ -96,7 +96,7 @@ public sealed partial class NormalizationAiWorkflowTests
 	{
 		var ids = await SeedAsync();
 		var service = Service();
-		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		var run = await StartSourcesAsync(service);
 		runner.Setup(x => x.InferAsync(It.IsAny<ChatGptInferenceRequest>(), It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new ChatGptRunnerException("busy", requestMayHaveStarted: false));
 		await service.ProcessNextAsync(CancellationToken.None);
@@ -117,7 +117,7 @@ public sealed partial class NormalizationAiWorkflowTests
 	{
 		var ids = await SeedAsync();
 		var service = Service();
-		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		var run = await StartSourcesAsync(service);
 		if (contentionExhausted)
 		{
 			await using var db = fixture.CreateDbContext();
@@ -150,7 +150,7 @@ public sealed partial class NormalizationAiWorkflowTests
 		script.Inferences.Enqueue((request, _) => Task.FromResult(Response(request)));
 		var service = Service();
 		int audits = await AuditCountAsync(ids);
-		var run = await service.StartAsync(Owner, Guid.NewGuid(), ids, "test-model", CancellationToken.None);
+		var run = await StartSourcesAsync(service);
 
 		(await service.ProcessNextAsync(CancellationToken.None)).Should().BeTrue();
 		var restarted = Service();

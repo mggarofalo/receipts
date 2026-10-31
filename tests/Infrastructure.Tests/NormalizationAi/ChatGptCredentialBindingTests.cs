@@ -66,7 +66,7 @@ public sealed class ChatGptCredentialBindingTests : IDisposable
 		var settings = new NormalizationAiOptions { Enabled = true, OwnerUserId = "owner" };
 		var runner = new Mock<IChatGptRunner>(MockBehavior.Strict);
 		var binding = new ChatGptCredentialBinding(new() { HomeDirectory = home });
-		var service = new NormalizationAiService(factory, runner.Object, Mock.Of<INormalizedDescriptionService>(),
+		var service = new NormalizationAiService(factory, runner.Object,
 			Options.Create(settings), TimeProvider.System, Mock.Of<ICommittedChangePublisher>(),
 			runnerOptions: Options.Create(new PiNormalizationRunnerOptions { HomeDirectory = home }));
 		(await service.GetConnectionAsync("owner", default)).CredentialsPresent.Should().BeFalse();
@@ -89,7 +89,7 @@ public sealed class ChatGptCredentialBindingTests : IDisposable
 		Directory.CreateDirectory(home);
 		var factory = new Factory(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 		var binding = new ChatGptCredentialBinding(new() { HomeDirectory = home });
-		var service = new NormalizationAiService(factory, Mock.Of<IChatGptRunner>(), Mock.Of<INormalizedDescriptionService>(),
+		var service = new NormalizationAiService(factory, Mock.Of<IChatGptRunner>(),
 			Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = "owner" }), TimeProvider.System, Mock.Of<ICommittedChangePublisher>(),
 			runnerOptions: Options.Create(new PiNormalizationRunnerOptions { HomeDirectory = home }));
 		Guid change = await service.BeginConnectionChangeAsync(default);
