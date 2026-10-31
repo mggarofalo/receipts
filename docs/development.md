@@ -166,8 +166,13 @@ dotnet run scripts/run-prerequisite-tests.cs -- postgres
 # Provision/check the pinned model, then run only real-model tests
 dotnet run scripts/run-prerequisite-tests.cs -- model
 
+# Measure catalog shortlist recall (Docker + model + a database to measure; a measurement, not a gate)
+RECEIPTS_RECALL_CONNECTION="Host=...;Database=...;Username=...;Password=..." \
+RECEIPTS_RECALL_OUTPUT=~/private/catalog-recall \
+  dotnet run scripts/run-prerequisite-tests.cs -- catalog-recall
+
 # Integration tests with no Docker/model prerequisite
-dotnet test Receipts.slnx --filter "Category=Integration&Prerequisite!=Postgres&Prerequisite!=Model"
+dotnet test Receipts.slnx --filter "Category=Integration&Prerequisite!=Postgres&Prerequisite!=Model&Prerequisite!=CatalogRecall"
 
 # Run tests for a specific project
 dotnet test tests/Application.Tests/Application.Tests.csproj
@@ -185,7 +190,7 @@ The `Infrastructure.IntegrationTests` project runs EF Core against a real Postgr
 
 **Requirements:** Docker must be running. The tests automatically start and stop a PostgreSQL container — no manual database setup or ONNX model is needed. The lane command checks Docker first and exits with a prerequisite-specific message if it is unavailable.
 
-**CI note:** Integration tests remain excluded from the CI unit-test step. PostgreSQL-backed tests additionally declare `Prerequisite=Postgres` and run in the **PostgreSQL Persistence** job. Real-model tests declare `Prerequisite=Model` and remain an explicit local lane because provisioning the pinned model downloads about 1.34 GB.
+**CI note:** Integration tests remain excluded from the CI unit-test step. PostgreSQL-backed tests additionally declare `Prerequisite=Postgres` and run in the **PostgreSQL Persistence** job. Real-model tests declare `Prerequisite=Model` and remain an explicit local lane because provisioning the pinned model downloads about 1.34 GB. The catalog recall harness declares `Prerequisite=CatalogRecall` and runs only through its own lane; see [catalog shortlist recall](normalization-evaluation/catalog-recall.md).
 
 ## Git Hooks
 

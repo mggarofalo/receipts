@@ -32,25 +32,41 @@ switch (lane)
 		break;
 
 	case "model":
-		Console.WriteLine("Provisioning and verifying the pinned ONNX model...");
-		int provisionExitCode = await RunAsync(
-			"dotnet",
-			[
-				"run",
-				Path.Combine(repoRoot, "scripts", "download-onnx-model.cs"),
-				"--",
-				"--verify-existing",
-			],
-			repoRoot);
-		if (provisionExitCode != 0)
+		if (!await ModelIsProvisionedAsync(repoRoot))
 		{
-			Console.Error.WriteLine(
-				"Model prerequisite unavailable: the pinned ONNX model could not be provisioned or verified.");
 			return 2;
 		}
 
 		project = Path.Combine(repoRoot, "tests", "Infrastructure.Tests", "Infrastructure.Tests.csproj");
 		prerequisite = "Model";
+		break;
+
+	case "catalog-recall":
+		// A measurement, not a gate (RECEIPTS-1089): the real-data run reads the database named here,
+		// and the synthetic fixture runs in a disposable PostgreSQL container.
+		if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("RECEIPTS_RECALL_CONNECTION")))
+		{
+			Console.Error.WriteLine(
+				"Catalog recall prerequisite unavailable: set RECEIPTS_RECALL_CONNECTION to the Npgsql connection " +
+				"string of the database to measure. Set RECEIPTS_RECALL_OUTPUT to a private directory for per-store detail.");
+			return 2;
+		}
+
+		if (!await DockerIsAvailableAsync(repoRoot))
+		{
+			Console.Error.WriteLine(
+				"Catalog recall prerequisite unavailable: Docker is needed for the synthetic fixture. " +
+				"Start Docker and rerun this command.");
+			return 2;
+		}
+
+		if (!await ModelIsProvisionedAsync(repoRoot))
+		{
+			return 2;
+		}
+
+		project = Path.Combine(repoRoot, "tests", "Infrastructure.IntegrationTests", "Infrastructure.IntegrationTests.csproj");
+		prerequisite = "CatalogRecall";
 		break;
 
 	default:
@@ -147,6 +163,28 @@ static int ReadCounter(XElement counters, string name)
 		: 0;
 }
 
+static async Task<bool> ModelIsProvisionedAsync(string repoRoot)
+{
+	Console.WriteLine("Provisioning and verifying the pinned ONNX model...");
+	int provisionExitCode = await RunAsync(
+		"dotnet",
+		[
+			"run",
+			Path.Combine(repoRoot, "scripts", "download-onnx-model.cs"),
+			"--",
+			"--verify-existing",
+		],
+		repoRoot);
+	if (provisionExitCode != 0)
+	{
+		Console.Error.WriteLine(
+			"Model prerequisite unavailable: the pinned ONNX model could not be provisioned or verified.");
+		return false;
+	}
+
+	return true;
+}
+
 static async Task<bool> DockerIsAvailableAsync(string workingDirectory)
 {
 	try
@@ -193,5 +231,5 @@ static string GetRepoRoot()
 
 static void PrintUsage()
 {
-	Console.Error.WriteLine("Usage: dotnet run scripts/run-prerequisite-tests.cs -- <postgres|model>");
+	Console.Error.WriteLine("Usage: dotnet run scripts/run-prerequisite-tests.cs -- <postgres|model|catalog-recall>");
 }

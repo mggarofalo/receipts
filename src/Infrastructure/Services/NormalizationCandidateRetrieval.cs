@@ -7,16 +7,50 @@ using Pgvector;
 
 namespace Infrastructure.Services;
 
+/// <summary>
+/// Evaluation-only view into one retrieval, for the RECEIPTS-1089 recall harness; production callers never pass it.
+/// Leave-one-out hides a source's own evidence here instead of revoking rows, which would invalidate reviews.
+/// </summary>
+internal sealed class NormalizationRetrievalProbe
+{
+	/// <summary>This mapping cannot supply <c>approved_example</c> evidence.</summary>
+	public Guid? HiddenMappingId { get; init; }
+
+	/// <summary>This description never appears among any candidate's approved examples.</summary>
+	public string? HiddenDescription { get; init; }
+
+	/// <summary>Every target a channel accepted, with its channels, before final ordering and the 20-row cut.</summary>
+	public IReadOnlyDictionary<Guid, string[]> Pool { get; internal set; } = new Dictionary<Guid, string[]>();
+}
+
 /// <summary>Shared bounded retrieval. Callers must apply their own authorization before invoking it.</summary>
 internal static class NormalizationCandidateRetrieval
 {
 	private const int MaximumReceiptScanPerChannel = 500;
 
+	/// <summary>The receipt-entry chooser: only candidates with useful display evidence survive.</summary>
+	internal static Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveForReceiptEntryAsync(
+		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
+		CancellationToken cancellationToken, NormalizationRetrievalProbe? probe = null)
+		=> RetrieveAsync(context, source, embeddingService, cancellationToken,
+			candidate => ReceiptSuggestionEvidence.IsUseful(source, candidate), ReceiptSuggestionEvidence.LexicalTerms, probe);
+
+	/// <summary>The lowercase terms the lexical channel probes, one bounded query each.</summary>
+	internal static string[] LexicalTokens(string description, Func<string, IEnumerable<string>>? lexicalTerms = null)
+	{
+		IEnumerable<string> terms = lexicalTerms?.Invoke(description)
+				?? description.Split([' ', '\t', '-', '/'], StringSplitOptions.RemoveEmptyEntries)
+						.Where(token => token.Length >= 2);
+		return terms.Select(token => token.ToLowerInvariant()).Distinct().Take(8).ToArray();
+	}
+
 	internal static async Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveAsync(
 		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
 				CancellationToken cancellationToken, Func<NormalizationCatalogCandidate, bool>? include = null,
-				Func<string, IEnumerable<string>>? lexicalTerms = null)
+				Func<string, IEnumerable<string>>? lexicalTerms = null, NormalizationRetrievalProbe? probe = null)
 	{
+		Guid? hiddenMappingId = probe?.HiddenMappingId;
+		string? hiddenDescription = probe?.HiddenDescription;
 		Dictionary<Guid, (NormalizedDescriptionEntity Target, HashSet<string> Channels)> found = [];
 		Dictionary<Guid, int> semanticRanks = [];
 		async Task AddAsync(IQueryable<NormalizedDescriptionEntity> query, string channel)
@@ -45,11 +79,9 @@ internal static class NormalizationCandidateRetrieval
 		await AddAsync(active.Where(target => target.CanonicalName.ToLower() == text || (target.DisplayLabel ?? target.CanonicalName).ToLower() == text), "exact");
 		// Approved examples are evidence, never self-training on automatic links.
 		await AddAsync(active.Where(target => context.NormalizationSourceMappings.Any(mapping => mapping.State == "active" && !mapping.Exclude
-			&& mapping.TargetId == target.Id && mapping.Description == source.Description)), "approved_example");
-		IEnumerable<string> terms = lexicalTerms?.Invoke(source.Description)
-				?? source.Description.Split([' ', '\t', '-', '/'], StringSplitOptions.RemoveEmptyEntries)
-						.Where(token => token.Length >= 2);
-		string[] tokens = terms.Select(token => token.ToLowerInvariant()).Distinct().Take(8).ToArray();
+			&& mapping.TargetId == target.Id && mapping.Description == source.Description
+			&& (hiddenMappingId == null || mapping.Id != hiddenMappingId))), "approved_example");
+		string[] tokens = LexicalTokens(source.Description, lexicalTerms);
 		foreach (string token in tokens)
 		{
 			await AddAsync(active.Where(target => target.CanonicalName.ToLower().Contains(token) || (target.DisplayLabel ?? target.CanonicalName).ToLower().Contains(token)), "lexical");
@@ -70,6 +102,7 @@ internal static class NormalizationCandidateRetrieval
 				await AddAsync(active.Where(target => nearest.Contains(target.Id)), "semantic");
 			}
 		}
+		if (probe is not null) { probe.Pool = found.ToDictionary(entry => entry.Key, entry => entry.Value.Channels.Order().ToArray()); }
 		List<NormalizationCatalogCandidate> result = [];
 		// Reserve space for the best semantic neighbors: alphabetically early lexical
 		// distractors must not evict the closest product before identity verification.
@@ -88,7 +121,8 @@ internal static class NormalizationCandidateRetrieval
 		var exampleRows = await active.Where(target => candidateIds.Contains(target.Id)).Select(target => new
 		{
 			target.Id,
-			Examples = context.NormalizationSourceMappings.Where(mapping => mapping.State == "active" && !mapping.Exclude && mapping.TargetId == target.Id)
+			Examples = context.NormalizationSourceMappings.Where(mapping => mapping.State == "active" && !mapping.Exclude && mapping.TargetId == target.Id
+					&& (hiddenDescription == null || mapping.Description != hiddenDescription))
 				.Select(mapping => mapping.Description).Distinct().Order().Take(3).ToList()
 		}).ToListAsync(cancellationToken);
 		var examplesByTarget = exampleRows.ToDictionary(row => row.Id, row => row.Examples);
