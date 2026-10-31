@@ -7,6 +7,7 @@ using Common;
 using Domain.Taxonomy;
 using Infrastructure.Entities.Taxonomy;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Infrastructure.Services;
 
@@ -27,6 +28,16 @@ public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> fact
 			.Select(row => new TaxonomyNode(row.CategoryId, row.ParentId, row.Name, row.Definition, row.Archived)).ToListAsync(ct);
 		return new(revision.Id, revision.Sequence, revision.PreviousRevisionId, revision.RecordedAt, revision.Actor,
 			revision.Reason, revision.OperationId, nodes, revision.AffectedCount);
+	}
+
+	// EF wraps the database's refusal (in DbUpdateException, and again in its execution strategy).
+	private static bool RestructureRunning(Exception? error)
+	{
+		for (; error is not null; error = error.InnerException)
+		{
+			if (error is PostgresException { SqlState: PostgresErrorCodes.ObjectNotInPrerequisiteState }) { return true; }
+		}
+		return false;
 	}
 
 	public async Task<TaxonomyRevision> ChangeAsync(string actor, TaxonomyChangeCommand command, CancellationToken cancellationToken = default)
@@ -50,13 +61,16 @@ public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> fact
 			TaxonomyRevision replay = (await ReadRevisionAsync(context, previous.RevisionId, cancellationToken))!;
 			return replay with { AffectedCount = previous.AffectedCount };
 		}
-		// A restructure moves purchases against one pinned revision; an edit in the middle would strand the rest.
-		if (await context.HistoricalOperations.AnyAsync(row => row.Kind == HistoricalOperationKind.RestructureV1
-			&& (row.State == HistoricalOperationState.Preview || row.State == HistoricalOperationState.Applying
-				|| row.State == HistoricalOperationState.Undoing), cancellationToken))
+		Guid resultId;
+		int affected;
+		try
+		{
+			(resultId, affected) = await AppendInTransactionAsync(context, head, actor, command, hash, now, cancellationToken);
+			await context.SaveChangesAsync(cancellationToken);
+		}
+		// The database refuses new revisions while a restructure is applied or undone (AddCategoryRestructure).
+		catch (Exception error) when (RestructureRunning(error))
 		{ throw new TaxonomyException(409, "A category restructure is still running. Finish or undo it before changing categories."); }
-		(Guid resultId, int affected) = await AppendInTransactionAsync(context, head, actor, command, hash, now, cancellationToken);
-		await context.SaveChangesAsync(cancellationToken);
 		await transaction.CommitAsync(cancellationToken);
 		if (affected != 0 && publisher != null)
 		{

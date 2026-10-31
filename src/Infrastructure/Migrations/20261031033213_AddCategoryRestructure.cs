@@ -204,6 +204,20 @@ public partial class AddCategoryRestructure : Migration
                         OR ("Kind" = 'ApprovedMappingV1' AND "ApprovedMappingRevisionId" IS NOT NULL)) NOT VALID;
                 """);
 		migrationBuilder.Sql(ItemGuard);
+		// A restructure moves purchases against one pinned category revision, so no revision may be appended while one
+		// is being applied or undone; an edit in the middle would strand the purchases still to move.
+		migrationBuilder.Sql("""
+                CREATE FUNCTION taxonomy.refuse_revision_during_restructure() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM taxonomy."HistoricalOperations"
+                               WHERE "Kind" = 'RestructureV1' AND "State" IN ('Preview', 'Applying', 'Undoing')) THEN
+                        RAISE EXCEPTION 'A category restructure is still running' USING ERRCODE = '55000';
+                    END IF;
+                    RETURN NEW;
+                END $$;
+                CREATE TRIGGER refuse_revision_during_restructure BEFORE INSERT ON taxonomy."Revisions"
+                    FOR EACH ROW EXECUTE FUNCTION taxonomy.refuse_revision_during_restructure();
+                """);
 	}
 
 	/// <inheritdoc />
@@ -216,6 +230,8 @@ public partial class AddCategoryRestructure : Migration
                         RAISE EXCEPTION 'Category restructure history is retained' USING ERRCODE = '23514';
                     END IF;
                 END $$;
+                DROP TRIGGER refuse_revision_during_restructure ON taxonomy."Revisions";
+                DROP FUNCTION taxonomy.refuse_revision_during_restructure();
                 ALTER TABLE taxonomy."HistoricalOperations" DROP CONSTRAINT historical_operation_kind_valid;
                 ALTER TABLE taxonomy."HistoricalOperations" ADD CONSTRAINT historical_operation_kind_valid
                     CHECK ("Kind" IN ('ManualV1', 'ApprovedMappingV1', 'JevSuggestionV1'));

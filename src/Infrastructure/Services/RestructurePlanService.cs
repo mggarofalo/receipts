@@ -273,7 +273,11 @@ public sealed class RestructurePlanService(IDbContextFactory<ApplicationDbContex
 		{ throw new TaxonomyException(409, "Categories changed after this restructure. Undo those changes first, or keep the restructure."); }
 		// An interrupted apply stops here; purchases it already reassigned are undone like the rest.
 		if (operation.State is HistoricalOperationState.Preview or HistoricalOperationState.Applying)
-		{ operation.State = HistoricalReclassificationPolicy.Cancel(operation.State); }
+		{
+			operation.State = HistoricalReclassificationPolicy.Cancel(operation.State);
+			// Saved before the revert revision: the database refuses revisions while a restructure is running.
+			await db.SaveChangesAsync(ct);
+		}
 
 		List<TaxonomyNode> original = [.. (await NodesAsync(db, application.BaseRevisionId, ct)).Values];
 		IReadOnlyList<TaxonomyEdit> revert = RestructurePlanner.RevertChanges(current, original);
