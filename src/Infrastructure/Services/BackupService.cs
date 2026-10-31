@@ -16,6 +16,19 @@ public class BackupService(
 	public Task<string> ExportToSqliteAsync(CancellationToken cancellationToken = default)
 			=> ExportToSqliteCoreAsync(true, cancellationToken);
 
+	public async Task<string> ExportCompressedAsync(CancellationToken cancellationToken = default)
+	{
+		string sqlitePath = await ExportToSqliteAsync(cancellationToken);
+		try
+		{
+			return await PortableBackupCompression.CompressToTempFileAsync(sqlitePath, cancellationToken);
+		}
+		finally
+		{
+			File.Delete(sqlitePath);
+		}
+	}
+
 	// Compatibility alias for internal callers of the v14 codec.
 	internal Task<string> ExportCandidateToSqliteAsync(CancellationToken cancellationToken = default)
 			=> ExportToSqliteCoreAsync(true, cancellationToken);

@@ -308,6 +308,45 @@ public class BackupServiceTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExportCompressedAsync_WritesGzipOfPortableSqlite_AndDeletesRawExport()
+	{
+		// Arrange
+		Guid accountId = Guid.NewGuid();
+		await using (ApplicationDbContext ctx = await _dbContextFactory.CreateDbContextAsync())
+		{
+			ctx.Accounts.Add(new AccountEntity { Id = accountId, Name = "Checking", IsActive = true });
+			ctx.Cards.Add(new CardEntity { Id = Guid.NewGuid(), CardCode = "1000", Name = "Checking", IsActive = true, AccountId = accountId });
+			await ctx.SaveChangesAsync();
+		}
+
+		// Act
+		string compressedPath = await _service.ExportCompressedAsync();
+		_tempFiles.Add(compressedPath);
+
+		// Assert
+		compressedPath.Should().EndWith(".db.gz");
+		File.Exists(compressedPath[..^".gz".Length]).Should().BeFalse("the raw SQLite export is a temporary intermediate");
+		string sqlitePath = Path.Combine(Path.GetTempPath(), $"backup-decompressed-{Guid.NewGuid():N}.db");
+		_tempFiles.Add(sqlitePath);
+		await using (FileStream source = File.OpenRead(compressedPath))
+		await using (FileStream destination = File.Create(sqlitePath))
+		{
+			source.ReadByte().Should().Be(0x1F);
+			source.ReadByte().Should().Be(0x8B);
+			source.Position = 0;
+			await PortableBackupCompression.CopyAsSqliteAsync(source, destination, BackupImportService.MaxSqliteBytes, CancellationToken.None);
+		}
+		await using SqliteConnection conn = new(new SqliteConnectionStringBuilder { DataSource = sqlitePath, Pooling = false }.ToString());
+		await conn.OpenAsync();
+		await using SqliteCommand cmd = conn.CreateCommand();
+		cmd.CommandText = "SELECT value FROM backup_metadata WHERE key='export_version'";
+		((string?)await cmd.ExecuteScalarAsync()).Should().Be("15", "compression wraps the file without changing its format version");
+		cmd.CommandText = "SELECT name FROM accounts WHERE id=$id";
+		cmd.Parameters.AddWithValue("$id", accountId.ToString());
+		((string?)await cmd.ExecuteScalarAsync()).Should().Be("Checking");
+	}
+
+	[Fact]
 	public async Task CreateSchemaAsync_CreatesAllExpectedTables()
 	{
 		// Arrange

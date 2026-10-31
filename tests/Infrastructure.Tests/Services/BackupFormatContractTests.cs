@@ -87,6 +87,22 @@ public class BackupFormatContractTests
 		await import.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*missing required '{table}'*");
 	}
 
+	[Fact]
+	public async Task Import_GzipMagicFollowedByGarbage_IsRejectedAsInvalidBackupBeforeDestinationAccess()
+	{
+		// Arrange
+		var importer = new BackupImportService(new UnavailableFactory(), NullLogger<BackupImportService>.Instance);
+		using MemoryStream upload = new([0x1F, 0x8B, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+
+		// Act
+		Func<Task> import = () => importer.ImportFromSqliteAsync(upload, CancellationToken.None);
+
+		// Assert
+		(await import.Should().ThrowAsync<InvalidOperationException>()
+			.WithMessage("The uploaded file is not a valid gzip-compressed backup."))
+			.Which.InnerException.Should().BeOfType<InvalidDataException>();
+	}
+
 	private sealed class UnavailableFactory : IDbContextFactory<ApplicationDbContext>
 	{
 		public ApplicationDbContext CreateDbContext() => throw new InvalidOperationException("Destination must not be accessed.");

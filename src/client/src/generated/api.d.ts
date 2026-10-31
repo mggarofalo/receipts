@@ -2655,7 +2655,7 @@ export interface paths {
         put?: never;
         /**
          * Import data from a SQLite backup file
-         * @description Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database (insert if new, update if existing by ID). Requires the Admin role. The import is atomic â€” if any entity fails validation, the entire import is rolled back.
+         * @description Accepts a SQLite database file exported by the backup endpoint, raw or gzip-compressed (.db.gz), reads all entity tables, and upserts each row into the current database (insert if new, update if existing by ID). Requires the Admin role. The import is atomic â€” if any entity fails validation, the entire import is rolled back.
          */
         post: operations["ImportBackup"];
         delete?: never;
@@ -3296,7 +3296,7 @@ export interface paths {
         put?: never;
         /**
          * Export database to a portable SQLite file
-         * @description Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration and current sync records, and normalized descriptions. Inert legacy receipt image-path metadata is retained for archival compatibility. Photo support is retired and image binaries are not included. User accounts and authentication settings are excluded. Audit logs, the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.
+         * @description Generates a gzip-compressed SQLite database (.db.gz) containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration and current sync records, and normalized descriptions. Inert legacy receipt image-path metadata is retained for archival compatibility. Photo support is retired and image binaries are not included. User accounts and authentication settings are excluded. Audit logs, the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.
          */
         post: operations["ExportBackup"];
         delete?: never;
@@ -16122,7 +16122,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description SQLite database file */
+            /** @description Gzip-compressed SQLite database file */
             200: {
                 headers: {
                     [name: string]: unknown;

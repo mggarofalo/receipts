@@ -183,8 +183,8 @@ add_header X-Content-Type-Options "nosniff" always;
 add_header X-Frame-Options "SAMEORIGIN" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-# Increase body size for receipt uploads
-client_max_body_size 10M;
+# Allow backup restores (the app caps uploads at 100 MB; compressed backups are far smaller)
+client_max_body_size 100M;
 ```
 
 ### Network Configuration

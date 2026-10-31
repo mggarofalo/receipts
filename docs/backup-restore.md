@@ -183,6 +183,29 @@ See [offline backup normalization](offline-backup-normalization.md).
 
 Canonical embedding vectors are not in the portable file. Freshly restored canonical rows have no vectors; existing vectors survive only when their matching text is unchanged. When the embedding service is configured, the background worker rebuilds missing or outdated vectors for eligible canonical rows before other semantic sources. Similarity search can be incomplete until rebuilding finishes; restored grouping, labels, and curation remain available.
 
+## Compressed transfer
+
+The REST export wraps the portable SQLite file in gzip (`.db.gz`) since RECEIPTS-1087.
+This is a transfer container, not a new format: the SQLite file inside is the same
+export, with the same `export_version`, so no format bump is involved. Most of the file
+is text-encoded taxonomy history (IDs, timestamps and JSON evidence), which compresses
+about 8:1. An owner backup of 94 MB raw is about 12 MB compressed.
+
+Import detects gzip by its magic bytes, not by the file name, and decompresses while
+streaming to its temporary file. Raw SQLite uploads of every supported format still
+restore unchanged. Two limits apply, independently:
+
+- **Upload:** 100 MB as sent (`BackupController`). Keep the reverse proxy's body limit
+  at least this large; see [deployment](deployment.md#custom-nginx-configuration-advanced-tab).
+- **Restored SQLite:** 1 GiB after decompression (`BackupImportService`). This bounds disk
+  use in the container's temporary directory and rejects decompression bombs.
+
+The CLI exporter (`DbExporter`) and the offline tools keep working with raw SQLite. To
+use a downloaded backup with them, decompress it first:
+`gunzip -k receipts-backup-<timestamp>.db.gz`. Importers older than this change accept
+only raw SQLite, so decompress a `.db.gz` the same way before restoring it into an
+older release.
+
 ## Export consistency and file ownership
 
 Portable exports read all included PostgreSQL tables from one read-only Repeatable Read snapshot, established by the first source query. Concurrent transactions can continue writing; their later changes appear in a subsequent backup, rather than mixing old parent values with new child values in the current file. The destination SQLite transaction enforces foreign keys and completes before the file is returned.
@@ -202,7 +225,9 @@ POST /api/backup/export
 Authorization: Bearer <token>
 ```
 
-Returns a SQLite database file as `application/octet-stream` with filename `receipts-backup-{yyyyMMdd-HHmmss}.db`.
+Returns the portable SQLite file wrapped in gzip, as `application/octet-stream` with
+filename `receipts-backup-{yyyyMMdd-HHmmss}.db.gz`. See
+[Compressed transfer](#compressed-transfer).
 
 ### Import
 
@@ -212,7 +237,8 @@ Content-Type: multipart/form-data
 Authorization: Bearer <token>
 ```
 
-Accepts a single file upload (`.sqlite`, `.sqlite3`, or `.db`, max 100 MB).
+Accepts a single file upload (`.db.gz`, `.gz`, `.sqlite`, `.sqlite3`, or `.db`), at most
+100 MB as uploaded and at most 1 GiB once decompressed.
 Target admission and upsert rules are described above. Format 10 preserves explicit
 active/trash state; older formats contain no such state and perform fresh-target
 conversion (or validated exact-file replay).

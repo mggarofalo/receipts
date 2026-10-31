@@ -123,26 +123,26 @@ public class BackupImportNotificationTests : IDisposable
 	[InlineData("cancelled")]
 	public async Task Export_NeverEmitsAnImportNotification(string outcome)
 	{
-		string path = Path.Combine(Path.GetTempPath(), $"backup-notification-{Guid.NewGuid():N}.db");
+		string path = Path.Combine(Path.GetTempPath(), $"backup-notification-{Guid.NewGuid():N}.db.gz");
 		try
 		{
 			if (outcome == "success")
 			{
 				await File.WriteAllBytesAsync(path, [1, 2, 3]);
-				_export.Setup(service => service.ExportToSqliteAsync(It.IsAny<CancellationToken>())).ReturnsAsync(path);
+				_export.Setup(service => service.ExportCompressedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(path);
 				var response = await _controller.Export(CancellationToken.None);
 				FileStreamHttpResult stream = response.Result.Should().BeOfType<FileStreamHttpResult>().Subject;
 				await stream.FileStream.DisposeAsync();
 			}
 			else if (outcome == "cancelled")
 			{
-				_export.Setup(service => service.ExportToSqliteAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new OperationCanceledException());
+				_export.Setup(service => service.ExportCompressedAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new OperationCanceledException());
 				Func<Task> operation = () => _controller.Export(CancellationToken.None);
 				await operation.Should().ThrowAsync<OperationCanceledException>();
 			}
 			else
 			{
-				_export.Setup(service => service.ExportToSqliteAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Export failed"));
+				_export.Setup(service => service.ExportCompressedAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("Export failed"));
 				var response = await _controller.Export(CancellationToken.None);
 				response.Result.Should().BeOfType<StatusCodeHttpResult>().Which.StatusCode.Should().Be(500);
 			}
