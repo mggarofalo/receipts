@@ -20,7 +20,18 @@ internal sealed class EmbeddingCoverageWarning(ILogger logger)
 			return;
 		}
 
-		(int ready, int total) = await CatalogEmbeddingCoverage.CountAsync(context, cancellationToken);
+		int ready, total;
+		try
+		{
+			(ready, total) = await CatalogEmbeddingCoverage.CountAsync(context, cancellationToken);
+		}
+		catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+		{
+			// A diagnostic must never stop the rebuild it reports on.
+			logger.LogDebug(ex, "Catalog embedding coverage check failed");
+			return;
+		}
+
 		if (total == 0 || ready >= total * MinimumCoverage)
 		{
 			return;

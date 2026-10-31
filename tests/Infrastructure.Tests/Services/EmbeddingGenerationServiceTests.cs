@@ -748,17 +748,18 @@ public class EmbeddingGenerationServiceTests
 	[Fact]
 	public async Task ProcessPendingEmbeddingsAsync_StaleCatalog_WarnsOnceAcrossCycles()
 	{
+		// More stale rows than one batch, so coverage is still below 95% on the second cycle.
 		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			seed.NormalizedDescriptions.AddRange(Enumerable.Range(0, 60).Select(index => new NormalizedDescriptionEntity
 			{
 				Id = Guid.NewGuid(),
-				CanonicalName = "Organic milk",
+				CanonicalName = $"Stale catalog name {index:D2}",
 				Status = NormalizedDescriptionStatus.Active,
 				Embedding = new Vector(CreateFakeEmbedding()),
 				EmbeddingModelVersion = "obsolete-space",
 				CreatedAt = DateTimeOffset.UtcNow,
-			});
+			}));
 			await seed.SaveChangesAsync();
 		}
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);

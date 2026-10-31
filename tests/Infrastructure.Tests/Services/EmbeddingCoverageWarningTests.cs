@@ -70,6 +70,19 @@ public class EmbeddingCoverageWarningTests
 		VerifyWarnings(Times.Once());
 	}
 
+	[Fact]
+	public async Task CheckAsync_WhenTheCountFails_StaysQuietAndDoesNotThrow()
+	{
+		EmbeddingCoverageWarning warning = new(_logger.Object);
+		ApplicationDbContext context = _contextFactory.CreateDbContext();
+		await context.DisposeAsync();
+
+		Func<Task> act = () => warning.CheckAsync(context, CancellationToken.None);
+
+		await act.Should().NotThrowAsync();
+		VerifyWarnings(Times.Never());
+	}
+
 	private void VerifyWarnings(Times times) => _logger.Verify(
 		logger => logger.Log(
 			LogLevel.Warning,
