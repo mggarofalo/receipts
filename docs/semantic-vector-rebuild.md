@@ -7,9 +7,18 @@ vectors derived from their text do not belong in portable backups.
 ## Embedding-space identity
 
 Every stored vector carries `OnnxEmbeddingService.EmbeddingSpaceFingerprint`. The fingerprint
-includes the pinned ONNX digest, tokenizer implementation and vocabulary digest, maximum token
-count, pooling strategy, and L2-normalization contract. Change the fingerprint whenever any input
-can change vector coordinates.
+includes the pinned ONNX digest, the ONNX Runtime and tokenizer assembly versions, the vocabulary
+digest, maximum token count, pooling strategy, and L2-normalization contract. Change the fingerprint
+whenever any input can change vector coordinates.
+
+**Runtime and tokenizer versions stay in the fingerprint (decided in RECEIPTS-1103).** A runtime
+upgrade can change kernels and float rounding, and a tokenizer upgrade can split the same text into
+different tokens. Either can move vectors without any model change, and mixing spaces silently
+degrades nearest-neighbour results. That costs more than a rebuild, which is bounded and resumable.
+The cost is that **every `Microsoft.ML.OnnxRuntime` or `Microsoft.ML.Tokenizers` bump re-embeds the
+whole corpus.** To keep that visible, `EmbeddingSpaceFingerprintTests.EmbeddingSpaceFingerprint_IsPinned`
+pins the exact string. It is expected to fail on every such bump. Update it only as a deliberate
+decision to rebuild, and say so in the PR, so a dependency update cannot start a rebuild unnoticed.
 
 ANN and hybrid-search queries use only the current fingerprint. During a rollout, old vectors can
 remain stored until the worker reaches them, but they cannot be compared with queries from the new
@@ -32,6 +41,11 @@ The worker never recreates or relinks canonical descriptions. Rebuilding therefo
 curated names, statuses, links, and other durable decisions.
 
 ## Readiness and incomplete coverage
+
+When searchable catalog coverage at the current fingerprint is below 95%, the embedding worker
+logs one warning per fingerprint and process. The warning gives the ready and total counts and the
+fingerprint, so a rebuild in progress is not mistaken for a model regression. Until coverage
+recovers, semantic suggestions are incomplete.
 
 Admins can read `GET /api/normalized-descriptions/embedding-coverage`. It reports current and total
 counts for searchable canonical rows and eligible item sources, pending counts, the admitted

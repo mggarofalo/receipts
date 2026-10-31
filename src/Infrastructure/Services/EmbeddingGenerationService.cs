@@ -28,6 +28,7 @@ public class EmbeddingGenerationService(
 	private static readonly TimeSpan Interval = TimeSpan.FromSeconds(30);
 	private static readonly TimeSpan ProductiveBatchDelay = TimeSpan.FromMilliseconds(100);
 	private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(10);
+	private readonly EmbeddingCoverageWarning coverageWarning = new(logger);
 
 	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 	{
@@ -86,6 +87,7 @@ public class EmbeddingGenerationService(
 		}
 
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
+		await coverageWarning.CheckAsync(context, cancellationToken);
 
 		List<PendingItem> pending = await GetPendingItemsAsync(context, cancellationToken);
 		if (pending.Count == 0)

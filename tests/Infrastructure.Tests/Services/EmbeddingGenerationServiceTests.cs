@@ -746,6 +746,41 @@ public class EmbeddingGenerationServiceTests
 	}
 
 	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_StaleCatalog_WarnsOnceAcrossCycles()
+	{
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = Guid.NewGuid(),
+				CanonicalName = "Organic milk",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(CreateFakeEmbedding()),
+				EmbeddingModelVersion = "obsolete-space",
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((List<string> texts, CancellationToken _) => texts.Select(_ => CreateFakeEmbedding()).ToList());
+		using EmbeddingGenerationService service = CreatePublisherAwareService();
+
+		await service.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+		await service.ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		_loggerMock.Verify(
+			logger => logger.Log(
+				LogLevel.Warning,
+				It.IsAny<EventId>(),
+				It.Is<It.IsAnyType>((state, _) => state.ToString()!.Contains(OnnxEmbeddingService.EmbeddingSpaceFingerprint)),
+				It.IsAny<Exception?>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Once());
+	}
+
+	[Fact]
 	public async Task ProcessPendingEmbeddingsAsync_NormalizedDescriptions_RebuildsMissingAndStaleVectorsInPlace()
 	{
 		Guid activeId = Guid.NewGuid();
