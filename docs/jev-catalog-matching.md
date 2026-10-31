@@ -48,10 +48,19 @@ three outcomes: **match suggestion**, **review**, or **needs new name**.
 Each `CatalogMatchCandidate(Id, DisplayName, ApprovedExamples)` carries:
 
 - **`DisplayName`**: what a person sees, `DisplayLabel ?? CanonicalName` (`NormalizedDescription.DisplayName`).
-- **`ApprovedExamples`**: the candidate's approved, non-excluded source mappings, as the ChatGPT source-run collects
-  them today (`NormalizationAiService.Sources.cs`: up to three, same-scope first). An example is **same store** when it
-  shares the purchase's store *and* item code (`NormalizationApprovedExample.SameScope`); every other example is
-  **other store**.
+- **`ApprovedExamples`**: **all** of the candidate's active, non-excluded source mappings, uncapped. An example is
+  **same store** when it shares the purchase's store *and* item code (`NormalizationApprovedExample.SameScope`); every
+  other example is **other store**. This is the ChatGPT source-run's query (`NormalizationAiService.Sources.cs`) without
+  its `Take(3)`.
+
+The builder, not the caller, chooses which examples are sent (`CatalogMatchingPolicy.MaximumExamplesPerCandidate` = 3):
+
+1. Duplicate descriptions collapse to one. If any copy is same store, the example is same store.
+2. Same-store examples come first, then other-store, each in ordinal order of description.
+3. The first three are sent, split into `sameStoreExamples` and `otherStoreExamples`.
+
+Keeping the cap in the builder matters for leave-one-out (below): the evaluated source is removed *before* the cap, so the
+evaluated request shows exactly the examples production would have shown had that source never been approved.
 
 ### Approved examples are usually empty
 
@@ -64,8 +73,10 @@ candidate arrives with no examples, and Jev judges from the display names alone.
   shape does not change as mappings accumulate.
 
 When mappings do exist, the evaluation's leave-one-out must remove the evaluated source from its own evidence.
-`CatalogMatchRequest.WithoutExamplesOf(description)` removes every example with exactly that description (ordinal; source keys are case-significant) from every candidate,
-in both scopes, and changes nothing else. This matches what the recall harness hides from displayed examples
+`CatalogMatchRequest.WithoutExamplesOf(description)` removes every example with exactly that description (ordinal,
+because source keys are case-significant) from every candidate, in both scopes, and changes nothing else. Because the
+caller passes uncapped examples, a fourth example moves up when one of the first three is removed, as it would in
+production. The recall harness hides the same examples, also before its cap
 ([catalog recall](normalization-evaluation/catalog-recall.md#what-is-measured)).
 
 ### Not sent
@@ -89,12 +100,14 @@ input. It is never truncated, and no request is sent.
 
 - `Description` is not blank. `Store` is null or not blank. Each is at most 65,536 characters.
 - 1 to 255 candidates (`CategorySuggestionPolicy.MaximumOptions`), with distinct, non-empty IDs.
-- **Option keys are display names, used exactly as stored.** They must be non-blank and distinct ignoring case
-  (`StringComparer.OrdinalIgnoreCase`). The database already guarantees this for every catalog row, whatever its status:
+- **Option keys are display names, used exactly as stored.** They must be non-blank and distinct after lowercasing
+  (`string.ToLowerInvariant`). The database guarantees this for every catalog row, whatever its status:
   `IX_NormalizedDescriptions_DisplayName_Lower` is a unique index on `lower(COALESCE("DisplayLabel", "CanonicalName"))`.
   The builder checks it again so a caller that assembles candidates some other way fails rather than sending two names a
-  reader could not tell apart. Keys are never rewritten, suffixed or truncated: the key is the name a person reviews.
-- No example is null or blank.
+  reader could not tell apart. .NET's invariant lowercasing and PostgreSQL's `lower()` agree for ordinary text; for the
+  rare characters where they could differ, a pair the database accepted would fail here as invalid input, which is
+  safe. Keys are never rewritten, suffixed or truncated: the key is the name a person reviews.
+- No example is null or blank, and each is at most 65,536 characters.
 - Stage 1, and stage 2 for **every** candidate, each fit in 65,536 UTF-8 bytes (`CategorySuggestionPolicy.MaximumPayloadBytes`).
   Checking every candidate's stage 2 up front means stage 1 never starts a request whose second half cannot be sent.
 
@@ -104,7 +117,7 @@ guard against bad input, not normal use.
 ## Requests
 
 Both requests are `POST /v1/systemone` bodies of the form `{"model":"jev-1.14.0","state":{…},"questions":{…}}`, serialized
-with the default `System.Text.Json` encoder (the same as category assistance, so `` ` `` is sent as ```).
+with the default `System.Text.Json` encoder (the same as category assistance, so a backtick is sent as `\u0060`).
 
 Every question carries the same two plain lines:
 
@@ -117,6 +130,12 @@ Every question carries the same two plain lines:
 The evidence line is the injection guard. It differs from category assistance's on purpose. There, category names
 written in the receipt text are declared non-evidence. Here, a product name in the receipt text *is* the evidence, so
 only instructions are. It names examples too, because examples are receipt text written by stores.
+
+Candidate display names and the store are not declared non-evidence. Display names are the options themselves, and the
+store is a location the owner named. Both come from the owner's own catalog and settings, not from text a store printed.
+Some pending-review names were created from receipt text (see [RECEIPTS-1107](#interaction-with-pending-review-names-receipts-1107)),
+but they are reviewed or merged as names, and stating that an option's name is not evidence of that option would make
+the question meaningless.
 
 ### Stage 1: which candidate, and is it any of them
 
@@ -146,7 +165,8 @@ worked for category assistance.
 ### Stage 2: is the top choice the same variant
 
 Asked only when the stage-1 outcome can still be a match ([decision](#decision)). The stage-1 top choice is the candidate
-with the highest Q1 probability; a tie goes to the earlier key in ordinal order, the order sent.
+with the highest Q1 probability; a tie goes to the earlier key in ordinal order, the order sent. The answer's `choice`
+field is validated (it must hold the maximum) but does not decide the top choice; the probabilities do.
 
 State:
 
@@ -161,12 +181,20 @@ Only the top candidate is shown, so the model compares one pair instead of re-ra
 
 | ID | Type | Question | Options |
 | --- | --- | --- | --- |
-| `same` (**Q3**) | Noul | "Are `candidate` and the product bought in `purchase` the same product, with the same variant, brand and package size?" | `true`: "The same product, and every variant, brand or package size that both state agrees." `false`: "A different product, or a variant, brand or package size that both state differs." |
+| `same` (**Q3**) | Noul | "Are `candidate` and the product bought in `purchase` the same product, with the same variant, brand and package size?" | `true`: "The same product, and `purchase` supports every variant, brand and package size that `candidate` names." `false`: "A different product, or `purchase` names a different variant, brand or package size than `candidate`." |
 
-"That both state" is deliberate. Receipt text and catalog names often leave out brand or size. A name without a size is
-a size-agnostic identity, so an unstated size is not a mismatch. A size stated on both sides that differs is. This
-follows the catalog rule "never guess missing brand, size, units or dietary attributes": absence is not evidence either
-way.
+The two criteria are deliberately asymmetric, because a catalog name sets how specific its identity is:
+
+- **The candidate names an attribute the purchase does not state** (`Whole Milk 1 Gal` against `WHL MLK`). Neither
+  criterion holds: the purchase does not support the size, and does not contradict it. The Noul should land in the
+  uncertain band, which routes to review (row 5). This follows the catalog rule "never guess missing brand, size, units
+  or dietary attributes", and is how the ChatGPT policy reaches `insufficient` for the same pair.
+- **The purchase states an attribute the candidate's name leaves out** (`GV WHL MLK GAL` against `Whole Milk`). A name
+  without a brand or size is a brand- and size-agnostic identity, so the extra detail is not a mismatch and `true` can
+  hold.
+- **Both state it and it differs** (`WHL MLK HALF GAL` against `Whole Milk 1 Gal`). `false`.
+- **A variant that makes it another product** (`CHOC MILK` against `Milk`) is caught by "a different product", not by the
+  attribute clause.
 
 ## Validation
 

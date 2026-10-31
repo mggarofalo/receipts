@@ -9,7 +9,10 @@ namespace Application.NormalizationAi;
 /// </summary>
 public sealed record CatalogMatchCandidate(Guid Id, string DisplayName, IReadOnlyList<NormalizationApprovedExample> ApprovedExamples);
 
-/// <summary>What a person sees on the receipt line (the item text and, when known, the store) and the shortlist to choose from.</summary>
+/// <summary>
+/// What a person sees on the receipt line (the item text and, when known, the store) and the shortlist to choose from.
+/// Pass every approved example, uncapped: the request builder chooses which are shown.
+/// </summary>
 public sealed record CatalogMatchRequest(string Description, string? Store, IReadOnlyList<CatalogMatchCandidate> Candidates)
 {
 	/// <summary>
@@ -35,9 +38,11 @@ public static class CatalogMatchingPolicy
 	public const string Model = CategorySuggestionPolicy.Model;
 	public const int MaximumOptions = CategorySuggestionPolicy.MaximumOptions;
 	public const int MaximumPayloadBytes = CategorySuggestionPolicy.MaximumPayloadBytes;
+	public const int MaximumExamplesPerCandidate = 3;
 
 	/// <summary>
-	/// A nonempty purchase and 1–255 candidates with distinct IDs and display names that are distinct ignoring case.
+	/// A nonempty purchase and 1–255 candidates with distinct IDs and display names that are distinct after lowercasing,
+	/// the database's rule (IX_NormalizedDescriptions_DisplayName_Lower).
 	/// An empty shortlist is not a request: the caller routes it to naming without asking Jev.
 	/// </summary>
 	public static bool IsValid(CatalogMatchRequest request)
@@ -50,9 +55,9 @@ public static class CatalogMatchingPolicy
 		}
 
 		HashSet<Guid> ids = [];
-		HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+		HashSet<string> names = new(StringComparer.Ordinal);
 		return request.Candidates.All(c => c is not null && c.Id != Guid.Empty && ids.Add(c.Id) &&
-			!string.IsNullOrWhiteSpace(c.DisplayName) && c.DisplayName.Length <= MaximumPayloadBytes && names.Add(c.DisplayName) &&
-			c.ApprovedExamples is not null && c.ApprovedExamples.All(e => e is not null && !string.IsNullOrWhiteSpace(e.Description)));
+			!string.IsNullOrWhiteSpace(c.DisplayName) && c.DisplayName.Length <= MaximumPayloadBytes && names.Add(c.DisplayName.ToLowerInvariant()) &&
+			c.ApprovedExamples is not null && c.ApprovedExamples.All(e => e is not null && !string.IsNullOrWhiteSpace(e.Description) && e.Description.Length <= MaximumPayloadBytes));
 	}
 }

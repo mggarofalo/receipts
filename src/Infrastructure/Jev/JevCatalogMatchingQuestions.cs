@@ -71,8 +71,8 @@ public static class JevCatalogMatchingQuestions
 				},
 				criteria = new Dictionary<string, string>(StringComparer.Ordinal)
 				{
-					["true"] = "The same product, and every variant, brand or package size that both state agrees.",
-					["false"] = "A different product, or a variant, brand or package size that both state differs."
+					["true"] = "The same product, and `purchase` supports every variant, brand and package size that `candidate` names.",
+					["false"] = "A different product, or `purchase` names a different variant, brand or package size than `candidate`."
 				}
 			}
 		};
@@ -96,12 +96,20 @@ public static class JevCatalogMatchingQuestions
 	private static IReadOnlyList<CatalogMatchCandidate> Ordered(CatalogMatchRequest request) =>
 		[.. request.Candidates.OrderBy(c => c.DisplayName, StringComparer.Ordinal)];
 
-	// Empty lists are omitted, so a candidate without approved examples is sent as {}.
+	// The policy, not the caller, picks which examples are shown: distinct descriptions (same store wins over other),
+	// same store first, then ordinal, at most MaximumExamplesPerCandidate. Capping here means leave-one-out removes a
+	// source before the cap, as production would never have shown it. Empty lists are omitted, so a candidate without
+	// approved examples is sent as {}.
 	private static Dictionary<string, object> ExampleLists(CatalogMatchCandidate candidate)
 	{
+		NormalizationApprovedExample[] shown = [.. candidate.ApprovedExamples
+			.GroupBy(e => e.Description, StringComparer.Ordinal)
+			.Select(g => new NormalizationApprovedExample(g.Key, g.Any(e => e.SameScope)))
+			.OrderByDescending(e => e.SameScope).ThenBy(e => e.Description, StringComparer.Ordinal)
+			.Take(CatalogMatchingPolicy.MaximumExamplesPerCandidate)];
 		Dictionary<string, object> lists = new(StringComparer.Ordinal);
-		string[] same = [.. candidate.ApprovedExamples.Where(e => e.SameScope).Select(e => e.Description).Order(StringComparer.Ordinal)];
-		string[] other = [.. candidate.ApprovedExamples.Where(e => !e.SameScope).Select(e => e.Description).Order(StringComparer.Ordinal)];
+		string[] same = [.. shown.Where(e => e.SameScope).Select(e => e.Description)];
+		string[] other = [.. shown.Where(e => !e.SameScope).Select(e => e.Description)];
 		if (same.Length > 0) { lists.Add("sameStoreExamples", same); }
 		if (other.Length > 0) { lists.Add("otherStoreExamples", other); }
 		return lists;
