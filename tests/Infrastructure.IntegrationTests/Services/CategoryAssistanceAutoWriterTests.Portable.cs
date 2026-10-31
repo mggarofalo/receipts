@@ -131,6 +131,43 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 		(await CurrentAsync(seed.Items[0])).Source.Should().Be("jev");
 	}
 
+	[Fact]
+	public async Task DowngradeRefusesWhileOneSourceIsRetainedUnderSeveralSettingsRevisions()
+	{
+		var seed = await SeedAsync(root: 0.95, leaf: 0.95);
+		Guid other;
+		await using (var setup = fixture.CreateDbContext())
+		{
+			// The same source asked again after a settings save: only the settings revision differs.
+			var again = await setup.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == seed.Attempt);
+			again.Id = other = Guid.NewGuid();
+			again.RequestId = Guid.NewGuid();
+			again.SettingsRevision = Guid.NewGuid();
+			again.State = "stale";
+			setup.CategoryAssistanceAttempts.Add(again);
+			await setup.SaveChangesAsync();
+		}
+		await using var db = fixture.CreateDbContext();
+		string[] current = [.. await db.Database.GetAppliedMigrationsAsync()];
+		current[^1].Should().Be(JevMigration);
+		var migrator = db.GetService<IMigrator>();
+
+		Func<Task> downgrade = () => migrator.MigrateAsync(current[^2]);
+
+		var refusal = (await downgrade.Should().ThrowAsync<PostgresException>()).Which;
+		refusal.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+		refusal.MessageText.Should().Be("Category assistance attempts from several settings revisions are retained");
+		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(current);
+		(await db.CategoryAssistanceAttempts.CountAsync(x => x.Id == seed.Attempt || x.Id == other)).Should().Be(2);
+
+		// With one attempt per earlier identity the downgrade proceeds and the upgrade restores the wider index.
+		await db.CategoryAssistanceAttempts.Where(x => x.Id == other).ExecuteDeleteAsync();
+		await migrator.MigrateAsync(current[^2]);
+		(await db.Database.GetAppliedMigrationsAsync()).Should().NotContain(JevMigration);
+		await migrator.MigrateAsync(current[^1]);
+		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(current);
+	}
+
 	private Task<string> ExportAsync() =>
 		new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 

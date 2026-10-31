@@ -409,7 +409,7 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("State", "NextEligibleAt", "LeaseExpiresAt");
 
-                    b.HasIndex("RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration", "RequestScope")
+                    b.HasIndex("RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration", "RequestScope", "SettingsRevision")
                         .IsUnique();
 
                     b.ToTable("Attempts", "category_assistance", t =>

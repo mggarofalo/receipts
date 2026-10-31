@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Application.Classification;
 
 namespace Application.Tests.Classification;
@@ -149,4 +151,32 @@ public class CategoryAutoWritePolicyTests
 	[Fact]
 	public void InvalidRequestNeverWrites() =>
 		Assert.Null(CategoryAutoWritePolicy.Decide(Request with { Description = " " }, Completed(), Options()));
+
+	private static JevAutoWriteEvidence Evidence(CategoryAutoWriteLevel level) => new(Guid.NewGuid(), Guid.NewGuid(),
+		CategorySuggestionPolicy.Version, CategorySuggestionPolicy.Model, "revision-1", level, 0.9, 0.95, 0.95, 0.90, 0.90, false);
+
+	[Theory]
+	[InlineData(CategoryAutoWriteLevel.Root, "Root")]
+	[InlineData(CategoryAutoWriteLevel.Leaf, "Leaf")]
+	public void EvidenceRecordsTheLevelByName(CategoryAutoWriteLevel level, string name)
+	{
+		var evidence = Evidence(level);
+
+		string json = JsonSerializer.Serialize(evidence);
+
+		Assert.Equal(name, JsonNode.Parse(json)!["Level"]!.GetValue<string>());
+		Assert.Equal(evidence, JsonSerializer.Deserialize<JevAutoWriteEvidence>(json));
+	}
+
+	[Theory]
+	[InlineData(0, CategoryAutoWriteLevel.Root)]
+	[InlineData(1, CategoryAutoWriteLevel.Leaf)]
+	public void EvidenceWrittenWithANumericLevelStillReads(int ordinal, CategoryAutoWriteLevel level)
+	{
+		var evidence = Evidence(level);
+		var legacy = JsonNode.Parse(JsonSerializer.Serialize(evidence))!.AsObject();
+		legacy["Level"] = ordinal;
+
+		Assert.Equal(evidence, JsonSerializer.Deserialize<JevAutoWriteEvidence>(legacy.ToJsonString()));
+	}
 }

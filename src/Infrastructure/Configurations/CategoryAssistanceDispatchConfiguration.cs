@@ -15,7 +15,8 @@ public sealed class CategoryAssistanceAttemptConfiguration : IEntityTypeConfigur
 		b.Property(x => x.DecisionActor).HasMaxLength(450);
 		// A bounded index protects PostgreSQL's btree tuple limit. Readers still compare the exact tuple;
 		// a hypothetical SHA-256 collision is skipped rather than attached to another source.
-		b.HasIndex(x => new { x.RestoreGeneration, x.SourceHash, x.TaxonomyRevision, x.Provider, x.Model, x.QuestionPolicyVersion, x.ConnectionGeneration, x.RequestScope }).IsUnique();
+		// A settings save starts a new identity, so a source saved again afterwards is asked again.
+		b.HasIndex(x => new { x.RestoreGeneration, x.SourceHash, x.TaxonomyRevision, x.Provider, x.Model, x.QuestionPolicyVersion, x.ConnectionGeneration, x.RequestScope, x.SettingsRevision }).IsUnique();
 		b.HasIndex(x => new { x.State, x.NextEligibleAt, x.LeaseExpiresAt });
 		b.Property(x => x.SourceHash).HasMaxLength(64);
 		b.Property(x => x.Location).HasMaxLength(1000);

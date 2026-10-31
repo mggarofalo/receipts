@@ -36,12 +36,36 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		{ await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return null; }
 
 		// Attach new save markers to an already known source identity even when its result is terminal.
-		var markers = await db.CategoryAssistanceObservations.Where(x => x.AttemptId == null && !x.DispatchSkipped
+		// The identity includes the settings revision: after a settings save the old result is no longer
+		// current for automatic writes or review, so the next save of that source is asked again.
+		var pending = db.CategoryAssistanceObservations.Where(x => x.AttemptId == null && !x.DispatchSkipped
 						&& (x.Evidence == "post_consent_no_choice_save" || x.Evidence == "explicit_history_request")
 			&& x.RestoreGeneration == settings.RestoreGeneration && x.TaxonomyRevision == head.RevisionId
-			&& x.SettingsRevision == settings.Revision)
-			.OrderBy(x => x.RecordedAt).Take(64).ToListAsync(ct);
-		foreach (var marker in markers)
+			&& x.SettingsRevision == settings.Revision);
+		bool full = false;
+		foreach (var marker in await pending.OrderBy(x => x.RecordedAt).Take(64).ToListAsync(ct))
+		{
+			full |= !await PlaceAsync(marker);
+		}
+		if (full)
+		{
+			// New sources wait for the pending limit. Markers that only attach cost nothing and must not
+			// wait behind them, including ones beyond the first window.
+			await db.SaveChangesAsync(ct);
+			var attachable = await pending.Where(m => db.CategoryAssistanceAttempts.Any(x =>
+					x.RequestScope == (m.Evidence == "explicit_history_request" ? m.SaveId : Guid.Empty)
+					&& x.RestoreGeneration == m.RestoreGeneration && x.SourceHash == m.SourceHash
+					&& x.Location == m.Location && x.Description == m.Description
+					&& x.ItemCodeKey == (m.ItemCode ?? "") && x.TaxonomyRevision == m.TaxonomyRevision
+					&& x.Provider == settings.Provider && x.Model == settings.Model
+					&& x.ConnectionGeneration == connection!.Generation && x.SettingsRevision == settings.Revision))
+				.OrderBy(x => x.RecordedAt).Take(64).ToListAsync(ct);
+			foreach (var marker in attachable) { await PlaceAsync(marker); }
+		}
+		await db.SaveChangesAsync(ct);
+
+		// Attaches, skips, or queues one marker. Returns false when a new source must wait for the pending limit.
+		async Task<bool> PlaceAsync(CategoryAssistanceObservationEntity marker)
 		{
 			Guid requestScope = marker.Evidence == "explicit_history_request" ? marker.SaveId : Guid.Empty;
 			var existing = db.CategoryAssistanceAttempts.Local.FirstOrDefault(x =>
@@ -49,14 +73,14 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 				&& x.Location == marker.Location && x.Description == marker.Description
 				&& x.ItemCodeKey == (marker.ItemCode ?? "") && x.TaxonomyRevision == marker.TaxonomyRevision
 				&& x.Provider == settings.Provider && x.Model == settings.Model
-				&& x.ConnectionGeneration == connection!.Generation
+				&& x.ConnectionGeneration == connection!.Generation && x.SettingsRevision == settings.Revision
 				&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version)
 				?? await db.CategoryAssistanceAttempts.SingleOrDefaultAsync(x =>
 								x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration && x.SourceHash == marker.SourceHash
 				&& x.Location == marker.Location && x.Description == marker.Description
 				&& x.ItemCodeKey == (marker.ItemCode ?? "") && x.TaxonomyRevision == marker.TaxonomyRevision
 				&& x.Provider == settings.Provider && x.Model == settings.Model
-				&& x.ConnectionGeneration == connection!.Generation
+				&& x.ConnectionGeneration == connection!.Generation && x.SettingsRevision == settings.Revision
 				&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version, ct);
 			// A marker sharing an already attempted identity must not resend solely
 			// because the policy changed. Explicit history requests have their own scope.
@@ -65,27 +89,28 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 				&& x.Location == marker.Location && x.Description == marker.Description
 				&& x.ItemCodeKey == (marker.ItemCode ?? "") && x.TaxonomyRevision == marker.TaxonomyRevision
 				&& x.Provider == settings.Provider && x.Model == settings.Model
-				&& x.ConnectionGeneration == connection!.Generation
+				&& x.ConnectionGeneration == connection!.Generation && x.SettingsRevision == settings.Revision
 				&& x.QuestionPolicyVersion != CategorySuggestionPolicy.Version)
 				.OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(ct);
-			if (existing != null) { marker.AttemptId = existing.Id; continue; }
+			if (existing != null) { marker.AttemptId = existing.Id; return true; }
 			bool collision = db.CategoryAssistanceAttempts.Local.Any(x => x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration
-	&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
-	&& x.Provider == settings.Provider && x.Model == settings.Model
-	&& x.ConnectionGeneration == connection!.Generation
-	&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version)
-					|| await db.CategoryAssistanceAttempts.AnyAsync(x => x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration
-		&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
-		&& x.Provider == settings.Provider && x.Model == settings.Model
-		&& x.ConnectionGeneration == connection!.Generation
-		&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version, ct);
-			if (collision) { marker.DispatchSkipped = true; continue; }
-			if (await PendingCountAsync(db, ct) + db.CategoryAssistanceAttempts.Local.Count(x => db.Entry(x).State == EntityState.Added) >= settings.PendingLimit)
+				&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
+				&& x.Provider == settings.Provider && x.Model == settings.Model
+				&& x.ConnectionGeneration == connection!.Generation && x.SettingsRevision == settings.Revision
+				&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version)
+				|| await db.CategoryAssistanceAttempts.AnyAsync(x => x.RequestScope == requestScope && x.RestoreGeneration == marker.RestoreGeneration
+					&& x.SourceHash == marker.SourceHash && x.TaxonomyRevision == marker.TaxonomyRevision
+					&& x.Provider == settings.Provider && x.Model == settings.Model
+					&& x.ConnectionGeneration == connection!.Generation && x.SettingsRevision == settings.Revision
+					&& x.QuestionPolicyVersion == CategorySuggestionPolicy.Version, ct);
+			if (collision) { marker.DispatchSkipped = true; return true; }
+			// Once the limit is reached in this claim it stays reached; skip the recount.
+			if (full || await PendingCountAsync(db, ct) + db.CategoryAssistanceAttempts.Local.Count(x => db.Entry(x).State == EntityState.Added) >= settings.PendingLimit)
 			{
-				break;
+				return false;
 			}
 
-			if (!await EligibleAsync(db, marker, head.RevisionId, ct)) { marker.DispatchSkipped = true; continue; }
+			if (!await EligibleAsync(db, marker, head.RevisionId, ct)) { marker.DispatchSkipped = true; return true; }
 			var request = await BuildRequestAsync(db, marker.Location, marker.Description, head.RevisionId, ct);
 			bool invalidRequest = request == null || !CategorySuggestionPolicy.IsValid(request);
 			var attempt = new CategoryAssistanceAttemptEntity
@@ -120,8 +145,9 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 			};
 			db.CategoryAssistanceAttempts.Add(attempt);
 			marker.AttemptId = attempt.Id;
+			return true;
 		}
-		await db.SaveChangesAsync(ct);
+
 		var queued = await db.CategoryAssistanceAttempts.Where(x => x.State == "queued"
 			&& x.RestoreGeneration == settings.RestoreGeneration && x.SettingsRevision == settings.Revision
 			&& x.ConnectionGeneration == connection!.Generation

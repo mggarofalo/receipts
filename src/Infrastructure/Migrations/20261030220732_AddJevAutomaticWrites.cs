@@ -96,6 +96,19 @@ public partial class AddJevAutomaticWrites : Migration
 			type: "bigint",
 			nullable: true);
 
+		// A settings save starts a new attempt identity, so a source saved again afterwards is asked again.
+		migrationBuilder.DropIndex(
+			name: "IX_Attempts_RestoreGeneration_SourceHash_TaxonomyRevision_Prov~",
+			schema: "category_assistance",
+			table: "Attempts");
+
+		migrationBuilder.CreateIndex(
+			name: "IX_Attempts_RestoreGeneration_SourceHash_TaxonomyRevision_Prov~",
+			schema: "category_assistance",
+			table: "Attempts",
+			columns: new[] { "RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration", "RequestScope", "SettingsRevision" },
+			unique: true);
+
 		migrationBuilder.UpdateData(
 			schema: "category_assistance",
 			table: "Settings",
@@ -135,6 +148,13 @@ public partial class AddJevAutomaticWrites : Migration
                         OR EXISTS (SELECT 1 FROM category_assistance."Attempts" WHERE "State" = 'applied') THEN
                         RAISE EXCEPTION 'Automatic Jev history is retained' USING ERRCODE = '23514';
                     END IF;
+                    -- The earlier identity has no settings revision, so one source asked under two revisions cannot fit it.
+                    IF EXISTS (SELECT 1 FROM category_assistance."Attempts"
+                        GROUP BY "RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model",
+                            "QuestionPolicyVersion", "ConnectionGeneration", "RequestScope"
+                        HAVING count(*) > 1) THEN
+                        RAISE EXCEPTION 'Category assistance attempts from several settings revisions are retained' USING ERRCODE = '23514';
+                    END IF;
                 END $$;
                 ALTER TABLE taxonomy."HistoricalOperations" DROP CONSTRAINT historical_operation_kind_valid;
                 ALTER TABLE taxonomy."HistoricalOperations" ADD CONSTRAINT historical_operation_kind_valid
@@ -145,6 +165,18 @@ public partial class AddJevAutomaticWrites : Migration
                         OR ("Kind" = 'ApprovedMappingV1' AND "ApprovedMappingRevisionId" IS NOT NULL)) NOT VALID;
                 """);
 		migrationBuilder.Sql(PreviousItemGuard);
+
+		migrationBuilder.DropIndex(
+			name: "IX_Attempts_RestoreGeneration_SourceHash_TaxonomyRevision_Prov~",
+			schema: "category_assistance",
+			table: "Attempts");
+
+		migrationBuilder.CreateIndex(
+			name: "IX_Attempts_RestoreGeneration_SourceHash_TaxonomyRevision_Prov~",
+			schema: "category_assistance",
+			table: "Attempts",
+			columns: new[] { "RestoreGeneration", "SourceHash", "TaxonomyRevision", "Provider", "Model", "QuestionPolicyVersion", "ConnectionGeneration", "RequestScope" },
+			unique: true);
 
 		migrationBuilder.DropCheckConstraint(
 			name: "CK_CategoryAssistance_AttemptState",

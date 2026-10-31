@@ -53,6 +53,18 @@ public sealed class CategoryAssistanceSettingsStore(IDbContextFactory<Applicatio
 		row.Enabled = proposed.Enabled; row.Provider = proposed.Provider; row.Model = proposed.Model;
 		row.DailyLimit = proposed.DailyLimit; row.PendingLimit = proposed.PendingLimit; row.Revision = proposed.Revision;
 		row.AutoApply = proposed.AutoApply;
+		// Results from the old revision can no longer be decided or written automatically. Retire them so they stop
+		// holding pending slots; a dispatch already started completes as stale on its own.
+		foreach (var attempt in await db.CategoryAssistanceAttempts
+					 .Where(x => x.State == "queued" || x.State == "suggested" || x.State == "abstained")
+					 .ToListAsync(ct))
+		{
+			attempt.State = "stale";
+			attempt.ClaimToken = null;
+			attempt.LeaseExpiresAt = null;
+			attempt.NextEligibleAt = null;
+			attempt.CompletedAt = now;
+		}
 		db.CategoryAssistanceSettingsAudits.Add(new()
 		{
 			Id = Guid.NewGuid(),

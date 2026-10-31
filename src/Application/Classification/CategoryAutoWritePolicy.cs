@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Application.Classification;
 
 /// <summary>
@@ -16,6 +18,8 @@ public sealed class CategoryAutoWriteOptions
 	private static bool Gate(double value) => double.IsFinite(value) && value is >= CategorySuggestionPolicy.FitGate and <= 1;
 }
 
+// Persisted in jev evidence; a name reads better than an ordinal and survives reordering.
+[JsonConverter(typeof(JsonStringEnumConverter<CategoryAutoWriteLevel>))]
 public enum CategoryAutoWriteLevel { Root, Leaf }
 
 /// <summary>The category to write and the evidence that justified it.</summary>
