@@ -53,6 +53,10 @@ internal static class NormalizationCandidateRetrieval
 		string? hiddenDescription = probe?.HiddenDescription;
 		Dictionary<Guid, (NormalizedDescriptionEntity Target, HashSet<string> Channels)> found = [];
 		Dictionary<Guid, int> semanticRanks = [];
+		Dictionary<Guid, double> semanticSimilarities = [];
+		NormalizationCatalogCandidate Candidate(NormalizedDescriptionEntity target, string[] channels, IReadOnlyList<string> examples)
+			=> new(target.Id, target.NormalizationRevision, target.CanonicalName, target.DisplayLabel, channels, examples,
+				semanticSimilarities.TryGetValue(target.Id, out double similarity) ? similarity : null);
 		async Task AddAsync(IQueryable<NormalizedDescriptionEntity> query, string channel)
 		{
 			var orderedQuery = query.OrderBy(target => target.CanonicalName).ThenBy(target => target.Id);
@@ -66,8 +70,7 @@ internal static class NormalizationCandidateRetrieval
 				if (include is not null)
 				{
 					string[] channels = existing.Channels.Append(channel).Distinct().ToArray();
-					if (!include(new(target.Id, target.NormalizationRevision, target.CanonicalName,
-							target.DisplayLabel, channels, []))) { continue; }
+					if (!include(Candidate(target, channels, []))) { continue; }
 				}
 				if (!found.ContainsKey(target.Id)) { found.Add(target.Id, existing); }
 				existing.Channels.Add(channel);
@@ -75,6 +78,29 @@ internal static class NormalizationCandidateRetrieval
 			}
 		}
 		var active = context.NormalizedDescriptions.AsNoTracking().Where(target => target.Status == NormalizedDescriptionStatus.Active);
+		// Neighbours are found first so every channel's evidence filter can see their similarity;
+		// the semantic channel still scans last, after the specific evidence channels.
+		List<Guid> nearest = [];
+		if (context.Database.IsNpgsql() && embeddingService?.IsConfigured == true)
+		{
+			float[]? vector = await embeddingService.GenerateEmbeddingAsync(source.Description, cancellationToken);
+			if (vector is { Length: > 0 })
+			{
+				Vector embedding = new(vector);
+				List<SemanticNeighbour> neighbours = await context.Database.SqlQuery<SemanticNeighbour>($"""
+					SELECT "Id", 1 - ("Embedding" <=> {embedding}::vector) AS "Similarity" FROM matching."NormalizedDescriptions"
+					WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL
+					AND "EmbeddingModelVersion" = {OnnxEmbeddingService.EmbeddingSpaceFingerprint}
+					ORDER BY "Embedding" <=> {embedding}::vector, "Id" LIMIT 20
+					""").ToListAsync(cancellationToken);
+				for (int rank = 0; rank < neighbours.Count; rank++)
+				{
+					semanticRanks[neighbours[rank].Id] = rank;
+					semanticSimilarities[neighbours[rank].Id] = neighbours[rank].Similarity;
+				}
+				nearest = neighbours.Select(neighbour => neighbour.Id).ToList();
+			}
+		}
 		string text = source.Description.ToLowerInvariant();
 		await AddAsync(active.Where(target => target.CanonicalName.ToLower() == text || (target.DisplayLabel ?? target.CanonicalName).ToLower() == text), "exact");
 		// Approved examples are evidence, never self-training on automatic links.
@@ -86,31 +112,15 @@ internal static class NormalizationCandidateRetrieval
 		{
 			await AddAsync(active.Where(target => target.CanonicalName.ToLower().Contains(token) || (target.DisplayLabel ?? target.CanonicalName).ToLower().Contains(token)), "lexical");
 		}
-		if (context.Database.IsNpgsql() && embeddingService?.IsConfigured == true)
-		{
-			float[]? vector = await embeddingService.GenerateEmbeddingAsync(source.Description, cancellationToken);
-			if (vector is { Length: > 0 })
-			{
-				Vector embedding = new(vector);
-				var nearest = await context.Database.SqlQuery<Guid>($"""
-					SELECT "Id" AS "Value" FROM matching."NormalizedDescriptions"
-					WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL
-					AND "EmbeddingModelVersion" = {OnnxEmbeddingService.EmbeddingSpaceFingerprint}
-					ORDER BY "Embedding" <=> {embedding}::vector, "Id" LIMIT 20
-					""").ToListAsync(cancellationToken);
-				for (int rank = 0; rank < nearest.Count; rank++) { semanticRanks[nearest[rank]] = rank; }
-				await AddAsync(active.Where(target => nearest.Contains(target.Id)), "semantic");
-			}
-		}
+		if (nearest.Count > 0) { await AddAsync(active.Where(target => nearest.Contains(target.Id)), "semantic"); }
 		if (probe is not null) { probe.Pool = found.ToDictionary(entry => entry.Key, entry => entry.Value.Channels.Order().ToArray()); }
 		List<NormalizationCatalogCandidate> result = [];
 		// Reserve space for the best semantic neighbors: alphabetically early lexical
 		// distractors must not evict the closest product before identity verification.
 		// Apply the caller's display-evidence requirement before the
 		// limit so weak candidates cannot crowd out useful ones.
-		var eligible = found.Values.Where(entry => include is null || include(new(
-				entry.Target.Id, entry.Target.NormalizationRevision, entry.Target.CanonicalName,
-				entry.Target.DisplayLabel, entry.Channels.ToArray(), []))).ToArray();
+		var eligible = found.Values.Where(entry => include is null
+				|| include(Candidate(entry.Target, entry.Channels.ToArray(), []))).ToArray();
 		var ordered = eligible.Where(entry => entry.Channels.Contains("exact")).Take(2)
 				.Concat(eligible.Where(entry => entry.Channels.Contains("approved_example")).OrderBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal).Take(4))
 				.Concat(eligible.Where(entry => semanticRanks.ContainsKey(entry.Target.Id)).OrderBy(entry => semanticRanks[entry.Target.Id]).Take(8))
@@ -128,9 +138,14 @@ internal static class NormalizationCandidateRetrieval
 		var examplesByTarget = exampleRows.ToDictionary(row => row.Id, row => row.Examples);
 		foreach (var entry in ordered)
 		{
-			result.Add(new(entry.Target.Id, entry.Target.NormalizationRevision, entry.Target.CanonicalName, entry.Target.DisplayLabel,
-				entry.Channels.Order().ToArray(), examplesByTarget.GetValueOrDefault(entry.Target.Id) ?? []));
+			result.Add(Candidate(entry.Target, entry.Channels.Order().ToArray(), examplesByTarget.GetValueOrDefault(entry.Target.Id) ?? []));
 		}
 		return result;
+	}
+
+	private sealed class SemanticNeighbour
+	{
+		public Guid Id { get; set; }
+		public double Similarity { get; set; }
 	}
 }
