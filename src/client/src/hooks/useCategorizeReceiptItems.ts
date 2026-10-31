@@ -11,6 +11,8 @@ import { invalidateDomainChange } from "@/lib/query-invalidation";
 interface CategorizeReceiptItemsInput {
   items: components["schemas"]["UncategorizedItem"][];
   choice: CategoryChoice;
+  /** Recorded on each assignment; defaults to a choice made in the report. */
+  reason?: string;
 }
 
 interface CategorizeReceiptItemsCallbacks {
@@ -25,7 +27,11 @@ export function useCategorizeReceiptItems(
   const queryClient = useQueryClient();
   return useSessionMutation({
     ...localErrorPolicy.mutation,
-    mutationFn: async ({ items, choice }: CategorizeReceiptItemsInput) => {
+    mutationFn: async ({
+      items,
+      choice,
+      reason = "Category selected from unclassified items report",
+    }: CategorizeReceiptItemsInput) => {
       // Each item has its own current-assignment fence. Observe all outcomes
       // before refreshing the report so partial successes remain visible.
       const results = await Promise.allSettled(
@@ -40,7 +46,7 @@ export function useCategorizeReceiptItems(
                 taxonomyRevisionId: choice.taxonomyRevisionId,
                 expectedAssignmentId: item.assignmentId ?? null,
                 operationId: generateId(),
-                reason: "Category selected from unclassified items report",
+                reason,
               },
             },
           );
@@ -50,7 +56,7 @@ export function useCategorizeReceiptItems(
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length)
         throw new Error(
-          `${failures.length} item classifications could not be confirmed. Refresh and review before retrying.`,
+          `${failures.length} ${failures.length === 1 ? "item's category" : "items' categories"} could not be confirmed. Refresh the list and check before retrying.`,
         );
     },
     onSettled: () => invalidateDomainChange(queryClient, "receipt-item"),

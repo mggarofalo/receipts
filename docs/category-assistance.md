@@ -27,3 +27,19 @@ Downgrading the dispatch schema refuses to erase existing attempts or daily usag
 On any failure before restart, including a failed app stop, dump, schema check, ledger read or reconciliation, the script exits without starting the app. If restart fails, it tries to stop the app again and reports whether that stop succeeded. If the restored image predates the assistance schema, apply migrations while the app remains stopped, then run `dotnet run scripts/restore.cs -- --reconcile <saved-ledger.csv>`. This path repeats the fence and usage merge before starting the app. A fresh disaster recovery with no surviving ledger may use `--reconcile` without a CSV after migrations; it disables consent and exhausts the current UTC day's maximum allowance at 5,000. Usage history is then uncertain. Recover an authoritative out-of-image ledger or wait until its unknown days have passed before an Admin considers re-enabling assistance.
 
 Direct `psql`, volume replacement and other restore paths bypass this procedure and cannot be inferred from database generations. Keep the app stopped and run the reconciliation command with the best surviving ledger before use. No automatic detection of arbitrary rollback is claimed.
+
+## Items without a type (exceptions)
+
+**Reports → Uncategorized items** is the exceptions view. It is a list, not a
+workflow: nothing has to be reviewed one by one. It shows every live item with
+no item type (no assignment, cleared, or an unresolved legacy path), whatever
+the state of any Jev attempt for it. That covers items whose suggestion a
+settings save retired, items a restructure cleared and suggestions below the
+automatic-write threshold.
+
+Each row carries Jev's latest stored answer for the item, if any: its chosen
+type with confidence and a one-tap **Use**, or "Jev wasn't sure" when it
+abstained. The row's picker lists Jev's ranked alternatives first. Choosing
+either writes the item type in place (a manual assignment) and the row leaves
+the list. A filter limits the list to items Jev has answered for, or to items
+it has not. Bulk selection still applies one type to many rows.

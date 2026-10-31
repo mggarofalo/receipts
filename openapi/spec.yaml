@@ -7885,11 +7885,19 @@ paths:
       operationId: GetUncategorizedItemsReport
       tags: [Reports]
       summary: Get uncategorized items report
-      description: Returns active receipt items whose current classification is missing, unclassified, or unresolved.
+      description: Returns active receipt items whose current classification is missing, unclassified, or unresolved, whatever the state of any Jev attempt for them. Each item carries Jev's latest stored answer when there is one.
       security:
         - BearerAuth: []
         - ApiKey: []
       parameters:
+        - name: suggestion
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [any, with, without]
+            default: any
+          description: Limit to items Jev has answered for (a suggestion or an abstention, current or retired), or to items it has not. Ignored while suggestionsAvailable is false.
         - name: sortBy
           in: query
           required: false
@@ -12511,11 +12519,14 @@ components:
 
     UncategorizedItemsResponse:
       type: object
-      required: [totalCount, items]
+      required: [totalCount, items, suggestionsAvailable]
       properties:
         totalCount:
           type: integer
           format: int32
+        suggestionsAvailable:
+          type: boolean
+          description: False while category assistance is off or unavailable. Jev's answers are then withheld and the suggestion filter is ignored, as on the suggestions endpoints.
         items:
           type: array
           items:
@@ -12523,7 +12534,7 @@ components:
 
     UncategorizedItem:
       type: object
-      required: [id, receiptId, description, quantity, unitPrice, totalAmount, category, classificationState, totalAmountCurrency]
+      required: [id, receiptId, description, quantity, unitPrice, totalAmount, category, classificationState, totalAmountCurrency, location]
       properties:
         id:
           type: string
@@ -12562,6 +12573,37 @@ components:
           format: uuid
         totalAmountCurrency:
           type: string
+        location:
+          type: string
+          description: The receipt's store.
+        suggestion:
+          description: Jev's latest stored answer for this item, whatever its attempt state; null when Jev never answered.
+          oneOf:
+            - $ref: "#/components/schemas/UncategorizedItemSuggestion"
+            - type: "null"
+
+    UncategorizedItemSuggestion:
+      type: object
+      required: [attemptId, state, rootCandidates, leafCandidates]
+      properties:
+        attemptId: { type: string, format: uuid }
+        state:
+          type: string
+          description: The attempt's state now, e.g. suggested, abstained or stale.
+        categoryId:
+          type: [string, "null"]
+          format: uuid
+          description: The item type Jev chose; null when it abstained or the result cannot be read.
+        confidence: { type: [number, "null"], format: double }
+        abstentionReason: { type: [string, "null"] }
+        rootCandidates:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/CategoryAssistanceCandidateRead" }
+        leafCandidates:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/CategoryAssistanceCandidateRead" }
 
     SpendingByNormalizedDescriptionResponse:
       type: object

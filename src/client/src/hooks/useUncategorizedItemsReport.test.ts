@@ -19,12 +19,14 @@ describe("useUncategorizedItemsReport", () => {
   it("fetches report data with default parameters", async () => {
     const mockData = {
       totalCount: 2,
+      suggestionsAvailable: true,
       items: [
         {
           id: "item-1",
           receiptId: "receipt-1",
           receiptItemCode: "ABC",
           description: "Test Item",
+          location: "Corner Market",
           quantity: 1,
           unitPrice: 5.0,
           totalAmount: 5.0,
@@ -58,6 +60,7 @@ describe("useUncategorizedItemsReport", () => {
             sortDirection: undefined,
             page: undefined,
             pageSize: undefined,
+            suggestion: undefined,
           },
         },
       },
@@ -65,7 +68,7 @@ describe("useUncategorizedItemsReport", () => {
   });
 
   it("passes custom parameters", async () => {
-    const mockData = { totalCount: 0, items: [] };
+    const mockData = { totalCount: 0, items: [], suggestionsAvailable: true };
     mockClient.GET.mockResolvedValue({
       data: mockData,
       error: undefined,
@@ -80,6 +83,7 @@ describe("useUncategorizedItemsReport", () => {
           sortDirection: "desc",
           page: 2,
           pageSize: 25,
+          suggestion: "with",
         }),
       { wrapper: createQueryWrapper() },
     );
@@ -94,7 +98,39 @@ describe("useUncategorizedItemsReport", () => {
             sortDirection: "desc",
             page: 2,
             pageSize: 25,
+            suggestion: "with",
           },
+        },
+      },
+    );
+  });
+
+  it("refetches when the suggestion filter changes", async () => {
+    mockClient.GET.mockResolvedValue({
+      data: { totalCount: 0, items: [], suggestionsAvailable: true },
+      error: undefined,
+      response: {} as Response,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    const { result, rerender } = renderHook(
+      ({ suggestion }: { suggestion: "any" | "with" | "without" }) =>
+        useUncategorizedItemsReport({ suggestion }),
+      {
+        wrapper: createQueryWrapper(),
+        initialProps: { suggestion: "with" },
+      },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    rerender({ suggestion: "without" });
+
+    await waitFor(() => expect(mockClient.GET).toHaveBeenCalledTimes(2));
+    expect(mockClient.GET).toHaveBeenLastCalledWith(
+      "/api/reports/uncategorized-items",
+      {
+        params: {
+          query: expect.objectContaining({ suggestion: "without" }),
         },
       },
     );

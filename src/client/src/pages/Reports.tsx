@@ -117,7 +117,7 @@ const REPORT_GROUPS: ReportGroup[] = [
       {
         slug: "uncategorized-items",
         name: "Uncategorized Items",
-        description: "Items filed under Uncategorized.",
+        description: "Items without a category, with Jev's suggestions.",
         component: lazy(
           () => import("@/components/reports/UncategorizedItems"),
         ),

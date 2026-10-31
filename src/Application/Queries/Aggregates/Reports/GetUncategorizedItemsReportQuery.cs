@@ -7,4 +7,5 @@ public record GetUncategorizedItemsReportQuery(
 	string SortBy,
 	string SortDirection,
 	int Page,
-	int PageSize) : IQuery<UncategorizedItemsResult>;
+	int PageSize,
+	string SuggestionFilter = "any") : IQuery<UncategorizedItemsResult>;

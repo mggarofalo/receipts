@@ -490,6 +490,9 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		});
 	}
 
+	private static CategoryAssistanceCandidateRead Candidate(Application.Classification.CategoryAssistanceCandidateRead candidate)
+		=> new() { CategoryId = candidate.CategoryId, Probability = candidate.Probability };
+
 	[HttpGet("uncategorized-items")]
 	[EndpointSummary("Get uncategorized items report")]
 	[EndpointDescription("Returns active receipt items whose current classification is missing, unclassified, or unresolved.")]
@@ -498,9 +501,11 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		[FromQuery] string? sortDirection,
 		[FromQuery] int? page,
 		[FromQuery] int? pageSize,
+		[FromQuery] string? suggestion,
 		CancellationToken cancellationToken)
 	{
 		string sort = sortBy ?? "description";
+		string suggestionFilter = suggestion ?? "any";
 		string direction = sortDirection ?? "asc";
 		int pg = page ?? 1;
 		int ps = pageSize ?? 50;
@@ -527,12 +532,19 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			return ApiProblem.BadRequest("pageSize must be between 1 and 100");
 		}
 
-		GetUncategorizedItemsReportQuery query = new(sort, direction, pg, ps);
+		string[] validSuggestionFilters = ["any", "with", "without"];
+		if (!validSuggestionFilters.Contains(suggestionFilter.ToLowerInvariant()))
+		{
+			return ApiProblem.BadRequest($"Invalid suggestion '{suggestionFilter}'. Allowed: any, with, without");
+		}
+
+		GetUncategorizedItemsReportQuery query = new(sort, direction, pg, ps, suggestionFilter);
 		AppReports.UncategorizedItemsResult result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new UncategorizedItemsResponse
 		{
 			TotalCount = result.TotalCount,
+			SuggestionsAvailable = result.SuggestionsAvailable,
 			Items = result.Items.Select(i => new UncategorizedItem
 			{
 				Id = i.Id,
@@ -548,7 +560,18 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 				AssignmentId = i.AssignmentId,
 				CategoryId = i.CategoryId,
 				TaxonomyRevisionId = i.TaxonomyRevisionId,
-				TotalAmountCurrency = i.TotalAmountCurrency
+				TotalAmountCurrency = i.TotalAmountCurrency,
+				Location = i.Location,
+				Suggestion = i.Suggestion is null ? null : new UncategorizedItemSuggestion
+				{
+					AttemptId = i.Suggestion.AttemptId,
+					State = i.Suggestion.State,
+					CategoryId = i.Suggestion.CategoryId,
+					Confidence = i.Suggestion.Confidence,
+					AbstentionReason = i.Suggestion.AbstentionReason,
+					RootCandidates = [.. i.Suggestion.RootCandidates.Select(Candidate)],
+					LeafCandidates = [.. i.Suggestion.LeafCandidates.Select(Candidate)],
+				}
 			}).ToList()
 		});
 	}

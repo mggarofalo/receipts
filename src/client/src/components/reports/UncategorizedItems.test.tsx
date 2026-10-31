@@ -27,7 +27,10 @@ vi.mock("@/lib/export-csv", async (importOriginal) => {
 import { useUncategorizedItemsReport } from "@/hooks/useUncategorizedItemsReport";
 import client from "@/lib/api-client";
 import { downloadCsv } from "@/lib/export-csv";
-import { findCategoryOption } from "@/test/category-picker";
+import {
+  chooseCategoryOption,
+  findCategoryOption,
+} from "@/test/category-picker";
 const mockHook = vi.mocked(useUncategorizedItemsReport);
 const mockClient = vi.mocked(client);
 const mockDownloadCsv = vi.mocked(downloadCsv);
@@ -38,6 +41,7 @@ const mockItems = [
     receiptId: "receipt-1",
     receiptItemCode: "ABC",
     description: "Apples",
+    location: "Corner Market",
     quantity: 2,
     unitPrice: 1.5,
     totalAmount: 3.0,
@@ -52,6 +56,7 @@ const mockItems = [
     receiptId: "receipt-2",
     receiptItemCode: null,
     description: "Bananas",
+    location: "Fruit Stand",
     quantity: 1,
     unitPrice: 2.0,
     totalAmount: 2.0,
@@ -60,6 +65,19 @@ const mockItems = [
     assignmentId: "assignment-2",
     categoryId: null,
     taxonomyRevisionId: "old-revision",
+    suggestion: {
+      attemptId: "attempt-2",
+      state: "suggested",
+      categoryId: taxonomyFixture.nodes[1].id,
+      confidence: 0.9,
+      abstentionReason: null,
+      rootCandidates: [
+        { categoryId: taxonomyFixture.nodes[0].id, probability: 0.97 },
+      ],
+      leafCandidates: [
+        { categoryId: taxonomyFixture.nodes[1].id, probability: 0.9 },
+      ],
+    },
   },
 ];
 
@@ -68,12 +86,28 @@ function setupMock(overrides: Record<string, unknown> = {}) {
     data: {
       totalCount: 2,
       items: mockItems,
+      suggestionsAvailable: true,
     },
     isLoading: false,
     isError: false,
     ...overrides,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
+}
+
+/** Answers the export read with the report and the picker read with the taxonomy. */
+function mockReportExport() {
+  mockClient.GET.mockImplementation(
+    async (path) =>
+      ({
+        data:
+          path === "/api/taxonomy"
+            ? taxonomyFixture
+            : { totalCount: 2, items: mockItems, suggestionsAvailable: true },
+        error: undefined,
+        response: {} as Response,
+      }) as never,
+  );
 }
 
 describe("UncategorizedItems", () => {
@@ -106,7 +140,7 @@ describe("UncategorizedItems", () => {
 
   it("shows empty state when no uncategorized items", () => {
     setupMock({
-      data: { totalCount: 0, items: [] },
+      data: { totalCount: 0, items: [], suggestionsAvailable: true },
     });
     renderWithQueryClient(<UncategorizedItems />);
     expect(screen.getByText("All Categorized")).toBeInTheDocument();
@@ -143,7 +177,7 @@ describe("UncategorizedItems", () => {
     expect(within(table).getByText(/Item Code/)).toBeInTheDocument();
     expect(within(table).getByText("Receipt")).toBeInTheDocument();
     expect(within(table).getByText(/Total/)).toBeInTheDocument();
-    expect(within(table).getByText("Classification")).toBeInTheDocument();
+    expect(within(table).getByText("Item type")).toBeInTheDocument();
   });
 
   it("displays item code or dash when missing", () => {
@@ -157,11 +191,13 @@ describe("UncategorizedItems", () => {
     );
   });
 
-  it("displays current classification states", () => {
+  it("shows each item's store under its description", () => {
     setupMock();
     renderWithQueryClient(<UncategorizedItems />);
-    expect(screen.getByText("missing assignment")).toBeInTheDocument();
-    expect(screen.getByText("unresolved legacy")).toBeInTheDocument();
+    const appleRow = screen.getByText("Apples").closest("tr")!;
+    expect(within(appleRow).getByText("Corner Market")).toBeInTheDocument();
+    const bananaRow = screen.getByText("Bananas").closest("tr")!;
+    expect(within(bananaRow).getByText("Fruit Stand")).toBeInTheDocument();
   });
 
   it("navigates to receipt on View click", async () => {
@@ -236,6 +272,7 @@ describe("UncategorizedItems", () => {
       receiptId: `receipt-${i}`,
       receiptItemCode: null,
       description: `Item ${i}`,
+      location: "Store",
       quantity: 1,
       unitPrice: 1.0,
       totalAmount: 1.0,
@@ -246,7 +283,7 @@ describe("UncategorizedItems", () => {
       taxonomyRevisionId: null,
     }));
     setupMock({
-      data: { totalCount: 51, items: manyItems },
+      data: { totalCount: 51, items: manyItems, suggestionsAvailable: true },
     });
     renderWithQueryClient(<UncategorizedItems />);
     expect(screen.getByText("1/2")).toBeInTheDocument();
@@ -319,12 +356,7 @@ describe("UncategorizedItems", () => {
   it("exports the report as csv with the current sort", async () => {
     const user = userEvent.setup();
     setupMock();
-    mockClient.GET.mockResolvedValue({
-      data: { totalCount: 2, items: mockItems },
-      error: undefined,
-      response: {} as Response,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    mockReportExport();
 
     renderWithQueryClient(<UncategorizedItems />);
 
@@ -340,6 +372,7 @@ describe("UncategorizedItems", () => {
             sortDirection: "asc",
             page: 1,
             pageSize: 100,
+            suggestion: "any",
           },
         },
       },
@@ -383,6 +416,199 @@ describe("UncategorizedItems", () => {
         sortBy: "description",
         sortDirection: "asc",
         page: 1,
+      }),
+    );
+  });
+
+  it("defaults the Jev suggestion filter to All", () => {
+    setupMock();
+    renderWithQueryClient(<UncategorizedItems />);
+    const filter = screen.getByRole("group", {
+      name: "Jev suggestion filter",
+    });
+    expect(within(filter).getByRole("button", { name: "All" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ suggestion: "any" }),
+    );
+  });
+
+  it.each([
+    ["Jev answered", "with"],
+    ["Not asked", "without"],
+  ])(
+    "requests %s items from page 1 and clears the selection",
+    async (label, value) => {
+      const user = userEvent.setup();
+      setupMock();
+      renderWithQueryClient(<UncategorizedItems />, {
+        route: "/?page=3",
+      });
+      await user.click(screen.getByRole("checkbox", { name: "Select Apples" }));
+      expect(screen.getByText("1 selected on this page")).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: label }));
+
+      expect(mockHook).toHaveBeenLastCalledWith(
+        expect.objectContaining({ suggestion: value, page: 1 }),
+      );
+      expect(screen.getByRole("button", { name: label })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(
+        screen.queryByText("1 selected on this page"),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("reads the suggestion filter from the URL and exports with it", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    mockReportExport();
+    renderWithQueryClient(<UncategorizedItems />, {
+      route: "/?suggestion=with",
+    });
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ suggestion: "with" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+    await waitFor(() => expect(mockDownloadCsv).toHaveBeenCalledTimes(1));
+    expect(mockClient.GET).toHaveBeenCalledWith(
+      "/api/reports/uncategorized-items",
+      {
+        params: {
+          query: expect.objectContaining({ suggestion: "with" }),
+        },
+      },
+    );
+  });
+
+  it("falls back to All for an unknown suggestion filter", () => {
+    setupMock();
+    renderWithQueryClient(<UncategorizedItems />, {
+      route: "/?suggestion=maybe",
+    });
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ suggestion: "any" }),
+    );
+  });
+
+  it("hides the Jev filter when category assistance has no answers to offer", () => {
+    setupMock({
+      data: { totalCount: 2, items: mockItems, suggestionsAvailable: false },
+    });
+    renderWithQueryClient(<UncategorizedItems />);
+    expect(screen.getByText("Apples")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Jev suggestion filter" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the usual empty state, not the filter one, without category assistance", () => {
+    setupMock({
+      data: { totalCount: 0, items: [], suggestionsAvailable: false },
+    });
+    renderWithQueryClient(<UncategorizedItems />, {
+      route: "/?suggestion=without",
+    });
+    expect(screen.getByText("All Categorized")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No uncategorized items match this filter."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Jev suggestion filter" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says nothing matches when a filter leaves no items", async () => {
+    const user = userEvent.setup();
+    setupMock({
+      data: { totalCount: 0, items: [], suggestionsAvailable: true },
+    });
+    renderWithQueryClient(<UncategorizedItems />, {
+      route: "/?suggestion=without",
+    });
+
+    expect(
+      screen.getByText("No uncategorized items match this filter."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("All Categorized")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ suggestion: "any", page: 1 }),
+    );
+    expect(screen.getByText("All Categorized")).toBeInTheDocument();
+  });
+
+  it("writes Jev's choice for one row with that item's assignment fence", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    mockClient.PUT.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: new Response(null, { status: 204 }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    renderWithQueryClient(<UncategorizedItems />);
+
+    const appleRow = screen.getByText("Apples").closest("tr")!;
+    expect(
+      within(appleRow).queryByRole("button", { name: /Use Jev's choice/ }),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Use Jev's choice for Bananas",
+      }),
+    );
+
+    await waitFor(() => expect(mockClient.PUT).toHaveBeenCalledTimes(1));
+    expect(mockClient.PUT).toHaveBeenCalledWith(
+      "/api/receipt-items/{id}/classification",
+      expect.objectContaining({
+        params: { path: { id: "item-2" } },
+        body: expect.objectContaining({
+          categoryId: taxonomyFixture.nodes[1].id,
+          taxonomyRevisionId: taxonomyFixture.id,
+          expectedAssignmentId: "assignment-2",
+          reason: "Jev's suggestion accepted from unclassified items report",
+        }),
+      }),
+    );
+  });
+
+  it("writes a row's picked category with the report's default reason", async () => {
+    const user = userEvent.setup();
+    setupMock();
+    mockClient.PUT.mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: new Response(null, { status: 204 }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    renderWithQueryClient(<UncategorizedItems />);
+
+    await user.click(
+      await screen.findByRole("combobox", { name: "Category for Apples" }),
+    );
+    await chooseCategoryOption(user, "Food / Dairy");
+
+    await waitFor(() => expect(mockClient.PUT).toHaveBeenCalledTimes(1));
+    expect(mockClient.PUT).toHaveBeenCalledWith(
+      "/api/receipt-items/{id}/classification",
+      expect.objectContaining({
+        params: { path: { id: "item-1" } },
+        body: expect.objectContaining({
+          categoryId: taxonomyFixture.nodes[1].id,
+          taxonomyRevisionId: taxonomyFixture.id,
+          expectedAssignmentId: null,
+          reason: "Category selected from unclassified items report",
+        }),
       }),
     );
   });

@@ -1242,7 +1242,7 @@ public class ReportServiceTests
 		ReportService service = new(contextFactory);
 
 		// Act — page 1 of 2, default sort (description asc).
-		UncategorizedItemsResult page1 = await service.GetUncategorizedItemsAsync("description", "asc", 1, 2, CancellationToken.None);
+		UncategorizedItemsResult page1 = await service.GetUncategorizedItemsAsync("description", "asc", 1, 2, "any", true, CancellationToken.None);
 
 		// Assert — count reflects only the 3 active uncategorized items; the page holds the first
 		// two by description ascending (Apple, Bread).
@@ -1251,7 +1251,7 @@ public class ReportServiceTests
 		page1.Items.Select(i => i.Description).Should().ContainInOrder("Apple", "Bread");
 
 		// Act — page 2 carries the remaining item.
-		UncategorizedItemsResult page2 = await service.GetUncategorizedItemsAsync("description", "asc", 2, 2, CancellationToken.None);
+		UncategorizedItemsResult page2 = await service.GetUncategorizedItemsAsync("description", "asc", 2, 2, "any", true, CancellationToken.None);
 
 		// Assert
 		page2.TotalCount.Should().Be(3);
@@ -1285,7 +1285,7 @@ public class ReportServiceTests
 		ReportService service = new(contextFactory);
 
 		// Act
-		UncategorizedItemsResult result = await service.GetUncategorizedItemsAsync("total", "desc", 1, 50, CancellationToken.None);
+		UncategorizedItemsResult result = await service.GetUncategorizedItemsAsync("total", "desc", 1, 50, "any", true, CancellationToken.None);
 
 		// Assert — ordered by TotalAmount descending.
 		result.TotalCount.Should().Be(3);
@@ -1386,7 +1386,7 @@ public class ReportServiceTests
 		for (int page = 1; page <= 3; page++)
 		{
 			UncategorizedItemsResult result =
-				await service.GetUncategorizedItemsAsync("total", "desc", page, 2, CancellationToken.None);
+				await service.GetUncategorizedItemsAsync("total", "desc", page, 2, "any", true, CancellationToken.None);
 			result.TotalCount.Should().Be(5);
 			pagedIds.AddRange(result.Items.Select(i => i.Id));
 		}
