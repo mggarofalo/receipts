@@ -22,7 +22,6 @@ public class NormalizedDescriptionService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	IEmbeddingService embeddingService,
 	NormalizedDescriptionMapper mapper,
-	NormalizedDescriptionSettingsMapper settingsMapper,
 	ICommittedChangePublisher committedChangePublisher) : INormalizedDescriptionService
 {
 	// Direct-construction overload for isolated tests and tools that have no connected clients.
@@ -30,24 +29,12 @@ public class NormalizedDescriptionService(
 	public NormalizedDescriptionService(
 		IDbContextFactory<ApplicationDbContext> contextFactory,
 		IEmbeddingService embeddingService,
-		NormalizedDescriptionMapper mapper,
-		NormalizedDescriptionSettingsMapper settingsMapper)
-		: this(contextFactory, embeddingService, mapper, settingsMapper, new NullCommittedChangePublisher())
+		NormalizedDescriptionMapper mapper)
+		: this(contextFactory, embeddingService, mapper, new NullCommittedChangePublisher())
 	{
 	}
 
-	// The thresholds used when no settings row exists yet. These match the migration seed so
-	// that pre-migration code paths (tests that don't seed, integration tests spinning up a
-	// fresh schema) still see the same decision boundaries as production would at rest.
-	public const double InitialAutoAcceptThreshold = NormalizedDescriptionSettingsEntityConfiguration.InitialAutoAcceptThreshold;
-	public const double InitialPendingReviewThreshold = NormalizedDescriptionSettingsEntityConfiguration.InitialPendingReviewThreshold;
-
 	public const string ReceiptItemNotFound = "Receipt item not found.";
-	public const string SettingsRowNotFound = "NormalizedDescriptionSettings singleton row is missing.";
-	public const string TestMatchDescriptionRequired = "Test match description must not be empty.";
-	public const string TopNOutOfRange = "topN must be between 1 and 20.";
-
-	private const int MaxTopN = 20;
 	private const string PostgreSQL = "Npgsql.EntityFrameworkCore.PostgreSQL";
 
 	// Matches the name CollectAuditEntries derives by stripping the "Entity" suffix, so explicit
@@ -249,23 +236,8 @@ public class NormalizedDescriptionService(
 			throw new KeyNotFoundException($"Normalized description {discardId} not found.");
 		}
 
-		// Re-link EVERY ReceiptItem pointing at discard — including soft-deleted (trashed) ones,
-		// hence IgnoreQueryFilters. The ReceiptItem -> NormalizedDescription FK is
-		// DeleteBehavior.SetNull, so any row still pointing at discard when it is removed below
-		// has its link silently nulled by the database; a trashed item would then come back from
-		// the recycle bin unlinked, with no error raised anywhere. Same class of bug as the
-		// soft-deleted-transaction stranding fixed in AccountMergeService (RECEIPTS-801).
-		List<ReceiptItemEntity> observedItems = await read.ReceiptItems
-			.IgnoreQueryFilters()
-			.IgnoreAutoIncludes()
-			.Where(r => r.NormalizedDescriptionId == discardId)
-			.ToListAsync(cancellationToken);
-
 		Guid keepRevision = keep.NormalizationRevision;
 		Guid discardRevision = discard.NormalizationRevision;
-		Dictionary<string, double?> scores = new(StringComparer.Ordinal);
-		foreach (string text in observedItems.Select(item => item.Description).Distinct(StringComparer.Ordinal))
-		{ scores[text] = await SimilarityToKeepAsync(read, text, keep, cancellationToken); }
 
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		await using IDbContextTransaction? transaction = context.Database.IsRelational()
@@ -275,6 +247,12 @@ public class NormalizedDescriptionService(
 		discard = await context.NormalizedDescriptions.SingleOrDefaultAsync(value => value.Id == discardId, cancellationToken);
 		if (keep is null || discard is null || keep.NormalizationRevision != keepRevision || discard.NormalizationRevision != discardRevision)
 		{ throw new NormalizationCatalogException(409, "merge_target_changed", "A selected identity changed. Review the merge again."); }
+		// Re-link EVERY ReceiptItem pointing at discard — including soft-deleted (trashed) ones,
+		// hence IgnoreQueryFilters. The ReceiptItem -> NormalizedDescription FK is
+		// DeleteBehavior.SetNull, so any row still pointing at discard when it is removed below
+		// has its link silently nulled by the database; a trashed item would then come back from
+		// the recycle bin unlinked, with no error raised anywhere. Same class of bug as the
+		// soft-deleted-transaction stranding fixed in AccountMergeService (RECEIPTS-801).
 		Guid[] currentIds = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.Where(item => item.NormalizedDescriptionId == discardId).Select(item => item.Id).ToArrayAsync(cancellationToken);
 		await NormalizationWriteGuard.LockItemsAsync(context, currentIds, cancellationToken);
@@ -294,46 +272,30 @@ public class NormalizedDescriptionService(
 					&& mapping.State == "active" && mapping.Revision == item.ReviewMappingRevision,
 				item.NormalizationReviewState))).Select(item => item.Id).ToHashSet();
 
-		// Repoint AND rescore. The score on each item was the cosine similarity to the
-		// DISCARDED row's embedding, so once the item points at `keep` it describes a comparison
-		// that no longer exists. That is not cosmetic: PreviewThresholdImpactAsync buckets items
-		// by exactly this column, so every threshold-impact preview run after a merge would be
-		// computed partly from scores measured against a row that has been deleted.
-		//
-		// Leaving the score null instead is not an option here. The resolver only picks up rows
-		// WHERE "NormalizedDescriptionId" IS NULL, and a merged item keeps its link — so nothing
-		// would ever repopulate it, and the item would count as structurally unresolved forever.
-		//
-		// Grouped by description so one embedding serves every item sharing that text, mirroring
-		// the resolver's per-cycle grouping. Merges are low-volume admin operations, so the cost
-		// is a handful of embeddings per merge at worst.
-		int rescoredCount = 0;
-		foreach (IGrouping<string, ReceiptItemEntity> group in items.GroupBy(i => i.Description, StringComparer.Ordinal))
+		// Repoint, and clear the match score: it was measured against the discarded row, and no
+		// decision or display reads a re-measured score any more (RECEIPTS-1099).
+		int clearedMatchScoreCount = 0;
+		foreach (ReceiptItemEntity item in items)
 		{
-			double? similarity = scores.GetValueOrDefault(group.Key);
-
-			foreach (ReceiptItemEntity item in group)
+			item.NormalizedDescriptionId = keepId;
+			if (transferable.Contains(item.Id))
 			{
-				item.NormalizedDescriptionId = keepId;
-				if (transferable.Contains(item.Id))
+				item.ReviewedTargetId = keepId;
+				item.NormalizationAssignmentId = Guid.NewGuid();
+				item.NormalizationReviewDecisionId = item.NormalizationAssignmentId;
+			}
+			else
+			{
+				var parent = parents[item.ReceiptId];
+				item.NormalizationIntent = new(ReceiptNormalizationIntentKind.Defer, Guid.NewGuid(),
+					NormalizationCatalogPolicy.Hash(new(parent.Location, item.Description, item.ReceiptItemCode)), ExpectedItemRevision: item.NormalizationRevision);
+			}
+			if (item.NormalizedDescriptionMatchScore is not null)
+			{
+				item.NormalizedDescriptionMatchScore = null;
+				if (item.DeletedAt is null)
 				{
-					item.ReviewedTargetId = keepId;
-					item.NormalizationAssignmentId = Guid.NewGuid();
-					item.NormalizationReviewDecisionId = item.NormalizationAssignmentId;
-				}
-				else
-				{
-					var parent = parents[item.ReceiptId];
-					item.NormalizationIntent = new(ReceiptNormalizationIntentKind.Defer, Guid.NewGuid(),
-						NormalizationCatalogPolicy.Hash(new(parent.Location, item.Description, item.ReceiptItemCode)), ExpectedItemRevision: item.NormalizationRevision);
-				}
-				if (item.NormalizedDescriptionMatchScore != similarity)
-				{
-					item.NormalizedDescriptionMatchScore = similarity;
-					if (item.DeletedAt is null)
-					{
-						rescoredCount++;
-					}
+					clearedMatchScoreCount++;
 				}
 			}
 		}
@@ -392,7 +354,7 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "discardedId", OldValue = discardId.ToString(), NewValue = null },
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
-				new FieldChange { FieldName = "rescoredItemCount", OldValue = null, NewValue = rescoredCount.ToString() },
+				new FieldChange { FieldName = "clearedMatchScoreCount", OldValue = null, NewValue = clearedMatchScoreCount.ToString() },
 				new FieldChange { FieldName = "relinkedTemplateCount", OldValue = null, NewValue = templates.Count.ToString() },
 			],
 			now);
@@ -406,7 +368,7 @@ public class NormalizedDescriptionService(
 				new FieldChange { FieldName = "keptId", OldValue = null, NewValue = keepId.ToString() },
 				new FieldChange { FieldName = "relinkedItemCount", OldValue = null, NewValue = liveCount.ToString() },
 				new FieldChange { FieldName = "relinkedTrashedItemCount", OldValue = null, NewValue = trashedCount.ToString() },
-				new FieldChange { FieldName = "rescoredItemCount", OldValue = null, NewValue = rescoredCount.ToString() },
+				new FieldChange { FieldName = "clearedMatchScoreCount", OldValue = null, NewValue = clearedMatchScoreCount.ToString() },
 				new FieldChange { FieldName = "relinkedTemplateCount", OldValue = null, NewValue = templates.Count.ToString() },
 			],
 			now);
@@ -493,16 +455,6 @@ public class NormalizedDescriptionService(
 		}
 
 		var observedTarget = await FindExactCaseInsensitiveAsync(read, canonicalName, cancellationToken);
-		Dictionary<string, Vector> sourceVectors = new(StringComparer.Ordinal);
-		if (embeddingService.IsConfigured && (observedTarget?.Embedding is not null || embeddingVector is not null))
-		{
-			foreach (string text in observedItems.Select(item => item.Description).Distinct(StringComparer.Ordinal))
-			{
-				if (string.Equals(text.Trim(), canonicalName, StringComparison.OrdinalIgnoreCase)) { continue; }
-				float[]? data = await TryGenerateEmbeddingAsync(text.Trim(), cancellationToken);
-				if (data is { Length: > 0 }) { sourceVectors[text] = new Vector(data); }
-			}
-		}
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
 		await using IDbContextTransaction? transaction = context.Database.IsRelational()
 			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
@@ -541,7 +493,7 @@ public class NormalizedDescriptionService(
 			if (await context.NormalizedDescriptions.AnyAsync(target => target.DisplayLabel != null && target.DisplayLabel.ToLower() == canonicalName.ToLower(), cancellationToken))
 			{ throw new NormalizationCatalogException(409, "normalization_name_exists", "A catalog identity already uses that display name."); }
 			context.NormalizedDescriptions.Add(created);
-			// Materialize the target for local pgvector scoring, without committing this transaction.
+			// Insert now so a concurrent duplicate surfaces here, without committing this transaction.
 			try
 			{
 				await context.SaveChangesAsync(cancellationToken);
@@ -576,21 +528,12 @@ public class NormalizedDescriptionService(
 			.ToDictionary(g => g.Key, g => g.Count());
 		List<Guid> originIds = [.. originCounts.Keys];
 
-		// Repoint AND rescore, for the reason MergeAsync does (RECEIPTS-892): each item's score was
-		// the similarity to the row it is leaving, so once it points at `created` the number
-		// describes a comparison that no longer applies. PreviewThresholdImpactAsync buckets items
-		// by exactly this column, so a stale score would skew every later threshold preview.
-		//
-		// Grouped by description so one embedding serves every item sharing that text.
-		foreach (IGrouping<string, ReceiptItemEntity> group in items.GroupBy(r => r.Description, StringComparer.Ordinal))
+		// Repoint, and clear the match score for the reason MergeAsync does: it was measured
+		// against the row each item is leaving.
+		foreach (ReceiptItemEntity moved in items)
 		{
-			double? similarity = string.Equals(group.Key.Trim(), created.CanonicalName, StringComparison.OrdinalIgnoreCase) ? 1.0
-				: sourceVectors.TryGetValue(group.Key, out var vector) ? await SimilarityToAsync(context, vector, created.Id, cancellationToken) : null;
-			foreach (ReceiptItemEntity moved in group)
-			{
-				moved.NormalizedDescriptionId = created.Id;
-				moved.NormalizedDescriptionMatchScore = similarity;
-			}
+			moved.NormalizedDescriptionId = created.Id;
+			moved.NormalizedDescriptionMatchScore = null;
 		}
 
 		Dictionary<Guid, string> originNames = await context.NormalizedDescriptions
@@ -991,7 +934,7 @@ public class NormalizedDescriptionService(
 		//
 		// The reverse order looks tidier — put the template on its entry, then move the items — but
 		// the two run in separate DbContexts and therefore separate transactions, so a merge failure
-		// (the embedding service is down mid-rescore, the caller goes away) would leave the template
+		// (a concurrent edit conflicts, the caller goes away) would leave the template
 		// permanently torn off whatever entry it previously declared, with the row still in the queue
 		// and no audit entry to explain the move. Every receipt item entered from that template would
 		// then be filed under a bucket nobody chose. Failing before the FK write instead leaves the
@@ -1120,118 +1063,6 @@ public class NormalizedDescriptionService(
 			// succeed either way.
 			throw new InvalidOperationException(string.Format(TemplateNameCollidesWithDisplayName, name));
 		}
-	}
-
-	public async Task<NormalizedDescriptionSettings> GetSettingsAsync(CancellationToken cancellationToken)
-	{
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		NormalizedDescriptionSettingsEntity entity = await ResolveSettingsEntityAsync(context, cancellationToken);
-		return settingsMapper.ToDomain(entity);
-	}
-
-	public async Task<NormalizedDescriptionSettings> UpdateSettingsAsync(
-		double autoAcceptThreshold,
-		double pendingReviewThreshold,
-		CancellationToken cancellationToken)
-	{
-		// Domain-level validation: prevents malformed bounds (out-of-range, crossed thresholds)
-		// from ever hitting the DB. Mirrors the constructor on NormalizedDescriptionSettings.
-		NormalizedDescriptionSettings.Validate(autoAcceptThreshold, pendingReviewThreshold);
-
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		NormalizedDescriptionSettingsEntity entity = await ResolveSettingsEntityAsync(context, cancellationToken);
-
-		entity.AutoAcceptThreshold = autoAcceptThreshold;
-		entity.PendingReviewThreshold = pendingReviewThreshold;
-		entity.UpdatedAt = DateTimeOffset.UtcNow;
-
-		await context.SaveChangesAsync(cancellationToken);
-		await committedChangePublisher.PublishAsync(new(
-			CommittedEntityType.NormalizedDescriptionSettings,
-			CommittedChangeType.Updated,
-			entity.Id));
-		return settingsMapper.ToDomain(entity);
-	}
-
-	public async Task<MatchTestResult> TestMatchAsync(
-		string description,
-		int topN,
-		double? autoAcceptThresholdOverride,
-		double? pendingReviewThresholdOverride,
-		CancellationToken cancellationToken)
-	{
-		string normalized = (description ?? string.Empty).Trim();
-		if (string.IsNullOrEmpty(normalized))
-		{
-			throw new ArgumentException(TestMatchDescriptionRequired, nameof(description));
-		}
-
-		if (topN < 1 || topN > MaxTopN)
-		{
-			throw new ArgumentException(TopNOutOfRange, nameof(topN));
-		}
-
-		// Validate any thresholds the admin supplied. We accept partial overrides (one or the
-		// other) but still need the combined pair to satisfy the invariant: fall back to the
-		// DB values for the unset side, then validate the resulting pair.
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		NormalizedDescriptionSettingsEntity settings = await ResolveSettingsEntityAsync(context, cancellationToken);
-
-		double autoAccept = autoAcceptThresholdOverride ?? settings.AutoAcceptThreshold;
-		double pendingReview = pendingReviewThresholdOverride ?? settings.PendingReviewThreshold;
-		NormalizationMatchPolicy policy = new(autoAccept, pendingReview);
-
-		NormalizedDescriptionEntity? exactMatch = await FindExactCaseInsensitiveAsync(context, normalized, cancellationToken);
-		List<MatchCandidate> candidates = [];
-		bool embeddingAvailable = false;
-		if (exactMatch is not null)
-		{
-			candidates.Add(new MatchCandidate(exactMatch.Id, exactMatch.CanonicalName, 1.0, exactMatch.Status.ToString()));
-		}
-		else if (embeddingService.IsConfigured)
-		{
-			float[]? embeddingData = await TryGenerateEmbeddingAsync(normalized, cancellationToken);
-			if (embeddingData is { Length: > 0 })
-			{
-				embeddingAvailable = true;
-				candidates = await AnnSearchTopNAsync(context, new Vector(embeddingData), topN, cancellationToken);
-			}
-		}
-
-		// Only the leading candidate informs policy; the remaining candidates explain the search.
-		MatchCandidate? top = candidates.Count > 0 ? candidates[0] : null;
-		return policy.Decide(exactMatch?.Status, embeddingAvailable, top?.CosineSimilarity) switch
-		{
-			MatchDecision.ReuseExact or MatchDecision.ReuseSimilar =>
-				new MatchTestResult(candidates, MatchTestOutcomes.AutoAccept, top!.NormalizedDescriptionId),
-			MatchDecision.Rejected => new MatchTestResult(candidates, MatchTestOutcomes.Rejected, null),
-			MatchDecision.CreatePendingReview => new MatchTestResult(candidates, MatchTestOutcomes.PendingReview, null),
-			MatchDecision.EmbeddingUnavailable => new MatchTestResult(candidates, MatchTestOutcomes.EmbeddingUnavailable, null),
-			_ => new MatchTestResult(candidates, MatchTestOutcomes.CreateNew, null),
-		};
-	}
-
-	public async Task<ThresholdImpactPreview> PreviewThresholdImpactAsync(
-		double autoAcceptThreshold,
-		double pendingReviewThreshold,
-		CancellationToken cancellationToken)
-	{
-		NormalizedDescriptionSettings.Validate(autoAcceptThreshold, pendingReviewThreshold);
-
-		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		NormalizedDescriptionSettingsEntity settings = await ResolveSettingsEntityAsync(context, cancellationToken);
-
-		// A single query captures both scored and structurally unresolved items. Separate counts
-		// could observe an item before and after a concurrent resolver commit.
-		List<double?> scores = await context.ReceiptItems
-			.AsNoTracking()
-			.IgnoreAutoIncludes()
-			.Select(r => r.NormalizedDescriptionId != null ? r.NormalizedDescriptionMatchScore : null)
-			.ToListAsync(cancellationToken);
-
-		return ThresholdImpactCalculator.Calculate(scores,
-			new NormalizationMatchPolicy(settings.AutoAcceptThreshold, settings.PendingReviewThreshold),
-			new NormalizationMatchPolicy(autoAcceptThreshold, pendingReviewThreshold));
 	}
 
 	public async Task<RequeuePendingPreview> PreviewRequeuePendingAsync(CancellationToken cancellationToken)
@@ -1396,74 +1227,6 @@ public class NormalizedDescriptionService(
 		return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(joined)));
 	}
 
-	private async Task<(double AutoAccept, double PendingReview)> ResolveThresholdsAsync(
-		ApplicationDbContext context,
-		CancellationToken cancellationToken)
-	{
-		NormalizedDescriptionSettingsEntity? entity = await context.NormalizedDescriptionSettings
-			.AsNoTracking()
-			.FirstOrDefaultAsync(e => e.Id == NormalizedDescriptionSettingsEntityConfiguration.SingletonId, cancellationToken);
-
-		if (entity is null)
-		{
-			// Fallback path for contexts that haven't been seeded (unit tests using a fresh
-			// InMemory provider, integration harnesses that skip EF migrations). The initial
-			// constants mirror the seed row so behaviour is identical at rest.
-			return (InitialAutoAcceptThreshold, InitialPendingReviewThreshold);
-		}
-
-		return (entity.AutoAcceptThreshold, entity.PendingReviewThreshold);
-	}
-
-	private async Task<NormalizedDescriptionSettingsEntity> ResolveSettingsEntityAsync(
-		ApplicationDbContext context,
-		CancellationToken cancellationToken)
-	{
-		NormalizedDescriptionSettingsEntity? entity = await context.NormalizedDescriptionSettings
-			.FirstOrDefaultAsync(e => e.Id == NormalizedDescriptionSettingsEntityConfiguration.SingletonId, cancellationToken);
-
-		if (entity is not null)
-		{
-			return entity;
-		}
-
-		// Self-heal path: if the seed row is missing (e.g., migrations were rolled back and
-		// re-applied in a narrow window, or an InMemory test skipped seeding) we bootstrap
-		// the singleton with defaults on first read/write rather than failing loudly. The
-		// fixed SingletonId plus PK means the insert is race-safe: a second concurrent call
-		// would hit a PK violation and reload.
-		entity = new NormalizedDescriptionSettingsEntity
-		{
-			Id = NormalizedDescriptionSettingsEntityConfiguration.SingletonId,
-			AutoAcceptThreshold = InitialAutoAcceptThreshold,
-			PendingReviewThreshold = InitialPendingReviewThreshold,
-			UpdatedAt = DateTimeOffset.UtcNow,
-		};
-		context.NormalizedDescriptionSettings.Add(entity);
-		try
-		{
-			await context.SaveChangesAsync(cancellationToken);
-			await committedChangePublisher.PublishAsync(new(
-				CommittedEntityType.NormalizedDescriptionSettings,
-				CommittedChangeType.Created,
-				entity.Id));
-		}
-		catch (DbUpdateException)
-		{
-			context.Entry(entity).State = EntityState.Detached;
-			NormalizedDescriptionSettingsEntity? winner = await context.NormalizedDescriptionSettings
-				.FirstOrDefaultAsync(e => e.Id == NormalizedDescriptionSettingsEntityConfiguration.SingletonId, cancellationToken);
-			if (winner is null)
-			{
-				throw new InvalidOperationException(SettingsRowNotFound);
-			}
-
-			return winner;
-		}
-
-		return entity;
-	}
-
 	// Scalar evidence projection shared by GetAllAsync / GetByIdAsync / SplitAsync
 	// (RECEIPTS-873). Three things happen here that a naive implementation would get wrong:
 	//
@@ -1564,7 +1327,7 @@ public class NormalizedDescriptionService(
 			""";
 
 		List<SampleDescriptionRow> samples;
-		if (context.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+		if (context.Database.ProviderName == PostgreSQL)
 		{
 			samples = await context.Database
 				.SqlQueryRaw<SampleDescriptionRow>(sql, ids, MaxSampleRawDescriptions)
@@ -1780,47 +1543,6 @@ public class NormalizedDescriptionService(
 		return (entity, true);
 	}
 
-	/// <summary>
-	/// Cosine similarity between <paramref name="rawDescription"/> and the surviving row's
-	/// embedding, for re-scoring items re-linked by a merge (RECEIPTS-892).
-	/// </summary>
-	/// <remarks>
-	/// Returns null when no honest number can be produced — no embedding service, the surviving
-	/// row has no vector, or the provider is not Postgres. A null score is the correct answer
-	/// there: it reads as "unresolved" rather than asserting a similarity nobody measured.
-	/// </remarks>
-	private async Task<double?> SimilarityToKeepAsync(
-		ApplicationDbContext context,
-		string rawDescription,
-		NormalizedDescriptionEntity keep,
-		CancellationToken cancellationToken)
-	{
-		string normalized = (rawDescription ?? string.Empty).Trim();
-		if (string.IsNullOrEmpty(normalized))
-		{
-			return null;
-		}
-
-		// Exact spelling yields an advisory score of one; it is not verification authority.
-		if (string.Equals(normalized, keep.CanonicalName, StringComparison.OrdinalIgnoreCase))
-		{
-			return 1.0;
-		}
-
-		if (!embeddingService.IsConfigured || keep.Embedding is null)
-		{
-			return null;
-		}
-
-		float[]? embeddingData = await TryGenerateEmbeddingAsync(normalized, cancellationToken);
-		if (embeddingData is not { Length: > 0 })
-		{
-			return null;
-		}
-
-		return await SimilarityToAsync(context, new Vector(embeddingData), keep.Id, cancellationToken);
-	}
-
 	private async Task<float[]?> TryGenerateEmbeddingAsync(
 		string text,
 		CancellationToken cancellationToken,
@@ -1842,145 +1564,5 @@ public class NormalizedDescriptionService(
 			// deliberate scheduler backpressure, use each caller's existing no-vector fallback.
 			return null;
 		}
-	}
-
-	// Virtual so tests can stub a similarity without pgvector, matching AnnSearchTopOneAsync.
-	// On providers that don't support pgvector (e.g., InMemory) the default is a no-op.
-	protected virtual async Task<double?> SimilarityToAsync(
-		ApplicationDbContext context,
-		Vector queryVector,
-		Guid targetId,
-		CancellationToken cancellationToken)
-	{
-		if (context.Database.ProviderName != PostgreSQL)
-		{
-			return null;
-		}
-
-		// Same expression as the ANN searches — `<=>` is cosine distance, so 1 - it is the
-		// similarity — but pinned to one row rather than ordered over the whole table.
-		string sql = """
-			SELECT "Id" AS entity_id,
-			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
-			FROM "matching"."NormalizedDescriptions"
-			WHERE "Id" = {1}
-			  AND "Embedding" IS NOT NULL
-			  AND "EmbeddingModelVersion" = {2}
-			""";
-
-		AnnSearchRow? row = await context.Database
-			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, targetId, OnnxEmbeddingService.EmbeddingSpaceFingerprint)
-			.FirstOrDefaultAsync(cancellationToken);
-
-		return row?.similarity;
-	}
-
-	// Virtual so tests can simulate specific top-1 matches without a real Postgres. On providers
-	// that don't support pgvector (e.g., InMemory) the default implementation is a no-op.
-	protected virtual async Task<(NormalizedDescriptionEntity? Match, double? Similarity)> AnnSearchTopOneAsync(
-		ApplicationDbContext context, Vector queryVector, CancellationToken cancellationToken)
-	{
-		if (context.Database.ProviderName != PostgreSQL)
-		{
-			return (null, null);
-		}
-
-		// pgvector's `<=>` operator returns cosine distance (1 - cosine_similarity).
-		// The partial HNSW index covers the WHERE "Embedding" IS NOT NULL clause.
-		//
-		// Tombstones are excluded (RECEIPTS-876). A Rejected row keeps its embedding so the exact
-		// -match lookup still finds it, but it must never win an ANN search: auto-accepting onto a
-		// rejected row would re-link the very items the reviewer detached, and citing one as a
-		// near-miss would offer "nearly matched <thing you rejected>" as evidence.
-		string sql = """
-			SELECT "Id" AS entity_id,
-			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
-			FROM "matching"."NormalizedDescriptions"
-			WHERE "Embedding" IS NOT NULL
-			  AND "EmbeddingModelVersion" = {1}
-			  AND "Status" <> 'Rejected'
-			ORDER BY "Embedding" <=> {0}::vector
-			LIMIT 1
-			""";
-
-		AnnSearchRow? row = await context.Database
-			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, OnnxEmbeddingService.EmbeddingSpaceFingerprint)
-			.FirstOrDefaultAsync(cancellationToken);
-
-		if (row is null)
-		{
-			return (null, null);
-		}
-
-		NormalizedDescriptionEntity? entity = await context.NormalizedDescriptions
-			.FirstOrDefaultAsync(e => e.Id == row.entity_id, cancellationToken);
-		return (entity, row.similarity);
-	}
-
-	// Virtual so tests can stub an N-row result without pgvector. Callers cap topN at MaxTopN.
-	protected virtual async Task<List<MatchCandidate>> AnnSearchTopNAsync(
-		ApplicationDbContext context,
-		Vector queryVector,
-		int topN,
-		CancellationToken cancellationToken)
-	{
-		if (context.Database.ProviderName != PostgreSQL)
-		{
-			return [];
-		}
-
-		// Same index and same tombstone exclusion as AnnSearchTopOneAsync — the settings-page
-		// match test must simulate what the resolver would actually do, and the resolver can
-		// never land on a Rejected row. Raising LIMIT costs extra index probes but no additional
-		// table scans; safe to keep at topN ≤ 20.
-		string sql = """
-			SELECT "Id" AS entity_id,
-			       (1.0 - ("Embedding" <=> {0}::vector)) AS similarity
-			FROM "matching"."NormalizedDescriptions"
-			WHERE "Embedding" IS NOT NULL
-			  AND "EmbeddingModelVersion" = {2}
-			  AND "Status" <> 'Rejected'
-			ORDER BY "Embedding" <=> {0}::vector
-			LIMIT {1}
-			""";
-
-		List<AnnSearchRow> rows = await context.Database
-			.SqlQueryRaw<AnnSearchRow>(sql, queryVector, topN, OnnxEmbeddingService.EmbeddingSpaceFingerprint)
-			.ToListAsync(cancellationToken);
-
-		if (rows.Count == 0)
-		{
-			return [];
-		}
-
-		List<Guid> ids = [.. rows.Select(r => r.entity_id)];
-		Dictionary<Guid, NormalizedDescriptionEntity> entities = await context.NormalizedDescriptions
-			.Where(e => ids.Contains(e.Id))
-			.ToDictionaryAsync(e => e.Id, cancellationToken);
-
-		List<MatchCandidate> candidates = [];
-		foreach (AnnSearchRow row in rows)
-		{
-			if (!entities.TryGetValue(row.entity_id, out NormalizedDescriptionEntity? entity))
-			{
-				continue;
-			}
-
-			candidates.Add(new MatchCandidate(
-				entity.Id,
-				entity.CanonicalName,
-				row.similarity,
-				entity.Status.ToString()));
-		}
-
-		return candidates;
-	}
-
-	private sealed class AnnSearchRow
-	{
-#pragma warning disable IDE1006 // Underscore naming matches raw-SQL column aliases.
-		public Guid entity_id { get; set; }
-		public double similarity { get; set; }
-#pragma warning restore IDE1006
 	}
 }

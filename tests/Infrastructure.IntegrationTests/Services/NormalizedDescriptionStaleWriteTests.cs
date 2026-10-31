@@ -243,7 +243,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 		}
 		else if (change == "candidate-merged")
 		{
-			NormalizedDescriptionService service = new(factory, Embedding(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+			NormalizedDescriptionService service = new(factory, Embedding(), new NormalizedDescriptionMapper());
 			await service.MergeAsync(seed.Bread, seed.Milk, CancellationToken.None);
 		}
 		else if (change == "candidate-renamed")
@@ -260,7 +260,7 @@ public partial class NormalizedDescriptionStaleWriteTests(PostgresFixture server
 		}
 		else if (change == "candidate-rejected")
 		{
-			NormalizedDescriptionService service = new(factory, Embedding(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+			NormalizedDescriptionService service = new(factory, Embedding(), new NormalizedDescriptionMapper());
 			(await service.UpdateStatusAsync(seed.Milk, NormalizedDescriptionStatus.Rejected, CancellationToken.None)).Should().BeTrue();
 		}
 	}

@@ -69,7 +69,6 @@ public sealed partial class NormalizationCatalogTests
 		using var provider = new ServiceCollection()
 			.AddSingleton(embeddings.Object)
 			.AddSingleton<NormalizedDescriptionMapper>()
-			.AddSingleton<NormalizedDescriptionSettingsMapper>()
 			.AddSingleton<IDbContextFactory<ApplicationDbContext>>(new Factory(fixture))
 			.AddScoped<INormalizedDescriptionService, NormalizedDescriptionService>()
 			.AddSingleton<IDescriptionChangeSignal, DescriptionChangeSignal>()

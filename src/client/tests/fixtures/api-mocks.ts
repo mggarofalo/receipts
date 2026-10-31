@@ -252,16 +252,6 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   // Normalized descriptions — admin-only, and the one surface whose whole point is a wide table
   // of evidence (RECEIPTS-880). Populated rather than empty: an empty table cannot demonstrate
   // that the layout holds, which is exactly what the width sweep checks.
-  await page.route("**/api/normalized-descriptions/settings**", (route) =>
-    route.fulfill(
-      json({
-        id: "00000000-0000-0000-0000-000000000001",
-        autoAcceptThreshold: 0.9,
-        pendingReviewThreshold: 0.75,
-        updatedAt: FROZEN_NOW_ISO,
-      }),
-    ),
-  );
   await page.route("**/api/normalized-descriptions/requeue-pending/preview**", (route) =>
     route.fulfill(
       json({

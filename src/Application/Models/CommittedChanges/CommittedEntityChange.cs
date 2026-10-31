@@ -5,7 +5,6 @@ public enum CommittedEntityType
 	ReceiptItem,
 	ItemEmbedding,
 	NormalizedDescription,
-	NormalizedDescriptionSettings,
 	YnabBudget,
 	YnabMapping,
 	YnabSyncRecord,

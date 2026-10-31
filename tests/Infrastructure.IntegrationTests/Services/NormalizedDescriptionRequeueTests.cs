@@ -257,8 +257,7 @@ public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
 	private NormalizedDescriptionService CreateService() => new(
 		new FixtureContextFactory(fixture),
 		new UnconfiguredEmbeddingService(),
-		new NormalizedDescriptionMapper(),
-		new NormalizedDescriptionSettingsMapper());
+		new NormalizedDescriptionMapper());
 
 	private static NormalizedDescriptionEntity BuildNormalized(Guid id, string canonicalName, DomainStatus status) => new()
 	{

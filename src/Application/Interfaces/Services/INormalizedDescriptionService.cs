@@ -57,9 +57,4 @@ public interface INormalizedDescriptionService
 	// Operational view of the bounded vector-rebuild queue. Exact canonical-name matches remain
 	// available while this reports incomplete; ANN readers admit only this fingerprint.
 	Task<EmbeddingCoverage> GetEmbeddingCoverageAsync(CancellationToken cancellationToken);
-
-	Task<NormalizedDescriptionSettings> GetSettingsAsync(CancellationToken cancellationToken);
-	Task<NormalizedDescriptionSettings> UpdateSettingsAsync(double autoAcceptThreshold, double pendingReviewThreshold, CancellationToken cancellationToken);
-	Task<MatchTestResult> TestMatchAsync(string description, int topN, double? autoAcceptThresholdOverride, double? pendingReviewThresholdOverride, CancellationToken cancellationToken);
-	Task<ThresholdImpactPreview> PreviewThresholdImpactAsync(double autoAcceptThreshold, double pendingReviewThreshold, CancellationToken cancellationToken);
 }

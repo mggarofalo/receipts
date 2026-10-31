@@ -19,7 +19,7 @@ public sealed partial class NormalizationCatalogTests
 		var target = await CanonicalAsync("Proposed replacement");
 		var ids = await ItemsAsync(Source, 1, "automatic", old.Id);
 		using var provider = OfflineProvider();
-		var manual = await new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), new UnavailableEmbeddingService(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper())
+		var manual = await new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), new UnavailableEmbeddingService(), new NormalizedDescriptionMapper())
 			.SplitAsync(ids, "Human chosen identity", CancellationToken.None);
 		var stored = (await ReadAsync(ids)).Single();
 		stored.NormalizationOrigin.Should().Be("reviewed");
@@ -137,7 +137,6 @@ public sealed partial class NormalizationCatalogTests
 		ServiceCollection services = new();
 		services.AddSingleton<IEmbeddingService, UnavailableEmbeddingService>();
 		services.AddSingleton<NormalizedDescriptionMapper>();
-		services.AddSingleton<NormalizedDescriptionSettingsMapper>();
 		services.AddSingleton<IDbContextFactory<ApplicationDbContext>>(new Factory(fixture));
 		services.AddScoped<INormalizedDescriptionService, NormalizedDescriptionService>();
 		services.AddSingleton<IDescriptionChangeSignal, DescriptionChangeSignal>();

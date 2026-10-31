@@ -5,17 +5,13 @@ using Application.Commands.NormalizedDescription.Merge;
 using Application.Commands.NormalizedDescription.Rename;
 using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
-using Application.Commands.NormalizedDescription.UpdateSettings;
 using Application.Commands.NormalizedDescription.UpdateStatus;
 using Application.Models;
 using Application.Models.NormalizedDescriptions;
 using Application.Queries.NormalizedDescription.GetAll;
 using Application.Queries.NormalizedDescription.GetById;
 using Application.Queries.NormalizedDescription.GetEmbeddingCoverage;
-using Application.Queries.NormalizedDescription.GetSettings;
 using Application.Queries.NormalizedDescription.PreviewRequeuePending;
-using Application.Queries.NormalizedDescription.PreviewThresholdImpact;
-using Application.Queries.NormalizedDescription.TestMatch;
 using Asp.Versioning;
 using Domain.NormalizedDescriptions;
 using Mediator;
@@ -27,21 +23,15 @@ using DtoStatus = API.Generated.Dtos.NormalizedDescriptionStatus;
 
 namespace API.Controllers;
 
-// Admin-only surface for the canonical-descriptions registry. Wired up across two issues:
-// RECEIPTS-580 scaffolds the settings/test/preview endpoints; RECEIPTS-579 extends the class
-// with list/get/merge/split/status endpoints. Every endpoint gates on RequireAdmin because
-// tuning thresholds, probing the classifier, and editing the registry are operator tasks,
-// not end-user ones.
+// Admin-only surface for the canonical-descriptions registry (RECEIPTS-579). Every endpoint
+// gates on RequireAdmin because editing the registry is an operator task, not an end-user one.
 [ApiVersion("1.0")]
 [ApiController]
 [Route("api/normalized-descriptions")]
 [Authorize(Policy = "RequireAdmin")]
 public class NormalizedDescriptionsController(IMediator mediator) : ControllerBase
 {
-	public const string RouteSettings = "settings";
 	public const string RouteEmbeddingCoverage = "embedding-coverage";
-	public const string RoutePreview = "settings/preview";
-	public const string RouteTest = "test";
 	public const string RouteGetAll = "";
 	public const string RouteGetById = "{id}";
 	public const string RouteMerge = "{id}/merge";
@@ -52,12 +42,6 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const string RouteRequeuePending = "requeue-pending";
 	public const string RouteRequeuePendingPreview = "requeue-pending/preview";
 
-	public const string AutoAcceptOutOfRange = "autoAcceptThreshold must be between 0 and 1";
-	public const string PendingReviewOutOfRange = "pendingReviewThreshold must be between 0 and 1";
-	public const string PendingMustBeLessThanAuto = "pendingReviewThreshold must be strictly less than autoAcceptThreshold";
-	public const string DescriptionRequired = "description must not be empty";
-	public const string TopNOutOfRange = "topN must be between 1 and 20";
-	public const string OverrideOutOfRange = "threshold overrides must be between 0 and 1 when provided";
 	public const string IdCannotBeEmpty = "id must not be empty";
 	public const string DiscardIdCannotBeEmpty = "discardId must not be empty";
 	public const string ReceiptItemIdCannotBeEmpty = "receiptItemId must not be empty";
@@ -74,15 +58,6 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 	public const int MaxPageSize = 200;
 	public const string ExpectedFingerprintRequired = "expectedFingerprint must not be empty";
 	public const string PendingSetChanged = "The set of pending-review descriptions changed since it was previewed. Nothing was deleted — re-read the preview and try again.";
-
-	[HttpGet(RouteSettings)]
-	[EndpointSummary("Get the current normalized-description threshold settings")]
-	[EndpointDescription("Returns the live auto-accept and pending-review thresholds used by the resolver. Admin-only.")]
-	public async Task<Ok<NormalizedDescriptionSettingsResponse>> GetSettings(CancellationToken cancellationToken)
-	{
-		NormalizedDescriptionSettings settings = await mediator.Send(new GetNormalizedDescriptionSettingsQuery(), cancellationToken);
-		return TypedResults.Ok(ToResponse(settings));
-	}
 
 	[HttpGet(RouteEmbeddingCoverage)]
 	[EndpointSummary("Get semantic-vector rebuild coverage")]
@@ -101,109 +76,6 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			ItemPending = coverage.ItemPending,
 			IsComplete = coverage.IsComplete,
 		});
-	}
-
-	[HttpPatch(RouteSettings)]
-	[EndpointSummary("Update the normalized-description threshold settings")]
-	[EndpointDescription("Both thresholds must satisfy 0 <= pendingReviewThreshold < autoAcceptThreshold <= 1. Admin-only.")]
-	public async Task<Results<Ok<NormalizedDescriptionSettingsResponse>, BadRequestProblem>> UpdateSettings(
-		[FromBody] UpdateNormalizedDescriptionSettingsRequest request,
-		CancellationToken cancellationToken)
-	{
-		if (request.AutoAcceptThreshold < 0 || request.AutoAcceptThreshold > 1)
-		{
-			return ApiProblem.BadRequest(AutoAcceptOutOfRange);
-		}
-
-		if (request.PendingReviewThreshold < 0 || request.PendingReviewThreshold > 1)
-		{
-			return ApiProblem.BadRequest(PendingReviewOutOfRange);
-		}
-
-		if (request.PendingReviewThreshold >= request.AutoAcceptThreshold)
-		{
-			return ApiProblem.BadRequest(PendingMustBeLessThanAuto);
-		}
-
-		UpdateNormalizedDescriptionSettingsCommand command = new(request.AutoAcceptThreshold, request.PendingReviewThreshold);
-		NormalizedDescriptionSettings result = await mediator.Send(command, cancellationToken);
-		return TypedResults.Ok(ToResponse(result));
-	}
-
-	[HttpPost(RouteTest)]
-	[EndpointSummary("Probe the normalized-description classifier for a given description")]
-	[EndpointDescription("Returns the top-N ANN candidates and the classification branch the resolver would take. Admin-only.")]
-	public async Task<Results<Ok<MatchTestResultResponse>, BadRequestProblem>> TestMatch(
-		[FromBody] TestMatchRequest request,
-		CancellationToken cancellationToken)
-	{
-		if (string.IsNullOrWhiteSpace(request.Description))
-		{
-			return ApiProblem.BadRequest(DescriptionRequired);
-		}
-
-		int topN = request.TopN == 0 ? 5 : request.TopN;
-		if (topN < 1 || topN > 20)
-		{
-			return ApiProblem.BadRequest(TopNOutOfRange);
-		}
-
-		if (request.AutoAcceptThresholdOverride is double autoOverride &&
-			(autoOverride < 0 || autoOverride > 1))
-		{
-			return ApiProblem.BadRequest(OverrideOutOfRange);
-		}
-
-		if (request.PendingReviewThresholdOverride is double pendingOverride &&
-			(pendingOverride < 0 || pendingOverride > 1))
-		{
-			return ApiProblem.BadRequest(OverrideOutOfRange);
-		}
-
-		// If both overrides are supplied, reject a crossed pair up front for the same reason
-		// UpdateSettings does — don't wait for the service to throw.
-		if (request.AutoAcceptThresholdOverride is double autoSet &&
-			request.PendingReviewThresholdOverride is double pendingSet &&
-			pendingSet >= autoSet)
-		{
-			return ApiProblem.BadRequest(PendingMustBeLessThanAuto);
-		}
-
-		TestNormalizedDescriptionMatchQuery query = new(
-			request.Description,
-			topN,
-			request.AutoAcceptThresholdOverride,
-			request.PendingReviewThresholdOverride);
-
-		MatchTestResult result = await mediator.Send(query, cancellationToken);
-		return TypedResults.Ok(ToResponse(result));
-	}
-
-	[HttpPost(RoutePreview)]
-	[EndpointSummary("Preview the impact of changing normalized-description thresholds")]
-	[EndpointDescription("Returns current and proposed classification counts with per-bucket deltas. Admin-only.")]
-	public async Task<Results<Ok<ThresholdImpactPreviewResponse>, BadRequestProblem>> PreviewThresholdImpact(
-		[FromBody] PreviewThresholdImpactRequest request,
-		CancellationToken cancellationToken)
-	{
-		if (request.AutoAcceptThreshold < 0 || request.AutoAcceptThreshold > 1)
-		{
-			return ApiProblem.BadRequest(AutoAcceptOutOfRange);
-		}
-
-		if (request.PendingReviewThreshold < 0 || request.PendingReviewThreshold > 1)
-		{
-			return ApiProblem.BadRequest(PendingReviewOutOfRange);
-		}
-
-		if (request.PendingReviewThreshold >= request.AutoAcceptThreshold)
-		{
-			return ApiProblem.BadRequest(PendingMustBeLessThanAuto);
-		}
-
-		PreviewThresholdImpactQuery query = new(request.AutoAcceptThreshold, request.PendingReviewThreshold);
-		ThresholdImpactPreview result = await mediator.Send(query, cancellationToken);
-		return TypedResults.Ok(ToResponse(result));
 	}
 
 	[HttpGet(RouteGetAll)]
@@ -583,45 +455,4 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			NearestNeighbourSimilarity = source.NearestNeighbourSimilarity,
 		};
 	}
-
-	private static NormalizedDescriptionSettingsResponse ToResponse(NormalizedDescriptionSettings settings) => new()
-	{
-		Id = settings.Id,
-		AutoAcceptThreshold = settings.AutoAcceptThreshold,
-		PendingReviewThreshold = settings.PendingReviewThreshold,
-		UpdatedAt = settings.UpdatedAt,
-	};
-
-	private static MatchTestResultResponse ToResponse(MatchTestResult result) => new()
-	{
-		SimulatedOutcome = result.SimulatedOutcome,
-		SimulatedTargetId = result.SimulatedTargetId,
-		Candidates = [.. result.Candidates.Select(c => new MatchCandidateDto
-		{
-			NormalizedDescriptionId = c.NormalizedDescriptionId,
-			CanonicalName = c.CanonicalName,
-			CosineSimilarity = c.CosineSimilarity,
-			Status = c.Status,
-		})],
-	};
-
-	private static ThresholdImpactPreviewResponse ToResponse(ThresholdImpactPreview preview) => new()
-	{
-		Current = ToResponse(preview.Current),
-		Proposed = ToResponse(preview.Proposed),
-		Deltas = new ReclassificationDeltasDto
-		{
-			AutoToPending = preview.Deltas.AutoToPending,
-			PendingToAuto = preview.Deltas.PendingToAuto,
-			UnresolvedToAuto = preview.Deltas.UnresolvedToAuto,
-			UnresolvedToPending = preview.Deltas.UnresolvedToPending,
-		},
-	};
-
-	private static ClassificationCountsDto ToResponse(ClassificationCounts counts) => new()
-	{
-		AutoAccepted = counts.AutoAccepted,
-		PendingReview = counts.PendingReview,
-		Unresolved = counts.Unresolved,
-	};
 }

@@ -275,8 +275,7 @@ public static class InfrastructureService
 			.AddSingleton<TransactionMapper>()
 			.AddSingleton<AdjustmentMapper>()
 			.AddSingleton<ItemTemplateMapper>()
-			.AddSingleton<NormalizedDescriptionMapper>()
-			.AddSingleton<NormalizedDescriptionSettingsMapper>();
+			.AddSingleton<NormalizedDescriptionMapper>();
 
 		return services;
 	}

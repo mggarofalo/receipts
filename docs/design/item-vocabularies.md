@@ -60,17 +60,16 @@ The template does not get a veto over later admin decisions.
 
 A stamped item gets `NormalizedDescriptionMatchScore = null`. The column records a cosine
 similarity, and nothing was compared — this is a declaration, not a match. A fabricated `1.0`
-would be indistinguishable from a perfect ANN hit in `PreviewThresholdImpactAsync`, which buckets
-items by exactly that column, so every future threshold preview would be computed partly from
-scores that never came from a comparison.
+would be indistinguishable from a perfect measured hit.
 
 ## Creating a template creates its canonical entry
 
 `GetOrCreateForTemplateAsync` is deliberately *not* `GetOrCreateAsync`. The two answer different
 questions:
 
-- `GetOrCreateAsync` asks "what does this receipt text probably mean?" — ANN search, threshold
-  bands, possibly the review queue.
+- The retired `GetOrCreateAsync` asked "what does this receipt text probably mean?" — ANN
+  search, threshold bands, possibly the review queue. Live resolution now uses reviewed exact
+  mappings, and the threshold matcher is gone (RECEIPTS-1099).
 - `GetOrCreateForTemplateAsync` records what a user already told us. Exact-match-or-create only,
   always `Active`.
 

@@ -46,8 +46,7 @@ public class NormalizedDescriptionProjectionTests(PostgresFixture server) : Isol
 		NormalizedDescriptionService service = new(
 			new FixtureContextFactory(fixture),
 			new UnconfiguredEmbeddingService(),
-			new NormalizedDescriptionMapper(),
-			new NormalizedDescriptionSettingsMapper());
+			new NormalizedDescriptionMapper());
 
 		PagedResult<NormalizedDescriptionDetail> result = await service.GetAllAsync(
 			[NormalizedDescriptionStatus.Active], null, 0, 50, CancellationToken.None);

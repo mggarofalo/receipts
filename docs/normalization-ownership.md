@@ -36,7 +36,7 @@ Undo revokes the mapping and restores only snapshotted assignments whose item re
 
 ## Candidate evidence and model suggestions
 
-Catalog retrieval is separate from threshold simulation. It queries Active targets before limiting results, combines exact names, lexical matches, human-approved examples and optional semantic neighbors, and reserves candidate capacity for the closest semantic results. Automatic links are not training examples. Retrieval is bounded and is not proof that a missing candidate represents a new product.
+Catalog retrieval is the one candidate search an administrator sees. It queries Active targets before limiting results, combines exact names, lexical matches, human-approved examples and optional semantic neighbors, and reserves candidate capacity for the closest semantic results. Automatic links are not training examples. Retrieval is bounded and is not proof that a missing candidate represents a new product.
 
 `NormalizationCatalogAiPolicy` owns the versioned group prompt, payload allowlist and strict output validation. Identity decisions are `same`, `different` or `insufficient`; proposing a new display name is separate from asserting identity. Approved examples disclose their description and whether their store/code scope matches the source, without sending separate store or code fields. Other-scope examples are weak evidence, and all source/example text is untrusted data. Structural validation cannot establish semantic correctness; human approval remains required.
 
@@ -92,25 +92,9 @@ Accepted hints stamp the canonical ID, template provenance and a fresh assignmen
 
 Real PostgreSQL creation-chain and controlled matching/lock-wait tests cover these boundaries. The frontend conflict test uses the actual page, mutation hook, app query client, error presentation and a controlled HTTP response, including same-draft retry after 409.
 
-## Matching decisions and threshold previews
+## Retired threshold matcher
 
-`Application.Normalization.NormalizationMatchPolicy` owns the threshold bands used by read-only match tests and impact previews. The historical `AutoAccept`, `PendingReview` and `CreateNew` outcome names remain wire-compatible advisory descriptions; none authorizes a receipt assignment or creates a product. Exact-name observations and threshold boundaries remain visible to administrators. Missing embedding capacity returns `EmbeddingUnavailable`; cancellation propagates.
-
-`NormalizedDescriptionService` supplies exact-name and ANN observations for this simulation. Receipt saves and background resolution use reviewed exact scoped mappings instead. Domain validation still rejects nonfinite threshold settings.
-
-The match-test response adds the `Rejected` outcome with no simulated target. Its
-candidate still identifies the tombstone for explanation; it does not imply a link.
-The response remains an unrestricted string with the same shape. Template declaration
-is intentionally separate: exact lookup or active creation, no fuzzy match, with
-explicit reinstatement of a tombstone and preservation of pending review.
-
-`ThresholdImpactCalculator` uses the same score bands for counts and transitions.
-Infrastructure captures linked scores and structurally unresolved items in one narrow
-query, then compares current and proposed thresholds over that single population.
-This is a reclassification of recorded evidence, not a new model run or a prediction
-of template/manual-link decisions. Null scores or missing links remain unresolved;
-no writes or embeddings are performed by the calculation. The existing response
-exposes four transition directions; it does not claim to enumerate every transition.
+The settings-page matcher (auto-accept and pending-review thresholds, impact preview and match test) was removed in RECEIPTS-1099; see [the decision](decisions/2026-10-31-retire-threshold-matcher.md). It only simulated a semantic resolver that no longer runs. Live resolution uses reviewed exact scoped mappings. Catalog source review shows the real candidate shortlist. Merge and split clear the moved items' `NormalizedDescriptionMatchScore` rather than measuring it again against the surviving row.
 
 ## Product identity and readable display labels
 

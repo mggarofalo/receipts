@@ -1663,32 +1663,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/normalized-descriptions/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the current normalized-description threshold settings
-         * @description Returns the live auto-accept and pending-review thresholds used by the
-         *     resolver when classifying new receipt item descriptions. Admin-only.
-         */
-        get: operations["GetNormalizedDescriptionSettings"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update the normalized-description threshold settings
-         * @description Updates the auto-accept and pending-review thresholds. Both values must
-         *     satisfy `0 <= pendingReviewThreshold < autoAcceptThreshold <= 1`. Admin-only.
-         */
-        patch: operations["UpdateNormalizedDescriptionSettings"];
-        trace?: never;
-    };
     "/api/normalized-descriptions/embedding-coverage": {
         parameters: {
             query?: never;
@@ -1712,29 +1686,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/normalized-descriptions/settings/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview the impact of changing threshold settings
-         * @description Returns current vs. proposed classification counts (auto-accepted,
-         *     pending-review, unresolved) and the reclassification deltas that a
-         *     threshold change would produce, computed against the live
-         *     `NormalizedDescriptionMatchScore` column on receipt items. Admin-only.
-         */
-        post: operations["PreviewNormalizedDescriptionThresholdImpact"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/normalized-descriptions/requeue-pending/preview": {
         parameters: {
             query?: never;
@@ -1746,8 +1697,8 @@ export interface paths {
          * Preview what a requeue of pending descriptions would destroy
          * @description Reports how many `PendingReview` rows would be deleted, how many live
          *     ReceiptItems would be unlinked, and how many stale
-         *     `NormalizedDescriptionMatchScore` values would be cleared, along with an
-         *     estimate of how long the background resolver needs to rebuild them.
+         *     `NormalizedDescriptionMatchScore` values would be cleared. Nothing rebuilds
+         *     the deleted rows automatically; the unlinked items wait for review in Catalog.
          *
          *     Read-only â€” nothing is modified. Also serves as the post-run
          *     verification: after a successful requeue every count reads zero.
@@ -1772,46 +1723,23 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Delete every pending-review description so the resolver rebuilds it
+         * Delete every pending-review description and return its items to review
          * @description Deletes every `PendingReview` NormalizedDescription and, in the same
          *     transaction, nulls both `NormalizedDescriptionId` and
          *     `NormalizedDescriptionMatchScore` on every ReceiptItem that pointed at
-         *     one. Those items then match the background resolver's unresolved-item
-         *     query and are re-resolved from scratch with full near-miss evidence
-         *     (RECEIPTS-883).
+         *     one. Those items become unresolved. No similarity matcher re-links them:
+         *     automatic resolution applies only exact, reviewed source mappings, so the
+         *     items wait for review in Catalog.
          *
          *     Destructive: any review judgement already applied to a pending row is
-         *     discarded, and its receipt items are unnormalized until the resolver
-         *     catches up. `Active` rows are never touched.
+         *     discarded, and its receipt items stay unnormalized until someone reviews
+         *     them. `Active` rows are never touched.
          *
-         *     `expectedPendingCount` must equal the count the caller last previewed;
-         *     a mismatch returns 409 rather than acting on stale information. Re-runnable
+         *     `expectedFingerprint` must equal the `pendingFingerprint` the caller last
+         *     previewed; a mismatch returns 409 rather than acting on stale information. Re-runnable
          *     â€” a second call with no pending rows deletes nothing. Admin-only.
          */
         post: operations["RequeuePendingNormalizedDescriptions"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/normalized-descriptions/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Probe the classifier for a given description
-         * @description Returns the top-N ANN candidates for the supplied description along with
-         *     the classification branch the production resolver would take under the
-         *     supplied threshold overrides (or the live DB settings when absent).
-         *     Admin-only.
-         */
-        post: operations["TestNormalizedDescriptionMatch"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5944,28 +5872,6 @@ export interface components {
              */
             occurrenceCount: number;
         };
-        NormalizedDescriptionSettingsResponse: {
-            /**
-             * Format: uuid
-             * @description Fixed singleton identifier for the settings row.
-             */
-            id: string;
-            /**
-             * Format: double
-             * @description Cosine-similarity floor at which the resolver re-uses an existing canonical entry.
-             */
-            autoAcceptThreshold: number;
-            /**
-             * Format: double
-             * @description Cosine-similarity floor at which the resolver creates a PendingReview entry instead of a new Active one.
-             */
-            pendingReviewThreshold: number;
-            /**
-             * Format: date-time
-             * @description When the settings were last changed.
-             */
-            updatedAt: string;
-        };
         EmbeddingCoverageResponse: {
             /** @description Full model, tokenizer, pooling, and normalization fingerprint admitted by semantic readers. */
             fingerprint: string;
@@ -5983,92 +5889,6 @@ export interface components {
             itemPending: number;
             /** @description True only when every eligible canonical description and source item has a current vector. */
             isComplete: boolean;
-        };
-        UpdateNormalizedDescriptionSettingsRequest: {
-            /** Format: double */
-            autoAcceptThreshold: number;
-            /** Format: double */
-            pendingReviewThreshold: number;
-        };
-        TestMatchRequest: {
-            /** @description Description to classify. Must be non-empty after trim. */
-            description: string;
-            /**
-             * Format: int32
-             * @description Number of ANN candidates to return (ranked by cosine similarity).
-             * @default 5
-             */
-            topN: number;
-            /**
-             * Format: double
-             * @description Override the live auto-accept threshold for simulation. Falls back to DB settings when null.
-             */
-            autoAcceptThresholdOverride?: number | null;
-            /**
-             * Format: double
-             * @description Override the live pending-review threshold for simulation. Falls back to DB settings when null.
-             */
-            pendingReviewThresholdOverride?: number | null;
-        };
-        MatchTestResultResponse: {
-            candidates: components["schemas"]["MatchCandidateDto"][];
-            /** @description One of: AutoAccept, PendingReview, CreateNew, EmbeddingUnavailable, Rejected. Rejected means an exact-name tombstone suppresses attachment. */
-            simulatedOutcome: string;
-            /**
-             * Format: uuid
-             * @description ID of the normalized-description row the resolver would reuse (AutoAccept) or null for CreateNew / PendingReview / EmbeddingUnavailable / Rejected.
-             */
-            simulatedTargetId?: string | null;
-        };
-        MatchCandidateDto: {
-            /** Format: uuid */
-            normalizedDescriptionId: string;
-            canonicalName: string;
-            /** Format: double */
-            cosineSimilarity: number;
-            /** @description Active or PendingReview. */
-            status: string;
-        };
-        PreviewThresholdImpactRequest: {
-            /** Format: double */
-            autoAcceptThreshold: number;
-            /** Format: double */
-            pendingReviewThreshold: number;
-        };
-        ThresholdImpactPreviewResponse: {
-            current: components["schemas"]["ClassificationCountsDto"];
-            proposed: components["schemas"]["ClassificationCountsDto"];
-            deltas: components["schemas"]["ReclassificationDeltasDto"];
-        };
-        ClassificationCountsDto: {
-            /** Format: int32 */
-            autoAccepted: number;
-            /** Format: int32 */
-            pendingReview: number;
-            /** Format: int32 */
-            unresolved: number;
-        };
-        ReclassificationDeltasDto: {
-            /**
-             * Format: int32
-             * @description Items currently auto-accepted that would fall back to pending-review under the proposal.
-             */
-            autoToPending: number;
-            /**
-             * Format: int32
-             * @description Items currently pending-review that would be auto-accepted under the proposal.
-             */
-            pendingToAuto: number;
-            /**
-             * Format: int32
-             * @description Items currently unresolved (below pending-review threshold) that would be auto-accepted under the proposal.
-             */
-            unresolvedToAuto: number;
-            /**
-             * Format: int32
-             * @description Items currently unresolved (below pending-review threshold) that would move up to pending-review under the proposal.
-             */
-            unresolvedToPending: number;
         };
         /**
          * @description `active` rows are confidently-classified and re-used as-is by the resolver.
@@ -6261,7 +6081,7 @@ export interface components {
             merged: boolean;
         };
         RequeuePendingRequest: {
-            /** @description The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient â€” one row being approved away while the resolver queues a new one leaves the count unchanged but the set different. */
+            /** @description The `pendingFingerprint` the caller last previewed. The requeue is rejected with 409 unless the live pending set is identical, so a stale client cannot delete a row its operator never reviewed. A count would not be sufficient â€” one row being approved away while another becomes pending leaves the count unchanged but the set different. */
             expectedFingerprint: string;
         };
         RequeuePendingPreviewResponse: {
@@ -12726,59 +12546,6 @@ export interface operations {
             };
         };
     };
-    GetNormalizedDescriptionSettings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NormalizedDescriptionSettingsResponse"];
-                };
-            };
-        };
-    };
-    UpdateNormalizedDescriptionSettings: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateNormalizedDescriptionSettingsRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NormalizedDescriptionSettingsResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
     GetNormalizedDescriptionEmbeddingCoverage: {
         parameters: {
             query?: never;
@@ -12795,39 +12562,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EmbeddingCoverageResponse"];
-                };
-            };
-        };
-    };
-    PreviewNormalizedDescriptionThresholdImpact: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PreviewThresholdImpactRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThresholdImpactPreviewResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };
@@ -12885,39 +12619,6 @@ export interface operations {
             };
             /** @description The pending-review count changed since the caller previewed it. Nothing was deleted. */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    TestNormalizedDescriptionMatch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TestMatchRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MatchTestResultResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
                 headers: {
                     [name: string]: unknown;
                 };

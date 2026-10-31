@@ -168,7 +168,7 @@ public class PersistenceContractTests(PostgresFixture fixture)
 		}
 		string canonical = $"Split winner {Guid.NewGuid():N}";
 		InsertRace race = new(fixture.CreateOptions(), canonical);
-		NormalizedDescriptionService service = new(new Factory(Options(race), actor), Mock.Of<IEmbeddingService>(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+		NormalizedDescriptionService service = new(new Factory(Options(race), actor), Mock.Of<IEmbeddingService>(), new NormalizedDescriptionMapper());
 
 		await service.SplitAsync([item.Id], canonical, CancellationToken.None);
 

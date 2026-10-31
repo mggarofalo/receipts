@@ -1,6 +1,6 @@
 # Normalized Description Review — Design Decisions
 
-> Historical design: receipt-entry authority and automatic matching described below were superseded by RECEIPTS-1022. See [current normalization ownership](../normalization-ownership.md) for reviewed verification, scoped reuse and advisory matching. This document retains the original rationale.
+> Historical design: receipt-entry authority and automatic matching described below were superseded by RECEIPTS-1022, and the threshold matcher was retired by RECEIPTS-1099. See [current normalization ownership](../normalization-ownership.md) for reviewed verification, scoped reuse and advisory matching. This document retains the original rationale.
 
 
 How the review queue is meant to behave, and why. Each section records a decision, the
@@ -157,12 +157,11 @@ An unknown id throws before anything is written. A partial split would leave a h
 group with no indication of which half moved — worse than an outright failure, because the
 reviewer would have to reconstruct what happened by hand.
 
-### Moved items are rescored
+### Moved items lose their score
 
 Each item's score was its similarity to the row it is leaving, so after the repoint it describes
-a comparison that no longer applies. `PreviewThresholdImpactAsync` buckets items by exactly that
-column, so a stale score would skew every later threshold preview. Same reasoning as
-RECEIPTS-892 applied to merges; the split path reuses the same helper.
+a comparison that no longer applies. Split and merge clear it (RECEIPTS-1099) rather than
+measuring again against the new row; nothing reads the score as a ranking any more.
 
 ### Empty state says what is true
 
