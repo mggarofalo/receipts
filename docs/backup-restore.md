@@ -197,8 +197,14 @@ restore unchanged. Two limits apply, independently:
 
 - **Upload:** 100 MB as sent (`BackupController`). Keep the reverse proxy's body limit
   at least this large; see [deployment](deployment.md#custom-nginx-configuration-advanced-tab).
-- **Restored SQLite:** 1 GiB after decompression (`BackupImportService`). This bounds disk
-  use in the container's temporary directory and rejects decompression bombs.
+- **Restored SQLite:** 512 MiB after decompression (`BackupImportService`), about five
+  times the owner's current backup. The cap bounds temporary disk use and rejects
+  decompression bombs.
+
+The container entrypoint points `TMPDIR` at `/data/tmp`, on the `app-data` volume, not the
+`/tmp` tmpfs. The staged upload and the decompressed SQLite file would otherwise count
+against the app's 3 GB memory limit, next to the resident embedding model. That cost
+decided whether a restore with three times the owner's classification history completed.
 
 The CLI exporter (`DbExporter`) and the offline tools keep working with raw SQLite. To
 use a downloaded backup with them, decompress it first:
@@ -238,7 +244,7 @@ Authorization: Bearer <token>
 ```
 
 Accepts a single file upload (`.db.gz`, `.gz`, `.sqlite`, `.sqlite3`, or `.db`), at most
-100 MB as uploaded and at most 1 GiB once decompressed.
+100 MB as uploaded and at most 512 MiB once decompressed.
 Target admission and upsert rules are described above. Format 10 preserves explicit
 active/trash state; older formats contain no such state and perform fresh-target
 conversion (or validated exact-file replay).

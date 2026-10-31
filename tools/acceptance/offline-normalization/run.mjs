@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -61,7 +62,8 @@ async function exportDb(name) {
   const r=await fetch(new URL('/api/backup/export',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(300000)});
   recordResponse('POST','/api/backup/export',r);
   assert(r.ok,`Export ${r.status}`); const dest=path.join(out,name);
-  fs.writeFileSync(dest,Buffer.from(await r.arrayBuffer()),{flag:'wx'}); return dest;
+  // Exports are gzip-wrapped for transfer; the offline tools read raw SQLite.
+  fs.writeFileSync(dest,zlib.gunzipSync(Buffer.from(await r.arrayBuffer())),{flag:'wx'}); return dest;
 }
 async function importDb(p,expected,responseName) {
   assert.equal(hash(p),expected,'Exact B hash changed');

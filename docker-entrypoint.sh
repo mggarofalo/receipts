@@ -29,6 +29,12 @@ echo "Running as uid=$(id -u app) gid=$(id -g app)"
 # connected machine is a supported air-gapped pattern (see docs/deployment.md). chown
 # still fixes everything writable; failing the boot over the parts it cannot touch
 # would turn that into a restart loop.
+# Temporary files go to disk, not the /tmp tmpfs: a backup restore stages the upload and
+# its decompressed SQLite file there, and on tmpfs those bytes count against the app's
+# memory limit. Recreated on every start so a crash cannot leave stale files behind.
+rm -rf /data/tmp && mkdir -p /data/tmp
+export TMPDIR=/data/tmp
+
 if ! chown -R app:app /data 2>/dev/null; then
     echo "Note: parts of /data are read-only and were left as-is"
 fi

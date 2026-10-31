@@ -401,4 +401,4 @@ Target for Raspberry Pi 4 (4GB RAM):
 | PostgreSQL | uncapped | ~100-200 MB |
 | **Total** | — | ~300-600 MB |
 
-Disk: Docker images ~660 MB, plus ~1.4 GB in the `app-data` volume for the embedding model (downloaded once on first start, not re-pulled on upgrades). Database grows with usage.
+Disk: Docker images ~660 MB, plus ~1.4 GB in the `app-data` volume for the embedding model (downloaded once on first start, not re-pulled on upgrades). Database grows with usage. A backup restore temporarily needs up to about 600 MB more there (`/data/tmp`: the upload plus its decompressed SQLite file); see [backup and restore](backup-restore.md#compressed-transfer).
