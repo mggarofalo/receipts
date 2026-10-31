@@ -5,11 +5,18 @@ import { assistanceSuggestions } from "@/lib/assistance-candidates";
 import {
   categoryPaths,
   type CategoryChoice,
+  type CategoryPath,
   type CategoryRevision,
 } from "@/lib/category-paths";
 import type { components } from "@/generated/api";
 
 type Suggestion = components["schemas"]["UncategorizedItemSuggestion"];
+
+// One path index per taxonomy revision, shared by every row of the report.
+const pathIndexes = new WeakMap<
+  CategoryRevision["nodes"],
+  Map<string, CategoryPath>
+>();
 
 /** A choice of a category in the current tree, or undefined when it is not selectable there. */
 function currentChoice(
@@ -17,11 +24,18 @@ function currentChoice(
   categoryId: string | null | undefined,
 ): CategoryChoice | undefined {
   if (!revision || !categoryId) return undefined;
-  const row = categoryPaths(revision.nodes).find(
-    (candidate) => candidate.node.id === categoryId,
-  );
-  if (!row || row.path.some((node) => node.archived)) return undefined;
-  return { categoryId, taxonomyRevisionId: revision.id, path: row.path };
+  let index = pathIndexes.get(revision.nodes);
+  if (!index) {
+    // categoryPaths leaves out archived categories and their descendants.
+    index = new Map(
+      categoryPaths(revision.nodes).map((row) => [row.node.id, row]),
+    );
+    pathIndexes.set(revision.nodes, index);
+  }
+  const row = index.get(categoryId);
+  return row
+    ? { categoryId, taxonomyRevisionId: revision.id, path: row.path }
+    : undefined;
 }
 
 /**
@@ -81,9 +95,7 @@ export function ItemTypeCorrection({
           </Button>
         </div>
       ) : suggestion ? (
-        <span className="text-xs text-muted-foreground">
-          Jev wasn't sure
-        </span>
+        <span className="text-xs text-muted-foreground">Jev wasn't sure</span>
       ) : null}
       <CategoryPathPicker
         aria-label={`Category for ${description}`}

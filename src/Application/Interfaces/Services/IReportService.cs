@@ -53,12 +53,14 @@ public interface IReportService
 		CancellationToken cancellationToken, CategoryReportOptions options);
 
 	/// <param name="suggestionFilter">any, with (Jev has answered for the item) or without.</param>
+	/// <param name="includeSuggestions">False withholds Jev's answers and ignores the filter.</param>
 	Task<UncategorizedItemsResult> GetUncategorizedItemsAsync(
 		string sortBy,
 		string sortDirection,
 		int page,
 		int pageSize,
 		string suggestionFilter,
+		bool includeSuggestions,
 		CancellationToken cancellationToken);
 
 	Task<SpendingByNormalizedDescriptionResult> GetSpendingByNormalizedDescriptionAsync(

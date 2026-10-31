@@ -86,6 +86,7 @@ function setupMock(overrides: Record<string, unknown> = {}) {
     data: {
       totalCount: 2,
       items: mockItems,
+      suggestionsAvailable: true,
     },
     isLoading: false,
     isError: false,
@@ -102,7 +103,7 @@ function mockReportExport() {
         data:
           path === "/api/taxonomy"
             ? taxonomyFixture
-            : { totalCount: 2, items: mockItems },
+            : { totalCount: 2, items: mockItems, suggestionsAvailable: true },
         error: undefined,
         response: {} as Response,
       }) as never,
@@ -139,7 +140,7 @@ describe("UncategorizedItems", () => {
 
   it("shows empty state when no uncategorized items", () => {
     setupMock({
-      data: { totalCount: 0, items: [] },
+      data: { totalCount: 0, items: [], suggestionsAvailable: true },
     });
     renderWithQueryClient(<UncategorizedItems />);
     expect(screen.getByText("All Categorized")).toBeInTheDocument();
@@ -282,7 +283,7 @@ describe("UncategorizedItems", () => {
       taxonomyRevisionId: null,
     }));
     setupMock({
-      data: { totalCount: 51, items: manyItems },
+      data: { totalCount: 51, items: manyItems, suggestionsAvailable: true },
     });
     renderWithQueryClient(<UncategorizedItems />);
     expect(screen.getByText("1/2")).toBeInTheDocument();
@@ -496,9 +497,38 @@ describe("UncategorizedItems", () => {
     );
   });
 
+  it("hides the Jev filter when category assistance has no answers to offer", () => {
+    setupMock({
+      data: { totalCount: 2, items: mockItems, suggestionsAvailable: false },
+    });
+    renderWithQueryClient(<UncategorizedItems />);
+    expect(screen.getByText("Apples")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Jev suggestion filter" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the usual empty state, not the filter one, without category assistance", () => {
+    setupMock({
+      data: { totalCount: 0, items: [], suggestionsAvailable: false },
+    });
+    renderWithQueryClient(<UncategorizedItems />, {
+      route: "/?suggestion=without",
+    });
+    expect(screen.getByText("All Categorized")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No uncategorized items match this filter."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Jev suggestion filter" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("says nothing matches when a filter leaves no items", async () => {
     const user = userEvent.setup();
-    setupMock({ data: { totalCount: 0, items: [] } });
+    setupMock({
+      data: { totalCount: 0, items: [], suggestionsAvailable: true },
+    });
     renderWithQueryClient(<UncategorizedItems />, {
       route: "/?suggestion=without",
     });

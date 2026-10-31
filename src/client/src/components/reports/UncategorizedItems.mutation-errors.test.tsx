@@ -50,7 +50,11 @@ let reads = 0;
 const server = setupServer(
   http.get("*/api/reports/uncategorized-items", () => {
     reads++;
-    return HttpResponse.json({ totalCount: items.length, items });
+    return HttpResponse.json({
+      totalCount: items.length,
+      items,
+      suggestionsAvailable: true,
+    });
   }),
   http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
   http.put(

@@ -286,4 +286,24 @@ public class UncategorizedItemsReportsControllerTests
 		_mediatorMock.Verify(m => m.Send(
 			It.IsAny<GetUncategorizedItemsReportQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task GetUncategorizedItems_MapsSuggestionsAvailable(bool available)
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(
+			It.IsAny<GetUncategorizedItemsReportQuery>(),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new AppReports.UncategorizedItemsResult([], 0) { SuggestionsAvailable = available });
+
+		// Act
+		Results<Ok<UncategorizedItemsResponse>, BadRequestProblem> result =
+			await _controller.GetUncategorizedItems(null, null, null, null, null, CancellationToken.None);
+
+		// Assert
+		Ok<UncategorizedItemsResponse> okResult = Assert.IsType<Ok<UncategorizedItemsResponse>>(result.Result);
+		okResult.Value!.SuggestionsAvailable.Should().Be(available);
+	}
 }

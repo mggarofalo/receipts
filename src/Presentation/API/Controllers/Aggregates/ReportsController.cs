@@ -544,6 +544,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		return TypedResults.Ok(new UncategorizedItemsResponse
 		{
 			TotalCount = result.TotalCount,
+			SuggestionsAvailable = result.SuggestionsAvailable,
 			Items = result.Items.Select(i => new UncategorizedItem
 			{
 				Id = i.Id,

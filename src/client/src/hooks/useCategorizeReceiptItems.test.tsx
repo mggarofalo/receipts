@@ -72,7 +72,11 @@ it.each(["transport failure", "success"] as const)(
     server.use(
       http.get("*/api/reports/uncategorized-items", () => {
         reads++;
-        return HttpResponse.json({ totalCount: stored.length, items: stored });
+        return HttpResponse.json({
+          totalCount: stored.length,
+          items: stored,
+          suggestionsAvailable: true,
+        });
       }),
       http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
       http.put(

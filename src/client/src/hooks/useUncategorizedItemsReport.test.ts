@@ -19,6 +19,7 @@ describe("useUncategorizedItemsReport", () => {
   it("fetches report data with default parameters", async () => {
     const mockData = {
       totalCount: 2,
+      suggestionsAvailable: true,
       items: [
         {
           id: "item-1",
@@ -67,7 +68,7 @@ describe("useUncategorizedItemsReport", () => {
   });
 
   it("passes custom parameters", async () => {
-    const mockData = { totalCount: 0, items: [] };
+    const mockData = { totalCount: 0, items: [], suggestionsAvailable: true };
     mockClient.GET.mockResolvedValue({
       data: mockData,
       error: undefined,
@@ -106,7 +107,7 @@ describe("useUncategorizedItemsReport", () => {
 
   it("refetches when the suggestion filter changes", async () => {
     mockClient.GET.mockResolvedValue({
-      data: { totalCount: 0, items: [] },
+      data: { totalCount: 0, items: [], suggestionsAvailable: true },
       error: undefined,
       response: {} as Response,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

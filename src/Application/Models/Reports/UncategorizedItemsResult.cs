@@ -38,4 +38,8 @@ public record UncategorizedItemSuggestion(
 
 public record UncategorizedItemsResult(
 	List<UncategorizedItemRecord> Items,
-	int TotalCount);
+	int TotalCount)
+{
+	/// <summary>False while category assistance cannot suggest: answers are withheld and the suggestion filter is ignored.</summary>
+	public bool SuggestionsAvailable { get; init; }
+}

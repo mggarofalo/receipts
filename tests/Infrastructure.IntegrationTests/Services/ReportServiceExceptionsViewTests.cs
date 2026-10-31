@@ -59,9 +59,9 @@ public class ReportServiceExceptionsViewTests(PostgresFixture server) : Isolated
 		ReportService report = new(new FixtureDbContextFactory(fixture));
 
 		// Act
-		UncategorizedItemsResult with = await report.GetUncategorizedItemsAsync("description", "asc", 1, 50, "with", CancellationToken.None);
-		UncategorizedItemsResult without = await report.GetUncategorizedItemsAsync("description", "asc", 1, 50, "without", CancellationToken.None);
-		UncategorizedItemsResult any = await report.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", CancellationToken.None);
+		UncategorizedItemsResult with = await report.GetUncategorizedItemsAsync("description", "asc", 1, 50, "with", true, CancellationToken.None);
+		UncategorizedItemsResult without = await report.GetUncategorizedItemsAsync("description", "asc", 1, 50, "without", true, CancellationToken.None);
+		UncategorizedItemsResult any = await report.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", true, CancellationToken.None);
 
 		// Assert
 		with.TotalCount.Should().Be(2);

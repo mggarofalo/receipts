@@ -7899,7 +7899,7 @@ paths:
             type: string
             enum: [any, with, without]
             default: any
-          description: Limit to items Jev has answered for (a suggestion or an abstention), or to items it has not.
+          description: Limit to items Jev has answered for (a suggestion or an abstention, current or retired), or to items it has not. Ignored while suggestionsAvailable is false.
         - name: sortBy
           in: query
           required: false
@@ -12521,11 +12521,14 @@ components:
 
     UncategorizedItemsResponse:
       type: object
-      required: [totalCount, items]
+      required: [totalCount, items, suggestionsAvailable]
       properties:
         totalCount:
           type: integer
           format: int32
+        suggestionsAvailable:
+          type: boolean
+          description: False while category assistance is off or unavailable. Jev's answers are then withheld and the suggestion filter is ignored, as on the suggestions endpoints.
         items:
           type: array
           items:

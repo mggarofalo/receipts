@@ -5388,6 +5388,8 @@ export interface components {
         UncategorizedItemsResponse: {
             /** Format: int32 */
             totalCount: number;
+            /** @description False while category assistance is off or unavailable. Jev's answers are then withheld and the suggestion filter is ignored, as on the suggestions endpoints. */
+            suggestionsAvailable: boolean;
             items: components["schemas"]["UncategorizedItem"][];
         };
         UncategorizedItem: {
@@ -15856,7 +15858,7 @@ export interface operations {
     GetUncategorizedItemsReport: {
         parameters: {
             query?: {
-                /** @description Limit to items Jev has answered for (a suggestion or an abstention), or to items it has not. */
+                /** @description Limit to items Jev has answered for (a suggestion or an abstention, current or retired), or to items it has not. Ignored while suggestionsAvailable is false. */
                 suggestion?: "any" | "with" | "without";
                 /** @description Column to sort by. */
                 sortBy?: "description" | "total" | "itemCode";

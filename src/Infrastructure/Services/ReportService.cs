@@ -560,6 +560,7 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		int page,
 		int pageSize,
 		string suggestionFilter,
+		bool includeSuggestions,
 		CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -599,16 +600,14 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 							  };
 
 		// Jev's answers stay listed whatever the attempt's state, so a suggestion retired by a settings
-		// save still helps the item it was for.
+		// save still helps the item it was for. Failed attempts carry no answer.
 		IQueryable<Guid> answeredItemIds = (from observation in context.CategoryAssistanceObservations.AsNoTracking()
-											join attempt in context.CategoryAssistanceAttempts.AsNoTracking()
+											join attempt in AnsweredAttempts(context)
 												on observation.AttemptId equals attempt.Id
-											where attempt.ResultJson != null
 											select observation.ReceiptItemId)
-			.Concat(from attempt in context.CategoryAssistanceAttempts.AsNoTracking()
-					where attempt.ResultJson != null
+			.Concat(from attempt in AnsweredAttempts(context)
 					select attempt.ItemId);
-		var baseQuery = suggestionFilter.ToLowerInvariant() switch
+		var baseQuery = (includeSuggestions ? suggestionFilter.ToLowerInvariant() : "any") switch
 		{
 			"with" => unfilteredQuery.Where(x => answeredItemIds.Contains(x.Id)),
 			"without" => unfilteredQuery.Where(x => !answeredItemIds.Contains(x.Id)),
@@ -641,8 +640,9 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 	.Skip((page - 1) * pageSize)
 	.Take(pageSize)
 	.ToListAsync(cancellationToken);
-		Dictionary<Guid, UncategorizedItemSuggestion> suggestions = await LatestSuggestionsAsync(context,
-			pageRows.Select(x => x.Id).ToArray(), cancellationToken);
+		Dictionary<Guid, UncategorizedItemSuggestion> suggestions = includeSuggestions
+			? await LatestSuggestionsAsync(context, pageRows.Select(x => x.Id).ToArray(), cancellationToken)
+			: [];
 		List<UncategorizedItemRecord> pagedItems = pageRows.Select(x =>
 				new UncategorizedItemRecord(x.Id, x.ReceiptId, x.ReceiptItemCode,
 						x.Description, x.Quantity, x.UnitPrice, x.TotalAmount,
@@ -657,34 +657,43 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		return new UncategorizedItemsResult(pagedItems, totalCount);
 	}
 
-	/// <summary>Each item's most recently completed Jev answer, linked through its save observation or the attempt itself.</summary>
+	/// <summary>Attempts that hold an answer: a suggestion or abstention, current or retired by a settings save.</summary>
+	private static IQueryable<Entities.CategoryAssistance.CategoryAssistanceAttemptEntity> AnsweredAttempts(ApplicationDbContext context)
+		=> context.CategoryAssistanceAttempts.AsNoTracking().Where(attempt => attempt.ResultJson != null
+			&& (attempt.State == "suggested" || attempt.State == "abstained" || attempt.State == "stale"));
+
+	/// <summary>
+	/// Each item's most recently completed answer, linked through its save observation or the attempt itself.
+	/// Only keys are read to choose it; the result of the one chosen attempt per item is loaded after.
+	/// </summary>
 	private static async Task<Dictionary<Guid, UncategorizedItemSuggestion>> LatestSuggestionsAsync(ApplicationDbContext context,
 		Guid[] itemIds, CancellationToken cancellationToken)
 	{
 		var observed = await (from observation in context.CategoryAssistanceObservations.AsNoTracking()
-							  join attempt in context.CategoryAssistanceAttempts.AsNoTracking()
-								  on observation.AttemptId equals attempt.Id
-							  where itemIds.Contains(observation.ReceiptItemId) && attempt.ResultJson != null
-							  select new { ItemId = observation.ReceiptItemId, Attempt = attempt })
+							  join attempt in AnsweredAttempts(context) on observation.AttemptId equals attempt.Id
+							  where itemIds.Contains(observation.ReceiptItemId)
+							  select new { ItemId = observation.ReceiptItemId, attempt.Id, attempt.CompletedAt })
+			.Distinct().ToListAsync(cancellationToken);
+		var direct = await AnsweredAttempts(context).Where(attempt => itemIds.Contains(attempt.ItemId))
+			.Select(attempt => new { ItemId = attempt.ItemId, attempt.Id, attempt.CompletedAt })
 			.ToListAsync(cancellationToken);
-		var direct = await context.CategoryAssistanceAttempts.AsNoTracking()
-			.Where(attempt => itemIds.Contains(attempt.ItemId) && attempt.ResultJson != null)
-			.Select(attempt => new { ItemId = attempt.ItemId, Attempt = attempt })
-			.ToListAsync(cancellationToken);
-		return observed.Concat(direct)
+		Dictionary<Guid, Guid> latest = observed.Concat(direct)
 			.GroupBy(row => row.ItemId)
-			.ToDictionary(group => group.Key, group =>
-			{
-				Entities.CategoryAssistance.CategoryAssistanceAttemptEntity attempt = group
-					.Select(row => row.Attempt)
-					.OrderByDescending(row => row.CompletedAt).ThenByDescending(row => row.Id).First();
-				Application.Classification.CategorySuggestion? stored = CategoryAssistanceReadStore.StoredSuggestion(attempt);
-				List<Guid> path = CategoryAssistanceReadStore.SuggestedPath(attempt, stored);
-				return new UncategorizedItemSuggestion(attempt.Id, attempt.State,
-					path.Count > 0 ? path[^1] : null, stored?.Confidence, stored?.AbstentionReason,
-					CategoryAssistanceReadStore.Candidates(attempt, stored?.RootCandidates),
-					CategoryAssistanceReadStore.Candidates(attempt, stored?.LeafCandidates));
-			});
+			.ToDictionary(group => group.Key, group => group
+				.OrderByDescending(row => row.CompletedAt).ThenByDescending(row => row.Id).First().Id);
+		Guid[] attemptIds = latest.Values.Distinct().ToArray();
+		Dictionary<Guid, Entities.CategoryAssistance.CategoryAssistanceAttemptEntity> attempts = await context.CategoryAssistanceAttempts
+			.AsNoTracking().Where(attempt => attemptIds.Contains(attempt.Id)).ToDictionaryAsync(attempt => attempt.Id, cancellationToken);
+		return latest.ToDictionary(pair => pair.Key, pair =>
+		{
+			Entities.CategoryAssistance.CategoryAssistanceAttemptEntity attempt = attempts[pair.Value];
+			Application.Classification.CategorySuggestion? stored = CategoryAssistanceReadStore.StoredSuggestion(attempt);
+			List<Guid> path = CategoryAssistanceReadStore.SuggestedPath(attempt, stored);
+			return new UncategorizedItemSuggestion(attempt.Id, attempt.State,
+				path.Count > 0 ? path[^1] : null, stored?.Confidence, stored?.AbstentionReason,
+				CategoryAssistanceReadStore.Candidates(attempt, stored?.RootCandidates),
+				CategoryAssistanceReadStore.Candidates(attempt, stored?.LeafCandidates));
+		});
 	}
 
 	public async Task<ReportsHealthSummaryResult> GetHealthSummaryAsync(CancellationToken cancellationToken)

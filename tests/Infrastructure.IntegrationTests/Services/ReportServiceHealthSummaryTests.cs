@@ -110,8 +110,8 @@ public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedP
 		}
 
 		ReportService report = new(new FixtureDbContextFactory(fixture));
-		UncategorizedItemsResult first = await report.GetUncategorizedItemsAsync("description", "asc", 1, 2, "any", CancellationToken.None);
-		UncategorizedItemsResult second = await report.GetUncategorizedItemsAsync("description", "asc", 2, 2, "any", CancellationToken.None);
+		UncategorizedItemsResult first = await report.GetUncategorizedItemsAsync("description", "asc", 1, 2, "any", true, CancellationToken.None);
+		UncategorizedItemsResult second = await report.GetUncategorizedItemsAsync("description", "asc", 2, 2, "any", true, CancellationToken.None);
 		ReportsHealthSummaryResult health = await report.GetHealthSummaryAsync(CancellationToken.None);
 
 		first.TotalCount.Should().Be(4);

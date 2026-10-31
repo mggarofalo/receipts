@@ -260,7 +260,8 @@ export default function UncategorizedItems() {
     );
   }
 
-  const filterBar = (
+  // Without category assistance there are no answers to filter by.
+  const filterBar = data?.suggestionsAvailable && (
     <div
       role="group"
       aria-label="Jev suggestion filter"
@@ -284,7 +285,12 @@ export default function UncategorizedItems() {
     </div>
   );
 
-  if (data && data.totalCount === 0 && suggestion !== "any") {
+  if (
+    data &&
+    data.totalCount === 0 &&
+    data.suggestionsAvailable &&
+    suggestion !== "any"
+  ) {
     return (
       <div className="space-y-4">
         {filterBar}

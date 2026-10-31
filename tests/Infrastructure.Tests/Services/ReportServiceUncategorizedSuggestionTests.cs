@@ -36,7 +36,7 @@ public class ReportServiceUncategorizedSuggestionTests
 
 		// Act
 		UncategorizedItemsResult result = await new ReportService(factory)
-			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", CancellationToken.None);
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", true, CancellationToken.None);
 
 		// Assert
 		UncategorizedItemRecord item = result.Items.Should().ContainSingle().Subject;
@@ -76,7 +76,7 @@ public class ReportServiceUncategorizedSuggestionTests
 
 		// Act
 		UncategorizedItemsResult result = await new ReportService(factory)
-			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", CancellationToken.None);
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", true, CancellationToken.None);
 
 		// Assert
 		UncategorizedItemSuggestion suggestion = result.Items.Should().ContainSingle().Subject.Suggestion!;
@@ -103,7 +103,7 @@ public class ReportServiceUncategorizedSuggestionTests
 
 		// Act
 		UncategorizedItemsResult result = await new ReportService(factory)
-			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", CancellationToken.None);
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", true, CancellationToken.None);
 
 		// Assert
 		UncategorizedItemSuggestion suggestion = result.Items.Should().ContainSingle().Subject.Suggestion!;
@@ -132,13 +132,97 @@ public class ReportServiceUncategorizedSuggestionTests
 
 		// Act
 		UncategorizedItemsResult result = await new ReportService(factory)
-			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", CancellationToken.None);
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "any", true, CancellationToken.None);
 
 		// Assert
 		UncategorizedItemSuggestion suggestion = result.Items.Should().ContainSingle().Subject.Suggestion!;
 		suggestion.CategoryId.Should().BeNull();
 		suggestion.RootCandidates.Should().BeEmpty();
 		suggestion.LeafCandidates.Should().BeEmpty();
+	}
+
+	[Fact]
+	public async Task GetUncategorizedItemsAsync_NewerFailedAttemptDoesNotHideOlderSuggestion()
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid itemId = Guid.NewGuid(), leaf = Guid.NewGuid(), suggestedId = Guid.NewGuid();
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			Guid receiptId = AddReceipt(context, "Store");
+			AddItem(context, receiptId, itemId, "Bread");
+			context.CategoryAssistanceAttempts.Add(Attempt(suggestedId, itemId, "suggested", Now.AddDays(-1),
+				Suggested([leaf], 0.8)));
+			context.CategoryAssistanceAttempts.Add(Attempt(Guid.NewGuid(), itemId, "failed", Now, Failed()));
+			context.CategoryAssistanceAttempts.Add(Attempt(Guid.NewGuid(), itemId, "indeterminate", Now.AddMinutes(1),
+				JsonSerializer.Serialize(new CategoryAssistanceCompletion(CategoryAssistanceAttemptOutcome.Indeterminate))));
+			await context.SaveChangesAsync();
+		}
+
+		// Act
+		UncategorizedItemsResult result = await new ReportService(factory)
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, "with", true, CancellationToken.None);
+
+		// Assert
+		UncategorizedItemSuggestion suggestion = result.Items.Should().ContainSingle().Subject.Suggestion!;
+		suggestion.AttemptId.Should().Be(suggestedId);
+		suggestion.CategoryId.Should().Be(leaf);
+	}
+
+	[Theory]
+	[InlineData("with", 0)]
+	[InlineData("without", 1)]
+	public async Task GetUncategorizedItemsAsync_ItemWhoseOnlyAttemptFailedIsWithout(string filter, int expectedCount)
+	{
+		// Arrange — one failure linked directly, the same item also observed against another failure.
+		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid itemId = Guid.NewGuid(), observedFailure = Guid.NewGuid();
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			Guid receiptId = AddReceipt(context, "Store");
+			AddItem(context, receiptId, itemId, "Unlucky");
+			context.CategoryAssistanceAttempts.Add(Attempt(Guid.NewGuid(), itemId, "failed", Now, Failed()));
+			context.CategoryAssistanceAttempts.Add(Attempt(observedFailure, Guid.NewGuid(), "failed", Now, Failed()));
+			context.CategoryAssistanceObservations.Add(Observation(observedFailure, itemId, receiptId));
+			await context.SaveChangesAsync();
+		}
+
+		// Act
+		UncategorizedItemsResult result = await new ReportService(factory)
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, filter, true, CancellationToken.None);
+
+		// Assert
+		result.TotalCount.Should().Be(expectedCount);
+		result.Items.Should().HaveCount(expectedCount).And.OnlyContain(i => i.Id == itemId && i.Suggestion == null);
+	}
+
+	[Theory]
+	[InlineData("any")]
+	[InlineData("with")]
+	[InlineData("without")]
+	public async Task GetUncategorizedItemsAsync_WithoutSuggestions_ListsEveryItemWithNoAnswer(string filter)
+	{
+		// Arrange
+		IDbContextFactory<ApplicationDbContext> factory = DbContextHelpers.CreateInMemoryContextFactory();
+		Guid answered = Guid.NewGuid(), unanswered = Guid.NewGuid();
+		await using (ApplicationDbContext context = factory.CreateDbContext())
+		{
+			Guid receiptId = AddReceipt(context, "Store");
+			AddItem(context, receiptId, answered, "A answered");
+			AddItem(context, receiptId, unanswered, "B unanswered");
+			context.CategoryAssistanceAttempts.Add(Attempt(Guid.NewGuid(), answered, "suggested", Now,
+				Suggested([Guid.NewGuid()], 0.9)));
+			await context.SaveChangesAsync();
+		}
+
+		// Act
+		UncategorizedItemsResult result = await new ReportService(factory)
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, filter, false, CancellationToken.None);
+
+		// Assert — the filter is ignored and no answer is exposed.
+		result.TotalCount.Should().Be(2);
+		result.Items.Select(i => i.Id).Should().Equal(answered, unanswered);
+		result.Items.Should().OnlyContain(i => i.Suggestion == null);
 	}
 
 	[Theory]
@@ -172,9 +256,9 @@ public class ReportServiceUncategorizedSuggestionTests
 
 		// Act
 		UncategorizedItemsResult page = await service
-			.GetUncategorizedItemsAsync("description", "asc", 1, 1, filter, CancellationToken.None);
+			.GetUncategorizedItemsAsync("description", "asc", 1, 1, filter, true, CancellationToken.None);
 		UncategorizedItemsResult all = await service
-			.GetUncategorizedItemsAsync("description", "asc", 1, 50, filter, CancellationToken.None);
+			.GetUncategorizedItemsAsync("description", "asc", 1, 50, filter, true, CancellationToken.None);
 
 		// Assert
 		page.TotalCount.Should().Be(expected.Length);
@@ -236,6 +320,10 @@ public class ReportServiceUncategorizedSuggestionTests
 			new CategorySuggestion(path[^1].ToString(), [.. path.Select(x => x.ToString())], null,
 				0.9, confidence, confidence, Provenance(), "local_choice",
 				RootCandidates: roots, LeafCandidates: leaves)));
+
+	private static string Failed() =>
+		JsonSerializer.Serialize(new CategoryAssistanceCompletion(CategoryAssistanceAttemptOutcome.Failed,
+			Failure: SuggestionFailure.Timeout));
 
 	private static SuggestionProvenance Provenance() =>
 		new("jev", CategorySuggestionPolicy.Model, CategorySuggestionPolicy.Version, Guid.NewGuid().ToString(), 1, 1);
