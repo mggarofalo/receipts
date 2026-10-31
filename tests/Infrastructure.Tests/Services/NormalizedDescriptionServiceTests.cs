@@ -1575,8 +1575,7 @@ public class NormalizedDescriptionServiceTests
 
 		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
 
-		// This all-zero shape is also the post-run verification the issue asks for: no receipt
-		// item left holding a match score with no description behind it.
+		// This all-zero shape is also the post-run verification: nothing pending is left behind.
 		preview.PendingDescriptionCount.Should().Be(0);
 		preview.PendingFingerprint.Should().Be(FingerprintOf(), "the empty set still has a stable digest");
 		preview.LinkedItemCount.Should().Be(0);

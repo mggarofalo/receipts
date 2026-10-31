@@ -376,7 +376,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 
 	[HttpGet(RouteRequeuePendingPreview)]
 	[EndpointSummary("Preview what a requeue of pending descriptions would destroy")]
-	[EndpointDescription("Reports the pending rows that would be deleted, the live receipt items that would be unlinked, the stale match scores that would be cleared, and the resolver's estimated catch-up time. Read-only. Admin-only.")]
+	[EndpointDescription("Reports the pending rows that would be deleted, and the live receipt items that would be unlinked. Read-only. Admin-only.")]
 	public async Task<Ok<RequeuePendingPreviewResponse>> PreviewRequeuePending(CancellationToken cancellationToken)
 	{
 		RequeuePendingPreview preview = await mediator.Send(new PreviewRequeuePendingQuery(), cancellationToken);
@@ -392,7 +392,7 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 
 	[HttpPost(RouteRequeuePending)]
 	[EndpointSummary("Delete every pending-review description so the resolver rebuilds it")]
-	[EndpointDescription("Deletes all PendingReview rows and, in the same transaction, nulls the FK and the match score on every receipt item that pointed at one. Returns 409 when expectedFingerprint no longer matches the live pending set. Admin-only.")]
+	[EndpointDescription("Deletes all PendingReview rows and, in the same transaction, nulls the FK on every receipt item that pointed at one. Returns 409 when expectedFingerprint no longer matches the live pending set. Admin-only.")]
 	public async Task<Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem>> RequeuePending(
 		[FromBody] RequeuePendingRequest request,
 		CancellationToken cancellationToken)
