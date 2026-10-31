@@ -44,7 +44,7 @@ public sealed class ReceiptNormalizationCandidatesServiceTests
 	}
 
 	[Fact]
-	public async Task ReturnsBoundedActiveIdentitiesWithoutPersistingAnIdentityOrEvidence()
+	public async Task ReturnsTheExactIdentityWithoutPersistingAnIdentityOrEvidence()
 	{
 		var (factory, _) = DbContextWithUserHelpers.CreateInMemoryContextFactoryWithUser();
 		Guid exactId = Guid.NewGuid(), revision = Guid.NewGuid();
@@ -66,7 +66,9 @@ public sealed class ReceiptNormalizationCandidatesServiceTests
 		}
 		var service = new ReceiptNormalizationCandidatesService(factory, TimeProvider.System);
 		var result = await service.GetCandidatesAsync("writer", new("Store", "Franks", null), CancellationToken.None);
-		result.Should().HaveCount(20);
+		// The lexical channel needs PostgreSQL (pg_trgm); its bound is covered by
+		// NormalizationCatalogTests.ReceiptSuggestions_ReturnAtMostTwentyActiveIdentities.
+		result.Should().ContainSingle();
 		result[0].Id.Should().Be(exactId);
 		result[0].Revision.Should().Be(revision);
 		result[0].Channels.Should().Contain("exact");

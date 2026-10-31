@@ -354,7 +354,13 @@ receipt chooser. Fingerprint and coverage are unchanged unless stated.
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Baseline, main 99f5bfac | 100% | 79.2% | 46.7% | 100% (83.3%) | 50.0% | 33.3% |
 | RECEIPTS-1095 semantic floor 0.80 | 100% | 100% | 100% | 100% (83.3%) | 70.8% (62.5%) | 50.0% |
+| RECEIPTS-1094 lexical relevance ranking | 100% | 100% | 100% | 100% (83.3%) | 70.8% (62.5%) | 50.0% |
 
 RECEIPTS-1095: the proxy chooser's jump is circular, because every proxy target sits at a
 similarity of at least ~0.82 by construction. The synthetic fixture is the honest signal for
 that change.
+
+RECEIPTS-1094 left both corpora unchanged. Neither catalog crowds a token: 9 real and 3 synthetic
+sources have a crowded token, and the semantic slots already precede lexical rows. Its effect shows
+in the targeted tests instead: the right name now ranks first among 25 names sharing a token, and
+is still found among 600 names that only contain the word.
