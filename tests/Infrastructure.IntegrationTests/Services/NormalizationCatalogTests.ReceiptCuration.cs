@@ -7,7 +7,6 @@ using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
-using Pgvector;
 
 namespace Infrastructure.IntegrationTests.Services;
 
@@ -64,42 +63,32 @@ public sealed partial class NormalizationCatalogTests
 	}
 
 	[Fact]
-	public async Task ReceiptCuration_MergeRefreshesMembershipAfterInferenceAndTransfersOnlyActualReview()
+	public async Task ReceiptCuration_MergeReadsMembershipUnderItsLocksAndTransfersOnlyActualReview()
 	{
 		await ResetAsync();
 		var keep = await CanonicalAsync("Surviving identity");
 		var discard = await CanonicalAsync("Discarded identity");
 		var other = await CanonicalAsync("Separate identity");
-		var vector = new float[OnnxEmbeddingService.EmbeddingDimension];
-		vector[0] = 1;
-		await using (var setup = fixture.CreateDbContext())
-		{
-			(await setup.NormalizedDescriptions.SingleAsync(x => x.Id == keep.Id)).Embedding = new Vector(vector);
-			await setup.SaveChangesAsync();
-		}
 		var reviewed = await EntryWriter().CreateAsync(EntryReceipt(), [], [EntryItem(new(ReceiptNormalizationIntentKind.ConfirmExisting, Guid.NewGuid(), Application.Normalization.NormalizationCatalogPolicy.Hash(Source), discard.Id, discard.NormalizationRevision))], [], CancellationToken.None);
 		var movedId = (await ItemsAsync(Source, 1, "manual", discard.Id)).Single();
-		var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-		var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-		var embeddings = new Mock<IEmbeddingService>();
-		embeddings.SetupGet(x => x.IsConfigured).Returns(true);
-		embeddings.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-			.Returns(async (string _, CancellationToken ct) => { entered.TrySetResult(); await release.Task.WaitAsync(ct); return vector; });
-		var service = new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), embeddings.Object, new NormalizedDescriptionMapper());
+		// Hold the merge just before it takes the write gate: membership read earlier would be stale.
+		var gate = new PauseBeforeWriteGate();
+		var options = new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(gate).Options;
+		var service = new NormalizedDescriptionService(new EntryActorFactory(options, Actor), new UnavailableEmbeddingService(), new NormalizedDescriptionMapper());
 		using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 		var merge = service.MergeAsync(keep.Id, discard.Id, deadline.Token);
 		Guid lateId;
 		try
 		{
-			await entered.Task.WaitAsync(deadline.Token);
+			await gate.Entered.Task.WaitAsync(deadline.Token);
 			await using (var edit = new EntryActorFactory(fixture.CreateOptions(), Actor).CreateDbContext())
 			{
 				(await edit.ReceiptItems.SingleAsync(x => x.Id == movedId, deadline.Token)).NormalizedDescriptionId = other.Id;
 				await edit.SaveChangesAsync(deadline.Token);
 			}
-			lateId = (await ItemsAsync(Source with { Description = "New observation after scoring" }, 1, "manual", discard.Id)).Single();
+			lateId = (await ItemsAsync(Source with { Description = "New observation before the lock" }, 1, "manual", discard.Id)).Single();
 		}
-		finally { release.TrySetResult(); }
+		finally { gate.Release.TrySetResult(); }
 
 		(await merge).Should().Be(2);
 
@@ -112,7 +101,7 @@ public sealed partial class NormalizationCatalogTests
 		var late = rows.Single(x => x.Id == lateId);
 		late.NormalizedDescriptionId.Should().Be(keep.Id);
 		late.NormalizationReviewState.Should().Be(NormalizationReviewState.NeedsReview);
-		late.NormalizedDescriptionMatchScore.Should().BeNull("new membership was never scored against the surviving target");
+		late.NormalizedDescriptionMatchScore.Should().BeNull("a merge clears the score measured against the discarded row");
 		await using var db = fixture.CreateDbContext();
 		(await db.NormalizedDescriptions.AnyAsync(x => x.Id == discard.Id)).Should().BeFalse();
 	}
@@ -136,6 +125,24 @@ public sealed partial class NormalizationCatalogTests
 		(await AuditCountAsync(ids)).Should().Be(audits);
 		await using var db = fixture.CreateDbContext();
 		(await db.NormalizedDescriptions.CountAsync()).Should().Be(1);
+	}
+
+	private sealed class PauseBeforeWriteGate : DbCommandInterceptor
+	{
+		private int _paused;
+		public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
+			InterceptionResult<int> result, CancellationToken cancellationToken = default)
+		{
+			if (command.CommandText.Contains("pg_advisory_xact_lock", StringComparison.Ordinal) && Interlocked.Exchange(ref _paused, 1) == 0)
+			{
+				Entered.TrySetResult();
+				await Release.Task.WaitAsync(cancellationToken);
+			}
+			return result;
+		}
 	}
 
 	private sealed class FailReceiptAssignmentWrite : DbCommandInterceptor

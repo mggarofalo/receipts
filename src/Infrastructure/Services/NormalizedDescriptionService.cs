@@ -236,18 +236,6 @@ public class NormalizedDescriptionService(
 			throw new KeyNotFoundException($"Normalized description {discardId} not found.");
 		}
 
-		// Re-link EVERY ReceiptItem pointing at discard — including soft-deleted (trashed) ones,
-		// hence IgnoreQueryFilters. The ReceiptItem -> NormalizedDescription FK is
-		// DeleteBehavior.SetNull, so any row still pointing at discard when it is removed below
-		// has its link silently nulled by the database; a trashed item would then come back from
-		// the recycle bin unlinked, with no error raised anywhere. Same class of bug as the
-		// soft-deleted-transaction stranding fixed in AccountMergeService (RECEIPTS-801).
-		List<ReceiptItemEntity> observedItems = await read.ReceiptItems
-			.IgnoreQueryFilters()
-			.IgnoreAutoIncludes()
-			.Where(r => r.NormalizedDescriptionId == discardId)
-			.ToListAsync(cancellationToken);
-
 		Guid keepRevision = keep.NormalizationRevision;
 		Guid discardRevision = discard.NormalizationRevision;
 
@@ -259,6 +247,12 @@ public class NormalizedDescriptionService(
 		discard = await context.NormalizedDescriptions.SingleOrDefaultAsync(value => value.Id == discardId, cancellationToken);
 		if (keep is null || discard is null || keep.NormalizationRevision != keepRevision || discard.NormalizationRevision != discardRevision)
 		{ throw new NormalizationCatalogException(409, "merge_target_changed", "A selected identity changed. Review the merge again."); }
+		// Re-link EVERY ReceiptItem pointing at discard — including soft-deleted (trashed) ones,
+		// hence IgnoreQueryFilters. The ReceiptItem -> NormalizedDescription FK is
+		// DeleteBehavior.SetNull, so any row still pointing at discard when it is removed below
+		// has its link silently nulled by the database; a trashed item would then come back from
+		// the recycle bin unlinked, with no error raised anywhere. Same class of bug as the
+		// soft-deleted-transaction stranding fixed in AccountMergeService (RECEIPTS-801).
 		Guid[] currentIds = await context.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes()
 			.Where(item => item.NormalizedDescriptionId == discardId).Select(item => item.Id).ToArrayAsync(cancellationToken);
 		await NormalizationWriteGuard.LockItemsAsync(context, currentIds, cancellationToken);

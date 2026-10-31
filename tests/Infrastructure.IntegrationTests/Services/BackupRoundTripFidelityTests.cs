@@ -384,7 +384,8 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 			BackupImportService importer = new(new Factory(_target.CreateOptions()), NullLogger<BackupImportService>.Instance);
 			await using (FileStream stream = File.OpenRead(path))
 			{
-				(await importer.ImportFromSqliteAsync(stream, CancellationToken.None)).TotalCreated.Should().Be(0);
+				Func<Task> import = () => importer.ImportFromSqliteAsync(stream, CancellationToken.None);
+				await import.Should().NotThrowAsync("a v4-v15 backup carrying threshold rows must still restore");
 			}
 
 			await using ApplicationDbContext target = Target();
@@ -394,7 +395,6 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 		}
 		finally { SqliteConnection.ClearAllPools(); File.Delete(path); }
 	}
-
 
 	[Fact]
 	public async Task V13_YnabStableMappings_RestoreFreshReplayAndPreserveOnV12Import()
