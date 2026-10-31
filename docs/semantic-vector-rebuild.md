@@ -40,8 +40,16 @@ order. `strict_order` rather than `relaxed_order` keeps the order exact for the 
 and for callers that trust the first row. The scan stops at `hnsw.max_scan_tuples` (20,000 by
 default), so a catalog with more stale rows than that near one query can still come back short.
 
-This needs pgvector 0.8 or later. Every image reference pins `pgvector/pgvector:0.8.7-pg17`
-(AppHost, `docker-compose.yml`, the test fixtures, and the scripts). Bump them together.
+This needs pgvector 0.8 or later. Every image reference in the repository pins
+`pgvector/pgvector:0.8.7-pg17` (AppHost, `docker-compose.yml`, the test fixtures, and the scripts).
+Bump them together.
+
+A deployed database can run another image. On a library older than 0.8 the setting is an error, not a
+no-op, so `IterativeScanGate` reads `pg_extension.extversion` once per process and skips the setting
+below 0.8. It logs one warning that kNN results can be incomplete while embeddings are stale. The
+installed extension version can only lag the loaded library, so the gate never sends the setting to a
+library that lacks it. After an image upgrade, `ALTER EXTENSION vector UPDATE` lets the gate see the
+new version.
 
 `NormalizationCatalogTests.ReceiptSuggestions_FindTheFreshNeighbourWhileMostOfTheCatalogIsStale`
 forces the index plan with 60% of rows stale, and fails without the rule.

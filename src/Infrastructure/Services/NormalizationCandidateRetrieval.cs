@@ -129,7 +129,7 @@ internal static class NormalizationCandidateRetrieval
 					WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL
 					AND "EmbeddingModelVersion" = {OnnxEmbeddingService.EmbeddingSpaceFingerprint}
 					ORDER BY "Embedding" <=> {embedding}::vector, "Id" LIMIT 20
-					"""), cancellationToken);
+					"""), logger ?? NullLogger.Instance, cancellationToken);
 				for (int rank = 0; rank < neighbours.Count; rank++)
 				{
 					semanticRanks[neighbours[rank].Id] = rank;

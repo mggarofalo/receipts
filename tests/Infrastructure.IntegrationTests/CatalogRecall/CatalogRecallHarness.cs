@@ -2,6 +2,7 @@ using Application.Normalization;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pgvector;
 
 namespace Infrastructure.IntegrationTests.CatalogRecall;
@@ -149,7 +150,7 @@ internal sealed class CatalogRecallHarness(Func<ApplicationDbContext> createCont
 			SELECT "Id", 1 - ("Embedding" <=> {query}::vector) AS "Similarity" FROM matching."NormalizedDescriptions"
 			WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {fingerprint}
 			ORDER BY "Embedding" <=> {query}::vector, "Id" LIMIT 21
-			"""), cancellationToken);
+			"""), NullLogger.Instance, cancellationToken);
 		List<double> target = await context.Database.SqlQuery<double>($"""
 			SELECT 1 - ("Embedding" <=> {query}::vector) AS "Value" FROM matching."NormalizedDescriptions"
 			WHERE "Id" = {item.TargetId} AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {fingerprint}
