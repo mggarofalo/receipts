@@ -77,6 +77,8 @@ let bodies: unknown[];
 let stagedChoice: ReceiptLineItem["normalizationChoice"];
 const message = "The receipt could not be saved; keep your entered values";
 const server = setupServer(
+  http.get("*/api/envelopes", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/occasions", () => HttpResponse.json({ data: [] })),
   http.get("*/api/receipts/locations", () =>
     HttpResponse.json({ locations: ["Market"] }),
   ),
@@ -203,7 +205,13 @@ it.each([400, 503])(
     expect(bodies).toEqual([
       {
         clientRequestId: expect.any(String),
-        receipt: { location: "Market", date: "2024-01-15", taxAmount: 0 },
+        receipt: {
+          location: "Market",
+          date: "2024-01-15",
+          taxAmount: 0,
+          paidFromEnvelopeId: null,
+          occasionId: null,
+        },
         transactions: [
           {
             cardId: "95000000-0000-4000-8000-000000000011",
@@ -217,6 +225,7 @@ it.each([400, 503])(
             description: "Milk",
             quantity: 1,
             unitPrice: 5,
+            envelopeId: null,
             category: "Food",
             subcategory: null,
           },

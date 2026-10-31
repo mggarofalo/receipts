@@ -28,6 +28,16 @@ public static class EnvelopeDerivationPolicy
 	public static EnvelopeAssignment ForEditedItem(EnvelopeAssignment stored, Guid? itemOverride)
 		=> itemOverride is Guid item ? new(item, EnvelopeSource.Item) : stored;
 
+	/// <summary>
+	/// Choosing a per-item envelope overrides whatever was recorded. Returning to automatic re-derives an
+	/// overridden item from the receipt's paid-from or its item-type default; any other item keeps its envelope.
+	/// </summary>
+	public static EnvelopeAssignment AfterOverrideChange(EnvelopeAssignment stored, Guid? itemOverride, Guid? receiptPaidFrom,
+		Guid? itemTypeDefault)
+		=> itemOverride is not null || stored.Source == EnvelopeSource.Item
+			? ForNewItem(itemOverride, receiptPaidFrom, itemTypeDefault)
+			: stored;
+
 	/// <summary>Only default-sourced or unresolved envelopes follow an item-type change.</summary>
 	public static EnvelopeAssignment AfterItemTypeChange(EnvelopeAssignment stored, Guid? itemTypeDefault)
 		=> FollowsItemType(stored) ? new(itemTypeDefault, EnvelopeSource.Default) : stored;

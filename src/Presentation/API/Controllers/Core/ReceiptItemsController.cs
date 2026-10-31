@@ -3,10 +3,12 @@ using API.Generated.Dtos;
 using API.Http;
 using API.Mapping.Core;
 using API.Services;
+using Application.Commands.ReceiptItem.BudgetChoices;
 using Application.Commands.ReceiptItem.Create;
 using Application.Commands.ReceiptItem.Delete;
 using Application.Commands.ReceiptItem.Restore;
 using Application.Commands.ReceiptItem.Update;
+using Application.Envelopes;
 using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.ReceiptItem;
@@ -36,6 +38,7 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	public const string RouteDelete = "";
 	public const string RouteGetDeleted = "deleted";
 	public const string RouteRestore = "{id}/restore";
+	public const string RouteBudgetChoices = "{id}/budget-choices";
 	public const string RouteGetSuggestions = "suggestions";
 
 	[HttpGet("normalization-candidates")]
@@ -371,5 +374,27 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 		})];
 
 		return TypedResults.Ok(response);
+	}
+
+	[HttpPut(RouteBudgetChoices)]
+	[EndpointSummary("Set an item's envelope override and occasion")]
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> SetReceiptItemBudgetChoices([FromRoute] Guid id,
+		[FromBody] ReceiptItemBudgetChoicesRequest request, CancellationToken cancellationToken = default)
+	{
+		try
+		{
+			bool updated = await mediator.Send(new SetReceiptItemBudgetChoicesCommand(id, request.EnvelopeId, request.OccasionId), cancellationToken);
+			if (!updated)
+			{
+				return TypedResults.NotFound();
+			}
+		}
+		catch (EnvelopeException ex) when (ex.Status == StatusCodes.Status400BadRequest)
+		{
+			return ApiProblem.BadRequest(ex.Message);
+		}
+
+		await notifier.NotifyUpdated("receipt-item", id);
+		return TypedResults.NoContent();
 	}
 }

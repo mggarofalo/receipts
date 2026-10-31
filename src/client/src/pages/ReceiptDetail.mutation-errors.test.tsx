@@ -118,6 +118,11 @@ const server = setupServer(
     HttpResponse.json({ data: [], total: 0, offset: 0, limit: 50 }),
   ),
   http.get("*/api/receipts/locations", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/envelopes", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/occasions", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/item-type-envelope-defaults", () =>
+    HttpResponse.json({ data: [] }),
+  ),
 );
 const clients: ReturnType<typeof createAppQueryClient>[] = [];
 function DefaultGlobalRead() {

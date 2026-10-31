@@ -241,14 +241,19 @@ export function invalidateDomainChange(
   queryClient: QueryClient,
   change: DomainChange,
   operation: "created" | "changed" = "changed",
-) {
+): Promise<void> {
   const seen = new Set<string>();
+  const refetches: Promise<void>[] = [];
   for (const queryKey of projectionKeysForChange(change, operation)) {
     const identity = JSON.stringify(queryKey);
     if (seen.has(identity)) continue;
     seen.add(identity);
-    void queryClient.invalidateQueries({ queryKey, refetchType: "active" });
+    refetches.push(
+      queryClient.invalidateQueries({ queryKey, refetchType: "active" }),
+    );
   }
+  // Callers that must not act on stale projections can await the refetch.
+  return Promise.all(refetches).then(() => undefined);
 }
 
 /** Cancel stale reads before repairing a known domain projection family. */

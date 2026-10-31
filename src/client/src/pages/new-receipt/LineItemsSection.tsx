@@ -2,6 +2,15 @@ import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
 import { usePermission } from "@/hooks/usePermission";
 import {
+  useEnvelopes,
+  useItemTypeEnvelopeDefaults,
+} from "@/hooks/useEnvelopes";
+import {
+  EnvelopeBadge,
+  EnvelopeOverrideMenu,
+} from "@/components/envelopes/BudgetChoices";
+import { previewItemEnvelope, receiptEnvelope } from "@/lib/envelope-display";
+import {
   categoryLegacyLabels,
   type CategoryChoice,
 } from "@/lib/category-paths";
@@ -81,18 +90,22 @@ export interface ReceiptLineItem {
   normalizationChoice?: ReceiptNormalizationChoice;
   categoryChoice?: CategoryChoice;
   categoryOperationId?: string;
+  /** Per-item envelope override; absent is automatic. */
+  envelopeId?: string | null;
 }
 
 interface LineItemsSectionProps {
   items: ReceiptLineItem[];
   onChange: Dispatch<SetStateAction<ReceiptLineItem[]>>;
   location?: string | null;
+  paidFromEnvelopeId?: string | null;
 }
 
 export function LineItemsSection({
   items,
   onChange,
   location,
+  paidFromEnvelopeId = null,
 }: LineItemsSectionProps) {
   const [draftRowId, setDraftRowId] = useState(generateId);
   const [normalizationChoice, setNormalizationChoice] =
@@ -293,6 +306,40 @@ export function LineItemsSection({
   }, [isSuggestionsOpen, descriptionList, descriptionActiveIndex, productSuggestions, descriptionSuggestions]);
 
   const subtotal = useMemo(() => calculateSubtotal(items), [items]);
+
+  const { envelopes } = useEnvelopes();
+  const { defaults } = useItemTypeEnvelopeDefaults();
+  const itemEnvelopes = useMemo(
+    () =>
+      new Map(
+        items.map((item) => [
+          item.id,
+          previewItemEnvelope(
+            { envelopeId: item.envelopeId, typePath: item.categoryChoice?.path },
+            paidFromEnvelopeId,
+            defaults,
+            envelopes,
+          ),
+        ]),
+      ),
+    [items, paidFromEnvelopeId, defaults, envelopes],
+  );
+  const paidFrom = useMemo(
+    () =>
+      receiptEnvelope(
+        paidFromEnvelopeId,
+        // An override counts as the envelope the item would get automatically.
+        items.map((item) =>
+          previewItemEnvelope(
+            { typePath: item.categoryChoice?.path },
+            null,
+            defaults,
+            envelopes,
+          ),
+        ),
+      ),
+    [items, paidFromEnvelopeId, defaults, envelopes],
+  );
 
   const applySuggestion = useCallback(
     (suggestion: NonNullable<typeof similarItems>[number]) => {
@@ -1015,6 +1062,11 @@ export function LineItemsSection({
                             .map((node) => node.name)
                             .join(" / ") || "Unclassified"
                         : `${item.category}${item.subcategory ? ` / ${item.subcategory}` : ""}`}
+                      <EnvelopeBadge
+                        envelopes={envelopes}
+                        envelopeId={itemEnvelopes.get(item.id)}
+                        receiptEnvelopeId={paidFrom}
+                      />
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -1034,6 +1086,18 @@ export function LineItemsSection({
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                        <EnvelopeOverrideMenu
+                          envelopes={envelopes}
+                          value={item.envelopeId ?? null}
+                          itemLabel={item.description}
+                          onChange={(envelopeId) =>
+                            onChange((current) =>
+                              current.map((row) =>
+                                row.id === item.id ? { ...row, envelopeId } : row,
+                              ),
+                            )
+                          }
+                        />
                       </div>
                     </TableCell>
                   </TableRow>

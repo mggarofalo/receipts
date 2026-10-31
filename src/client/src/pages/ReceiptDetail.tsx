@@ -318,9 +318,14 @@ function ReceiptDetail() {
               normalizedDescriptionName: i.normalizedDescriptionName,
               normalizationRevision: i.normalizationRevision,
               normalizationReviewState: i.normalizationReviewState,
+              envelopeId: i.envelopeId,
+              envelopeSource: i.envelopeSource,
+              occasionId: i.occasionId,
             }))}
             subtotal={subtotal}
             location={trip.receipt.receipt.location}
+            paidFromEnvelopeId={trip.receipt.receipt.paidFromEnvelopeId}
+            occasionId={trip.receipt.receipt.occasionId}
           />
 
           <AdjustmentsCard

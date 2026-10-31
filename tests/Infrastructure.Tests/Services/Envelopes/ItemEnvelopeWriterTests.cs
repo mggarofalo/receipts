@@ -195,6 +195,35 @@ public class ItemEnvelopeWriterTests
 	}
 
 	[Fact]
+	public async Task Create_OnReceiptWhosePaidFromAndOccasionWereArchived_GetsItemTypeDefaultAndNoOccasion()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		Guid occasion = Guid.NewGuid();
+		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
+		{
+			db.Occasions.Add(new() { Id = occasion, Name = "Birthday", IsActive = true });
+			await db.SaveChangesAsync();
+		}
+		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car, occasion: occasion);
+		await ArchiveAsync(world, world.Car);
+		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
+		{
+			(await db.Occasions.SingleAsync(row => row.Id == occasion)).IsActive = false;
+			await db.SaveChangesAsync();
+		}
+
+		// Act
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+		actual.OccasionId.Should().BeNull();
+	}
+
+	[Fact]
 	public async Task PaidFromCleared_ReceiptSourcedItemsReturnToTheirItemTypeDefault()
 	{
 		// Arrange

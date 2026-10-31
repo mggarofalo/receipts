@@ -66,6 +66,51 @@ vi.mock("@/hooks/useReceiptItems", () => ({
   useDeleteReceiptItems: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
+// Empty unless a test configures envelopes, as when none have been created.
+const budget = vi.hoisted(() => ({
+  envelopes: [] as { id: string; name: string; isActive: boolean }[],
+  occasions: [] as { id: string; name: string; isActive: boolean }[],
+  defaults: [] as {
+    categoryId: string;
+    envelopeId: string;
+    updatedAt: string;
+  }[],
+  setReceipt: vi.fn(),
+  setItem: vi.fn(),
+}));
+vi.mock("@/hooks/useEnvelopes", () => ({
+  useEnvelopes: () => ({
+    ...mockQueryResult({
+      data: { data: budget.envelopes },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    envelopes: budget.envelopes,
+  }),
+  useOccasions: () => ({
+    ...mockQueryResult({
+      data: { data: budget.occasions },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    occasions: budget.occasions,
+  }),
+  useItemTypeEnvelopeDefaults: () => ({
+    ...mockQueryResult({
+      data: { data: budget.defaults },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    defaults: budget.defaults,
+  }),
+}));
+vi.mock("@/hooks/useBudgetChoices", () => ({
+  useSetReceiptBudgetChoices: () =>
+    mockMutationResult({ mutate: budget.setReceipt }),
+  useSetReceiptItemBudgetChoices: () =>
+    mockMutationResult({ mutate: budget.setItem }),
+}));
+
 const mockItems = [
   {
     id: "item-1",
@@ -649,4 +694,224 @@ it("labels pending associations without claiming they are normalized", () => {
     screen.getByText(/Unreviewed association: Proposed widget/),
   ).toBeVisible();
   expect(screen.queryByText(/normalized as/i)).not.toBeInTheDocument();
+});
+
+describe("budget choices", () => {
+  beforeAll(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+  });
+  beforeEach(() => {
+    budget.setReceipt.mockClear();
+    budget.setItem.mockClear();
+    budget.envelopes = [
+      { id: "env-groceries", name: "Groceries", isActive: true },
+      { id: "env-gifts", name: "Gifts", isActive: true },
+    ];
+    budget.occasions = [
+      { id: "occ-birthday", name: "Birthday", isActive: true },
+      { id: "occ-trip", name: "Beach trip", isActive: true },
+    ];
+  });
+  afterEach(() => {
+    budget.envelopes = [];
+    budget.occasions = [];
+    budget.defaults = [];
+  });
+
+  const items = [
+    {
+      ...mockItems[0],
+      envelopeId: "env-groceries",
+      envelopeSource: "default" as const,
+      occasionId: null,
+    },
+    {
+      ...mockItems[1],
+      envelopeId: "env-gifts",
+      envelopeSource: "item" as const,
+      occasionId: "occ-trip",
+    },
+  ];
+
+  it("saves the receipt's paid-from envelope immediately, keeping its occasion", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={items}
+        subtotal={46}
+        paidFromEnvelopeId={null}
+        occasionId="occ-birthday"
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Paid from" }));
+    await user.click(screen.getByRole("option", { name: "Gifts" }));
+
+    expect(budget.setReceipt).toHaveBeenCalledWith({
+      receiptId: "receipt-1",
+      paidFromEnvelopeId: "env-gifts",
+      occasionId: "occ-birthday",
+    });
+    expect(budget.setItem).not.toHaveBeenCalled();
+  });
+
+  it("saves the receipt's occasion immediately, keeping its paid-from envelope", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={items}
+        subtotal={46}
+        paidFromEnvelopeId="env-groceries"
+        occasionId="occ-birthday"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Remove occasion" }));
+
+    expect(budget.setReceipt).toHaveBeenCalledWith({
+      receiptId: "receipt-1",
+      paidFromEnvelopeId: "env-groceries",
+      occasionId: null,
+    });
+  });
+
+  it("badges only the item paid from a different envelope", () => {
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={items}
+        subtotal={46}
+        paidFromEnvelopeId="env-groceries"
+      />,
+    );
+    const row = (description: string) =>
+      screen.getByText(description).closest("tr") as HTMLElement;
+    expect(within(row("Widget A")).queryByText("Groceries")).toBeNull();
+    expect(within(row("Widget B")).getByText("Gifts")).toBeVisible();
+  });
+
+  describe.each([
+    ["Steak, Bleach, Apples", ["Steak", "Bleach", "Apples"]],
+    ["Apples, Bleach, Steak", ["Apples", "Bleach", "Steak"]],
+  ])("an override in order %s", (_order, descriptions) => {
+    it("does not move the receipt's envelope", () => {
+      budget.envelopes = [
+        { id: "env-groceries", name: "Groceries", isActive: true },
+        { id: "env-cleaning", name: "Cleaning", isActive: true },
+        { id: "env-party", name: "Party", isActive: true },
+      ];
+      // Item types Food and Household default to Groceries and Cleaning.
+      budget.defaults = [
+        {
+          categoryId: "food",
+          envelopeId: "env-groceries",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          categoryId: "household",
+          envelopeId: "env-cleaning",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ];
+      const food = { id: "food", name: "Food", archived: false };
+      const household = { id: "household", name: "Household", archived: false };
+      const line = (
+        id: string,
+        description: string,
+        type: typeof food,
+        envelopeId: string,
+        envelopeSource: "default" | "item",
+      ) => ({
+        ...mockItems[0],
+        id,
+        description,
+        currentClassification: {
+          assignmentId: `assignment-${id}`,
+          categoryId: type.id,
+          taxonomyRevisionId: "revision-1",
+          recordedPath: [type],
+        },
+        envelopeId,
+        envelopeSource,
+        occasionId: null,
+      });
+      // Steak is a Food item (automatically Groceries) overridden to Party.
+      const byName = {
+        Steak: line("s", "Steak", food, "env-party", "item"),
+        Bleach: line("b", "Bleach", household, "env-cleaning", "default"),
+        Apples: line("a", "Apples", food, "env-groceries", "default"),
+      } as Record<string, ReturnType<typeof line>>;
+      renderWithQueryClient(
+        <ReceiptItemsCard
+          receiptId="receipt-1"
+          items={descriptions.map((d) => byName[d])}
+          subtotal={63}
+          paidFromEnvelopeId={null}
+        />,
+      );
+      const row = (description: string) =>
+        screen.getByText(description).closest("tr") as HTMLElement;
+
+      expect(within(row("Steak")).getByText("Party")).toBeVisible();
+      expect(within(row("Bleach")).getByText("Cleaning")).toBeVisible();
+      expect(within(row("Apples")).queryByText("Groceries")).toBeNull();
+    });
+  });
+
+  it("overrides one item's envelope from its row menu, keeping the item's occasion", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={items}
+        subtotal={46}
+        paidFromEnvelopeId={null}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "More actions for Widget B" }),
+    );
+    // Widget B's stored override is the checked choice.
+    expect(
+      screen.getByRole("menuitemradio", { name: "Gifts" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("menuitemradio", { name: "Groceries" }));
+
+    expect(budget.setItem).toHaveBeenCalledWith({
+      itemId: "item-2",
+      envelopeId: "env-groceries",
+      occasionId: "occ-trip",
+    });
+    expect(budget.setReceipt).not.toHaveBeenCalled();
+  });
+
+  it("shows an item-type envelope as automatic in the row menu", async () => {
+    const user = userEvent.setup();
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={items}
+        subtotal={46}
+        paidFromEnvelopeId={null}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "More actions for Widget A" }),
+    );
+    expect(
+      screen.getByRole("menuitemradio", { name: "Automatic" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("menuitemradio", { name: "Gifts" }));
+    expect(budget.setItem).toHaveBeenCalledWith({
+      itemId: "item-1",
+      envelopeId: "env-gifts",
+      occasionId: null,
+    });
+  });
 });

@@ -2021,6 +2021,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/receipts/{id}/budget-choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a receipt's paid-from envelope and occasion
+         * @description Replaces both choices. A null envelope is automatic, which returns receipt-sourced items to their item-type default; an envelope applies to every item without a per-item override. A changed occasion replaces it on items that carried the previous one. Keeping an archived choice is allowed.
+         */
+        put: operations["SetReceiptBudgetChoices"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/receipts/complete": {
         parameters: {
             query?: never;
@@ -2164,6 +2184,26 @@ export interface paths {
          */
         get: operations["GetReceiptItemSuggestions"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/receipt-items/{id}/budget-choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set an item's envelope override and occasion
+         * @description Replaces both choices. An envelope is a per-item override; null returns an overridden item to automatic (the receipt's active paid-from envelope, else its item type's default). A null occasion clears the tag. Keeping an archived choice is allowed.
+         */
+        put: operations["SetReceiptItemBudgetChoices"];
         post?: never;
         delete?: never;
         options?: never;
@@ -7061,6 +7101,32 @@ export interface components {
         };
         ItemTypeEnvelopeDefaultListResponse: {
             data: components["schemas"]["ItemTypeEnvelopeDefaultResponse"][];
+        };
+        /** @description Both choices are replaced; an omitted choice counts as null. */
+        ReceiptBudgetChoicesRequest: {
+            /**
+             * Format: uuid
+             * @description The envelope every item without an override is paid from. Null is automatic.
+             */
+            paidFromEnvelopeId?: string | null;
+            /**
+             * Format: uuid
+             * @description Null is no occasion.
+             */
+            occasionId?: string | null;
+        };
+        /** @description Both choices are replaced; an omitted choice counts as null. */
+        ReceiptItemBudgetChoicesRequest: {
+            /**
+             * Format: uuid
+             * @description A per-item envelope override. Null is automatic.
+             */
+            envelopeId?: string | null;
+            /**
+             * Format: uuid
+             * @description Null is no occasion.
+             */
+            occasionId?: string | null;
         };
         SetItemTypeEnvelopeDefaultRequest: {
             /** Format: uuid */
@@ -13243,6 +13309,46 @@ export interface operations {
             };
         };
     };
+    SetReceiptBudgetChoices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiptBudgetChoicesRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A newly chosen envelope or occasion is missing or archived */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CreateCompleteReceipt: {
         parameters: {
             query?: never;
@@ -13649,6 +13755,46 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ReceiptItemSuggestionResponse"][];
                 };
+            };
+        };
+    };
+    SetReceiptItemBudgetChoices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiptItemBudgetChoicesRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A newly chosen envelope or occasion is missing or archived */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

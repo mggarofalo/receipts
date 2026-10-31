@@ -282,15 +282,9 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 			existingEntity.TaxAmount = entity.TaxAmount;
 			existingEntity.TaxAmountCurrency = entity.TaxAmountCurrency;
 			// Omitted choices keep the stored ones; a new choice applies to the receipt's items.
-			Guid? previousPaidFrom = existingEntity.PaidFromEnvelopeId;
-			Guid? previousOccasion = existingEntity.OccasionId;
-			existingEntity.PaidFromEnvelopeId = entity.PaidFromEnvelopeId ?? previousPaidFrom;
-			existingEntity.OccasionId = entity.OccasionId ?? previousOccasion;
-			// Only new choices must be selectable; keeping an archived envelope or occasion is allowed.
-			await ItemEnvelopeWriter.RequireChoicesAsync(context,
-				[existingEntity.PaidFromEnvelopeId != previousPaidFrom ? existingEntity.PaidFromEnvelopeId : null],
-				[existingEntity.OccasionId != previousOccasion ? existingEntity.OccasionId : null], cancellationToken);
-			await ItemEnvelopeWriter.AfterReceiptChoiceChangeAsync(context, existingEntity, previousPaidFrom, previousOccasion, cancellationToken);
+			await ItemEnvelopeWriter.ApplyReceiptChoicesAsync(context, existingEntity,
+				entity.PaidFromEnvelopeId ?? existingEntity.PaidFromEnvelopeId,
+				entity.OccasionId ?? existingEntity.OccasionId, cancellationToken);
 		}
 
 		await context.SaveChangesAsync(cancellationToken);

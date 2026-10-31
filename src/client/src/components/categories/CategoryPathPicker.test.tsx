@@ -840,6 +840,116 @@ describe("CategoryPathPicker", () => {
   });
 
   describe("suggestions", () => {
+    it("opens at the top with the current choice active when it is suggested", async () => {
+      const user = userEvent.setup();
+      const onValueChange = vi.fn();
+      render(
+        <CategoryPathPicker
+          revision={revision}
+          value={choice(food, fruit, banana)}
+          onValueChange={onValueChange}
+          suggestions={[{ categoryId: "dairy" }, { categoryId: "banana" }]}
+        />,
+      );
+      await openPicker(user);
+      expect(
+        within(screen.getByRole("group", { name: "Suggested" }))
+          .getAllByRole("option")
+          .map((option) => option.getAttribute("aria-label")),
+      ).toEqual([
+        "Food / Dairy (suggested)",
+        "Food / Fruit / Banana (suggested)",
+      ]);
+      expect(
+        screen.getByRole("option", { name: "Food, 2 subcategories" }),
+      ).toBeInTheDocument();
+      expectActive("Food / Fruit / Banana (suggested)");
+      await user.keyboard("{Enter}");
+      expect(onValueChange).toHaveBeenCalledWith(choice(food, fruit, banana));
+    });
+
+    it("opens beside the current choice when it is not suggested", async () => {
+      const user = userEvent.setup();
+      render(
+        <CategoryPathPicker
+          revision={revision}
+          value={choice(food, fruit, apple)}
+          onValueChange={vi.fn()}
+          suggestions={[{ categoryId: "dairy" }, { categoryId: "banana" }]}
+        />,
+      );
+      await openPicker(user);
+      expect(
+        screen.queryByRole("group", { name: "Suggested" }),
+      ).not.toBeInTheDocument();
+      expect(optionNames()[0]).toBe("Food / Fruit");
+      expectActive("Food / Fruit / Apple");
+    });
+
+    it("opens at the top with the first known suggestion active when nothing is chosen", async () => {
+      const user = userEvent.setup();
+      render(
+        <CategoryPathPicker
+          revision={revision}
+          onValueChange={vi.fn()}
+          suggestions={[
+            { categoryId: "missing" },
+            { categoryId: "dairy" },
+            { categoryId: "dairy" },
+            { categoryId: "banana" },
+          ]}
+        />,
+      );
+      await openPicker(user);
+      expect(
+        within(screen.getByRole("group", { name: "Suggested" }))
+          .getAllByRole("option")
+          .map((option) => option.getAttribute("aria-label")),
+      ).toEqual([
+        "Food / Dairy (suggested)",
+        "Food / Fruit / Banana (suggested)",
+      ]);
+      expectActive("Food / Dairy (suggested)");
+    });
+
+    it("opens beside the current choice when it is suggested only beyond the shown three", async () => {
+      const user = userEvent.setup();
+      render(
+        <CategoryPathPicker
+          revision={revision}
+          value={choice(food, fruit, banana)}
+          onValueChange={vi.fn()}
+          suggestions={["dairy", "apple", "home-apple", "banana"].map(
+            (categoryId) => ({ categoryId }),
+          )}
+        />,
+      );
+      await openPicker(user);
+      expect(
+        screen.queryByRole("group", { name: "Suggested" }),
+      ).not.toBeInTheDocument();
+      expect(optionNames()[0]).toBe("Food / Fruit");
+      expectActive("Food / Fruit / Banana");
+    });
+
+    it("opens beside the current choice when no suggestion is in the tree", async () => {
+      const user = userEvent.setup();
+      render(
+        <CategoryPathPicker
+          revision={revision}
+          value={choice(food, fruit, banana)}
+          onValueChange={vi.fn()}
+          suggestions={[{ categoryId: "missing" }]}
+        />,
+      );
+      await openPicker(user);
+      expect(
+        screen.queryByRole("group", { name: "Suggested" }),
+      ).not.toBeInTheDocument();
+      expect(optionNames()[0]).toBe("Food / Fruit");
+      expectActive("Food / Fruit / Banana");
+    });
+
     it("puts known suggestions first, in order, with their confidence", async () => {
       localStorage.setItem(RECENT_KEY, JSON.stringify(["banana", "apple"]));
       const user = userEvent.setup();

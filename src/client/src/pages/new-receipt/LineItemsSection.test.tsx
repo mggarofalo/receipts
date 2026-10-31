@@ -14,7 +14,7 @@ vi.mock("@/hooks/useCategoryTaxonomy", () => ({
     refetch: vi.fn(),
   }),
 }));
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
@@ -94,6 +94,30 @@ vi.mock("@/hooks/useSimilarItems", () => ({
       data: [],
     }),
   ),
+}));
+
+// Empty unless a test configures envelopes, as when none have been created.
+const budget = vi.hoisted(() => ({
+  envelopes: [] as { id: string; name: string; isActive: boolean }[],
+  defaults: [] as { categoryId: string; envelopeId: string; updatedAt: string }[],
+}));
+vi.mock("@/hooks/useEnvelopes", () => ({
+  useEnvelopes: vi.fn(() => ({
+    ...mockQueryResult({
+      data: { data: budget.envelopes },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    envelopes: budget.envelopes,
+  })),
+  useItemTypeEnvelopeDefaults: vi.fn(() => ({
+    ...mockQueryResult({
+      data: { data: budget.defaults },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    defaults: budget.defaults,
+  })),
 }));
 
 vi.mock("@/hooks/useReceiptItemSuggestions", () => ({
@@ -619,4 +643,175 @@ it("selects a product in the optional dialog while retaining the raw receipt des
       }),
     ]),
   );
+});
+
+describe("envelope display", () => {
+  const food = { id: "food", name: "Food", archived: false };
+  const fruit = { id: "fruit", name: "Fruit", parentId: "food", archived: false };
+  const house = { id: "house", name: "Household", archived: false };
+  const typed = (
+    id: string,
+    description: string,
+    path: (typeof food)[],
+    envelopeId?: string,
+  ): ReceiptLineItem => ({
+    id,
+    receiptItemCode: "",
+    description,
+    quantity: 1,
+    unitPrice: 1,
+    category: path[0].name,
+    subcategory: "",
+    categoryChoice: {
+      categoryId: path[path.length - 1].id,
+      taxonomyRevisionId: "revision-1",
+      path,
+    },
+    envelopeId,
+  });
+  const items: ReceiptLineItem[] = [
+    typed("1", "Apples", [food, fruit]),
+    typed("2", "Bananas", [food, fruit]),
+    typed("3", "Dish soap", [house]),
+    typed("4", "Gift bag", [food], "env-gifts"),
+    {
+      id: "5",
+      receiptItemCode: "",
+      description: "Legacy line",
+      quantity: 1,
+      unitPrice: 1,
+      category: "Food",
+      subcategory: "",
+    },
+  ];
+  const row = (description: string) =>
+    screen.getByText(description).closest("tr") as HTMLElement;
+
+  beforeAll(() => {
+    Element.prototype.hasPointerCapture ??= () => false;
+    Element.prototype.setPointerCapture ??= () => {};
+    Element.prototype.releasePointerCapture ??= () => {};
+  });
+  beforeEach(() => {
+    budget.envelopes = [
+      { id: "env-groceries", name: "Groceries", isActive: true },
+      { id: "env-gifts", name: "Gifts", isActive: true },
+    ];
+    budget.defaults = [
+      {
+        categoryId: "food",
+        envelopeId: "env-groceries",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+  });
+  afterEach(() => {
+    budget.envelopes = [];
+    budget.defaults = [];
+  });
+
+  it("badges only items whose envelope differs from the receipt's", () => {
+    renderWithProviders(<LineItemsSection items={items} onChange={vi.fn()} />);
+
+    // Most items fall to Groceries through the Food default, so it is the
+    // receipt's envelope and those rows carry no badge.
+    expect(within(row("Apples")).queryByText("Groceries")).toBeNull();
+    expect(within(row("Bananas")).queryByText("Groceries")).toBeNull();
+    expect(within(row("Gift bag")).getByText("Gifts")).toBeVisible();
+    expect(within(row("Dish soap")).getByText("No envelope")).toBeVisible();
+    // No item type chosen yet: the server may still fill it, so no badge.
+    expect(within(row("Legacy line")).queryByText("No envelope")).toBeNull();
+    expect(screen.getAllByText("No envelope")).toHaveLength(1);
+  });
+
+  it("follows the receipt's paid-from envelope instead of item-type defaults", () => {
+    renderWithProviders(
+      <LineItemsSection
+        items={items}
+        onChange={vi.fn()}
+        paidFromEnvelopeId="env-gifts"
+      />,
+    );
+
+    // Every automatic item is now paid from Gifts, including the one with no
+    // default and the untyped one; only an override would differ.
+    expect(screen.queryByText("No envelope")).not.toBeInTheDocument();
+    expect(screen.queryByText("Groceries")).not.toBeInTheDocument();
+    expect(within(row("Gift bag")).queryByText("Gifts")).toBeNull();
+  });
+
+  it("sets a row's envelope override from its menu", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "More actions for Apples" }),
+    );
+    await user.click(screen.getByRole("menuitemradio", { name: "Gifts" }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const update = onChange.mock.calls[0][0] as (
+      current: ReceiptLineItem[],
+    ) => ReceiptLineItem[];
+    const next = update(items);
+    expect(next[0]).toEqual({ ...items[0], envelopeId: "env-gifts" });
+    expect(next.slice(1)).toEqual(items.slice(1));
+  });
+
+  describe.each([
+    ["Steak, Bleach, Apples", ["Steak", "Bleach", "Apples"]],
+    ["Apples, Bleach, Steak", ["Apples", "Bleach", "Steak"]],
+  ])("an override in order %s", (_order, descriptions) => {
+    it("does not move the receipt's envelope", () => {
+      budget.envelopes = [
+        { id: "env-groceries", name: "Groceries", isActive: true },
+        { id: "env-cleaning", name: "Cleaning", isActive: true },
+        { id: "env-party", name: "Party", isActive: true },
+      ];
+      budget.defaults = [
+        {
+          categoryId: "food",
+          envelopeId: "env-groceries",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          categoryId: "house",
+          envelopeId: "env-cleaning",
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ];
+      const byName: Record<string, ReceiptLineItem> = {
+        Steak: typed("s", "Steak", [food], "env-party"),
+        Bleach: typed("b", "Bleach", [house]),
+        Apples: typed("a", "Apples", [food, fruit]),
+      };
+      renderWithProviders(
+        <LineItemsSection
+          items={descriptions.map((d) => byName[d])}
+          onChange={vi.fn()}
+        />,
+      );
+
+      expect(within(row("Steak")).getByText("Party")).toBeVisible();
+      expect(within(row("Bleach")).getByText("Cleaning")).toBeVisible();
+      expect(within(row("Apples")).queryByText("Groceries")).toBeNull();
+    });
+  });
+
+  it("returns an overridden row to automatic", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "More actions for Gift bag" }),
+    );
+    await user.click(screen.getByRole("menuitemradio", { name: "Automatic" }));
+
+    const update = onChange.mock.calls[0][0] as (
+      current: ReceiptLineItem[],
+    ) => ReceiptLineItem[];
+    expect(update(items)[3]).toEqual({ ...items[3], envelopeId: null });
+  });
 });

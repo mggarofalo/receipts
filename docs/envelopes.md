@@ -33,7 +33,9 @@ The rule lives in one place, `Application.Envelopes.EnvelopeDerivationPolicy`:
 Persistence applies it at the write chokepoints (`Infrastructure.Services.ItemEnvelopeWriter`):
 
 - **New items** take the override, else the receipt's paid-from envelope, else
-  the default for their item type once it is classified.
+  the default for their item type once it is classified. A paid-from envelope
+  or occasion archived after the receipt was saved is skipped for items added
+  later, as archived defaults are.
 - **Item-type changes.** Every classification write appends through
   `ClassificationService.AppendAsync`, whichever path made it: manual choice,
   approved mapping at save, the background approved-mapping worker, historical
@@ -48,8 +50,16 @@ Persistence applies it at the write chokepoints (`Infrastructure.Services.ItemEn
 - **Changing a receipt's paid-from envelope** applies it to every item except
   per-item overrides. Clearing it sends receipt-sourced items back to their
   default. A receipt occasion replaces the occasion only on items that carried
-  the previous one.
-- An archived or missing envelope or occasion is rejected (400).
+  the previous one. There is no per-item "none": an item whose occasion was
+  cleared follows the next receipt occasion if the receipt had none. Items in
+  the recycle bin follow receipt changes too, so a restored item agrees with
+  its receipt.
+- **Explicit choices** (`budget-choices` below) replace the stored ones, so
+  null can clear them. Both choices are sent each time. Returning an overridden item to automatic takes the
+  receipt's active paid-from envelope, else its item type's default. Any other
+  item keeps its recorded envelope.
+- A newly chosen archived or missing envelope or occasion is rejected (400).
+  Keeping one already stored is allowed.
 
 The envelope is recorded, not recomputed when read. Changing a default never
 moves history, which matches the taxonomy's "as classified" stance. Changing
@@ -79,18 +89,34 @@ Nothing writes them any more.
 | `GET/POST /api/occasions`, `GET/PUT/DELETE /api/occasions/{id}` | The same for occasions. |
 | `GET /api/item-type-envelope-defaults`, `PUT/DELETE /api/item-type-envelope-defaults/{categoryId}` | Item-type defaults. The item type must be selectable in the current taxonomy. |
 | `GET /api/ynab/envelope-mappings`, `GET /api/ynab/envelope-mappings/unmapped`, `PUT/DELETE /api/ynab/envelope-mappings/{envelopeId}` | YNAB links for the selected budget. |
+| `PUT /api/receipts/{id}/budget-choices` | Set the receipt's paid-from envelope and occasion. Null is automatic / none. |
+| `PUT /api/receipt-items/{id}/budget-choices` | Set an item's envelope override and occasion. Null is automatic / none. |
 
 Receipt and item responses expose `paidFromEnvelopeId`, `occasionId`,
 `envelopeId` and `envelopeSource`. Receipt and item writes accept optional
 `paidFromEnvelopeId`, `occasionId` and `envelopeId` (a per-item override).
-Omitted or null keeps the stored choice on update. Clearing a stored choice
-through the API is deferred to the entry redesign.
+Omitted or null keeps the stored choice on update; use the `budget-choices`
+endpoints to clear one.
 
 ## Admin UI
 
 **Library → Envelopes** (`/settings/envelopes`) manages envelopes, occasions
 and item-type defaults. **YNAB settings** links each envelope to a YNAB
-category. Receipt entry is unchanged: envelopes are derived automatically.
+category.
+
+## Receipt entry
+
+Envelopes stay automatic; nothing asks for one. The new-receipt page and the
+receipt's items card carry a quiet **Paid from: Auto** selector and an optional
+**Occasion** chip. Choosing an envelope applies it to every item without its
+own override. Each item row shows its item type and, only where its envelope
+differs from the receipt's, a small envelope badge. The receipt's envelope is
+its paid-from choice, else the one most of its items share. A typed item with no
+envelope shows **No envelope**. The row menu (**⋯**) holds the per-item
+override; **Automatic** removes it.
+
+Before a receipt is saved the page previews each item's envelope with the same
+rule (`lib/envelope-display.ts`); the server records the real value at save.
 
 ## Portable backups
 

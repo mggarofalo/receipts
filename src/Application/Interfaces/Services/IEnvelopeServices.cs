@@ -44,3 +44,15 @@ public interface IYnabEnvelopeMappingService
 	Task<int> CountStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken);
 	Task<int> DeleteStaleMappingsAsync(string currentBudgetId, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Explicit "paid from" and occasion choices for one receipt or item. Unlike ordinary edits, where an
+/// omitted choice keeps the stored one, null here means automatic (envelope) or none (occasion).
+/// </summary>
+public interface IBudgetChoiceService
+{
+	/// <summary>Returns false when the receipt does not exist.</summary>
+	Task<bool> SetReceiptChoicesAsync(Guid receiptId, Guid? paidFromEnvelopeId, Guid? occasionId, CancellationToken cancellationToken);
+	/// <summary>Returns false when the item does not exist.</summary>
+	Task<bool> SetItemChoicesAsync(Guid itemId, Guid? envelopeId, Guid? occasionId, CancellationToken cancellationToken);
+}
