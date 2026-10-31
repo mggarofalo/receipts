@@ -96,23 +96,20 @@ public sealed partial class NormalizationCatalogTests
 			"more than twenty weak substring matches must not crowd out useful product evidence");
 	}
 
-	[Theory]
-	[InlineData(499, true)]
-	[InlineData(500, false)]
-	public async Task ReceiptSuggestions_BoundEachLexicalScanToFiveHundredRows(int distractors, bool expected)
+	[Fact]
+	public async Task ReceiptSuggestions_FindAWholeWordMatchBeyondSixHundredSubstringDistractors()
 	{
 		await ResetAsync();
-		await SeedSuggestionNamesAsync(Enumerable.Range(0, distractors).Select(i => $"A{i:D3} milkshake"));
+		await SeedSuggestionNamesAsync(Enumerable.Range(0, 600).Select(i => $"A{i:D3} milkshake"));
 		var useful = await CanonicalAsync("Milk");
 		var service = new ReceiptNormalizationCandidatesService(new Factory(fixture), TimeProvider.System);
 
 		var candidates = await service.GetCandidatesAsync(Actor,
 			new("Synthetic market", "Whole milk", null), CancellationToken.None);
 
-		candidates.Any(candidate => candidate.Id == useful.Id).Should().Be(expected,
-			"receipt suggestions are bounded best effort; full catalog search is the fallback beyond the scan limit");
+		candidates.Should().Contain(candidate => candidate.Id == useful.Id,
+			"a whole-word match outranks any number of names that only contain the word, so no alphabetical scan limit hides it");
 	}
-
 	[Fact]
 	public async Task ReceiptSuggestions_ReturnAtMostTwentyUsefulCandidates()
 	{

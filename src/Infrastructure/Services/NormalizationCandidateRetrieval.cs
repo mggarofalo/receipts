@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Application.Interfaces.Services;
 using Application.Normalization;
 using Domain.NormalizedDescriptions;
@@ -5,6 +6,7 @@ using Infrastructure.Entities.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using Pgvector;
 
 namespace Infrastructure.Services;
@@ -28,7 +30,11 @@ internal sealed class NormalizationRetrievalProbe
 /// <summary>Shared bounded retrieval. Callers must apply their own authorization before invoking it.</summary>
 internal static class NormalizationCandidateRetrieval
 {
-	private const int MaximumReceiptScanPerChannel = 500;
+	/// <summary>Rows the one relevance-ranked lexical query returns; receipt entry filters them in that order.</summary>
+	private const int LexicalLimit = 200;
+
+	/// <summary>Trigrams need three characters: a shorter LIKE term cannot use the index and would make the whole filter scan.</summary>
+	private const int MinimumIndexedTokenLength = 3;
 
 	/// <summary>The receipt-entry chooser: only candidates with useful display evidence survive.</summary>
 	internal static Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveForReceiptEntryAsync(
@@ -79,14 +85,15 @@ internal static class NormalizationCandidateRetrieval
 		Dictionary<Guid, (NormalizedDescriptionEntity Target, HashSet<string> Channels)> found = [];
 		Dictionary<Guid, int> semanticRanks = [];
 		Dictionary<Guid, double> semanticSimilarities = [];
+		Dictionary<Guid, int> lexicalScores = [];
+		Dictionary<Guid, int> lexicalRanks = [];
 		NormalizationCatalogCandidate Candidate(NormalizedDescriptionEntity target, string[] channels, IReadOnlyList<string> examples)
 			=> new(target.Id, target.NormalizationRevision, target.CanonicalName, target.DisplayLabel, channels, examples,
 				semanticSimilarities.TryGetValue(target.Id, out double similarity) ? similarity : null);
 		// Suggestions are best effort; full catalog search remains available.
 		// Keep both database work and per-keystroke transfer bounded.
 		Task<List<NormalizedDescriptionEntity>> AlphabeticalAsync(IQueryable<NormalizedDescriptionEntity> query)
-			=> query.OrderBy(target => target.CanonicalName).ThenBy(target => target.Id)
-				.Take(include is null ? 20 : MaximumReceiptScanPerChannel).ToListAsync(cancellationToken);
+			=> query.OrderBy(target => target.CanonicalName).ThenBy(target => target.Id).Take(20).ToListAsync(cancellationToken);
 		// Accepts at most 20 rows per channel, in the order the channel ranked them.
 		void Add(IReadOnlyList<NormalizedDescriptionEntity> ranked, string channel)
 		{
@@ -138,9 +145,19 @@ internal static class NormalizationCandidateRetrieval
 			&& mapping.TargetId == target.Id && mapping.Description == source.Description
 			&& (hiddenMappingId == null || mapping.Id != hiddenMappingId)))), "approved_example");
 		string[] tokens = LexicalTokens(source.Description, lexicalTerms);
-		foreach (string token in tokens)
+		// The relevance query needs pg_trgm, like the semantic channel needs pgvector.
+		if (tokens.Length > 0 && context.Database.IsNpgsql())
 		{
-			Add(await AlphabeticalAsync(active.Where(target => target.CanonicalName.ToLower().Contains(token) || (target.DisplayLabel ?? target.CanonicalName).ToLower().Contains(token))), "lexical");
+			List<LexicalHit> hits = await LexicalAsync(context, tokens, source.Description, cancellationToken);
+			Guid[] hitIds = hits.Select(hit => hit.Id).ToArray();
+			Dictionary<Guid, NormalizedDescriptionEntity> rows = await active.Where(target => hitIds.Contains(target.Id))
+				.ToDictionaryAsync(target => target.Id, cancellationToken);
+			for (int rank = 0; rank < hits.Count; rank++)
+			{
+				lexicalScores[hits[rank].Id] = hits[rank].Score;
+				lexicalRanks[hits[rank].Id] = rank;
+			}
+			Add(hits.Where(hit => rows.ContainsKey(hit.Id)).Select(hit => rows[hit.Id]).ToList(), "lexical");
 		}
 		if (nearest.Count > 0) { Add(await AlphabeticalAsync(active.Where(target => nearest.Contains(target.Id))), "semantic"); }
 		if (probe is not null) { probe.Pool = found.ToDictionary(entry => entry.Key, entry => entry.Value.Channels.Order().ToArray()); }
@@ -156,8 +173,12 @@ internal static class NormalizationCandidateRetrieval
 			=> entries.Where(entry => entry.Channels.Contains("exact")).Take(2)
 				.Concat(entries.Where(entry => entry.Channels.Contains("approved_example")).OrderBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal).Take(4))
 				.Concat(entries.Where(entry => semanticRanks.ContainsKey(entry.Target.Id)).OrderBy(entry => semanticRanks[entry.Target.Id]).Take(8))
-				.Concat(entries.OrderByDescending(entry => entry.Channels.Count)
-					.ThenBy(entry => semanticRanks.GetValueOrDefault(entry.Target.Id, int.MaxValue)).ThenBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal));
+				// Words matched, not channels carried: a name matching every source word outranks one
+				// matching a single word, however many channels found the latter.
+				.Concat(entries.OrderByDescending(entry => lexicalScores.GetValueOrDefault(entry.Target.Id))
+					.ThenBy(entry => semanticRanks.GetValueOrDefault(entry.Target.Id, int.MaxValue))
+					.ThenBy(entry => lexicalRanks.GetValueOrDefault(entry.Target.Id, int.MaxValue))
+					.ThenBy(entry => entry.Target.CanonicalName, StringComparer.Ordinal));
 		// Receipt entry (RECEIPTS-1095): a row the caller admits only for its semantic similarity ranks
 		// after every row with exact, approved or useful lexical evidence, so a near neighbour never
 		// displaces a whole-word match, including in the inline top five.
@@ -181,6 +202,63 @@ internal static class NormalizationCandidateRetrieval
 			result.Add(Candidate(entry.Target, entry.Channels.Order().ToArray(), examplesByTarget.GetValueOrDefault(entry.Target.Id) ?? []));
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// The lexical channel in one query (RECEIPTS-1094). A name scores the number of distinct source tokens
+	/// it contains as whole words; a name that only contains a token inside a longer word scores zero
+	/// and ranks after every whole-word match. Ties break on trigram similarity to the description.
+	/// The filter is only LIKE terms on the two trigram-indexed expressions, so a bitmap index scan
+	/// answers it; the regex scoring runs on the filtered rows alone. Tokens are lowered in .NET and
+	/// names by PostgreSQL lower(), which agree for non-ASCII letters under the UTF-8 locale the
+	/// deployed database uses.
+	/// </summary>
+	private static Task<List<LexicalHit>> LexicalAsync(ApplicationDbContext context, string[] tokens, string description,
+		CancellationToken cancellationToken)
+	{
+		(string sql, NpgsqlParameter[] parameters) = LexicalQuery(tokens, description);
+		return context.Database.SqlQueryRaw<LexicalHit>(sql, parameters).ToListAsync(cancellationToken);
+	}
+
+	internal static (string Sql, NpgsqlParameter[] Parameters) LexicalQuery(string[] tokens, string description)
+	{
+		List<NpgsqlParameter> parameters = [];
+		string Parameter(object value)
+		{
+			parameters.Add(new NpgsqlParameter($"p{parameters.Count}", value));
+			return $"@p{parameters.Count - 1}";
+		}
+		// A whole word is bounded by the start or end of the name or by a character that is neither a
+		// letter nor a digit, so tokens such as "(lg)" match too. Other characters are escaped; surrogate
+		// halves are left alone so a supplementary character is not split.
+		string words = Parameter(tokens.Select(token =>
+			$"(^|[^[:alnum:]]){Regex.Replace(token, @"[^\p{L}\p{N}\p{Cs}]", @"\$0")}($|[^[:alnum:]])").ToArray());
+		string text = Parameter(description.ToLowerInvariant());
+		// Short tokens still score but only filter when nothing longer exists.
+		string[] filtered = tokens.Where(token => token.Length >= MinimumIndexedTokenLength).ToArray();
+		string filter = string.Join(" OR ", (filtered.Length > 0 ? filtered : tokens).Select(token =>
+		{
+			string pattern = Parameter($"%{Regex.Replace(token, @"[\\%_]", @"\$0")}%");
+			return $"""lower("CanonicalName") LIKE {pattern} OR lower(COALESCE("DisplayLabel", "CanonicalName")) LIKE {pattern}""";
+		}));
+		string sql = $"""
+			SELECT "Id",
+				(SELECT count(*)::int FROM unnest({words}::text[]) AS word
+					WHERE lower("CanonicalName") ~ word OR lower(COALESCE("DisplayLabel", "CanonicalName")) ~ word) AS "Score",
+				similarity(lower(COALESCE("DisplayLabel", "CanonicalName")), {text})::double precision AS "Similarity"
+			FROM matching."NormalizedDescriptions"
+			WHERE "Status" = 'Active' AND ({filter})
+			ORDER BY "Score" DESC, "Similarity" DESC, "CanonicalName", "Id"
+			LIMIT {LexicalLimit}
+			""";
+		return (sql, parameters.ToArray());
+	}
+
+	private sealed class LexicalHit
+	{
+		public Guid Id { get; set; }
+		public int Score { get; set; }
+		public double Similarity { get; set; }
 	}
 
 	private sealed class SemanticNeighbour
