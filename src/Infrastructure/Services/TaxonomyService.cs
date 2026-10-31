@@ -36,15 +36,13 @@ public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> fact
 		{ throw new TaxonomyException(400, "Expected revision, operation ID, reason and changes are required."); }
 		if (command.Reason.Contains('\0'))
 		{ throw new TaxonomyException(400, "Reason must not contain NUL characters."); }
-		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(command)));
+		string hash = RequestHash(command);
 		await using ApplicationDbContext context = await factory.CreateDbContextAsync(cancellationToken);
 		await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 		// Global hierarchy lock always precedes any future assignment/item locks.
 		TaxonomyHeadEntity head = await context.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").SingleAsync(cancellationToken);
 		DateTimeOffset now = clock.GetUtcNow();
-		bool admin = await context.Users.AnyAsync(user => user.Id == actor && !(user.LockoutEnabled && user.LockoutEnd > now)
-			&& context.UserRoles.Any(member => member.UserId == user.Id && context.Roles.Any(role => role.Id == member.RoleId && role.Name == AppRoles.Admin)), cancellationToken);
-		if (!admin) { throw new TaxonomyException(403, "An enabled administrator is required to manage taxonomy."); }
+		if (!await IsEnabledAdminAsync(context, actor, now, cancellationToken)) { throw new TaxonomyException(403, "An enabled administrator is required to manage taxonomy."); }
 		TaxonomyOperationEntity? previous = await context.TaxonomyOperations.AsNoTracking().SingleOrDefaultAsync(row => row.Actor == actor && row.OperationId == command.OperationId, cancellationToken);
 		if (previous != null)
 		{
@@ -52,8 +50,25 @@ public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> fact
 			TaxonomyRevision replay = (await ReadRevisionAsync(context, previous.RevisionId, cancellationToken))!;
 			return replay with { AffectedCount = previous.AffectedCount };
 		}
+		(Guid resultId, int affected) = await AppendInTransactionAsync(context, head, actor, command, hash, now, cancellationToken);
+		await context.SaveChangesAsync(cancellationToken);
+		await transaction.CommitAsync(cancellationToken);
+		if (affected != 0 && publisher != null)
+		{
+			await publisher.PublishAsync(new(CommittedEntityType.Taxonomy, CommittedChangeType.Updated));
+		}
+		return (await ReadRevisionAsync(context, resultId, cancellationToken))! with { AffectedCount = affected };
+	}
+
+	/// <summary>
+	/// Appends the changed tree as a new revision, advances the locked head and records the operation. The caller
+	/// owns the transaction, has locked <paramref name="head"/> and has authorized the actor.
+	/// </summary>
+	internal static async Task<(Guid RevisionId, int Affected)> AppendInTransactionAsync(ApplicationDbContext context,
+		TaxonomyHeadEntity head, string actor, TaxonomyChangeCommand command, string hash, DateTimeOffset now, CancellationToken ct)
+	{
 		if (head.RevisionId != command.ExpectedRevisionId) { throw new TaxonomyException(409, "Taxonomy changed. Refresh before retrying."); }
-		TaxonomyRevision current = (await ReadRevisionAsync(context, head.RevisionId, cancellationToken))!;
+		TaxonomyRevision current = (await ReadRevisionAsync(context, head.RevisionId, ct))!;
 		IReadOnlyList<TaxonomyNode> nodes;
 		try { nodes = TaxonomyTree.Apply(current.Nodes, command.Changes); }
 		catch (TaxonomyValidationException error) { throw new TaxonomyException(400, error.Message); }
@@ -96,12 +111,13 @@ public sealed class TaxonomyService(IDbContextFactory<ApplicationDbContext> fact
 			RecordedAt = now,
 			Reason = command.Reason
 		});
-		await context.SaveChangesAsync(cancellationToken);
-		await transaction.CommitAsync(cancellationToken);
-		if (affected != 0 && publisher != null)
-		{
-			await publisher.PublishAsync(new(CommittedEntityType.Taxonomy, CommittedChangeType.Updated));
-		}
-		return (await ReadRevisionAsync(context, resultId, cancellationToken))! with { AffectedCount = affected };
+		return (resultId, affected);
 	}
+
+	internal static Task<bool> IsEnabledAdminAsync(ApplicationDbContext context, string actor, DateTimeOffset now, CancellationToken ct) =>
+		context.Users.AnyAsync(user => user.Id == actor && !(user.LockoutEnabled && user.LockoutEnd > now)
+			&& context.UserRoles.Any(member => member.UserId == user.Id && context.Roles.Any(role => role.Id == member.RoleId && role.Name == AppRoles.Admin)), ct);
+
+	internal static string RequestHash(TaxonomyChangeCommand command) =>
+		Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(command)));
 }

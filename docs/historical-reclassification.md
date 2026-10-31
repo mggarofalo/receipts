@@ -144,3 +144,11 @@ boundary, cancel/chunk races, and undo versus later edits. HTTP authorization,
 problem contracts, bounded request validation, and client selection/review interactions
 belong in their later delivery changes. No automatic migration or provider invocation
 is part of this workflow.
+
+## Category restructures
+
+A [category restructure plan](restructure-plans.md) captures its purchases as a `RestructureV1`
+operation and moves them through the same chunked apply and conditional undo. Each chunk reads its
+purchases' current state once and writes its assignments in one save, so a restructure of every
+purchase in a deployment stays practical on small hardware. Restructure operations are managed from
+the restructure page, not the cleanup workspace, and are not exported in portable backups.

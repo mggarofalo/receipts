@@ -33,6 +33,7 @@ All routes in the Receipts app with their expected headings, access levels, and 
 | 15 | `/trash` | RecycleBin | Recycle Bin | Admin |
 | 16 | `/admin/users` | AdminUsers | User Management | Admin |
 | 17 | `/admin/backup` | BackupRestore | Backup & Restore | Admin |
+| 18 | `/admin/restructure` | RestructureCategories | Restructure categories | Admin |
 
 ## Catch-All
 
@@ -45,7 +46,7 @@ All routes in the Receipts app with their expected headings, access levels, and 
 - **`/change-password`** only renders the form when `mustResetPassword` is true. If the user doesn't need a password change, it redirects to `/`. For smoke testing, just verify the URL doesn't error -- don't expect the form to be visible.
 - **`/receipts/:id`** requires a valid receipt UUID in the path. Without a valid ID, it shows a loading state or error. Verify the page loads without errors using a known receipt ID.
 - **`/receipts/new`** is the 4-step wizard. For smoke testing, just verify step 1 loads with the "Trip Details" card.
-- **Admin routes** (`/audit`, `/trash`, `/admin/users`, `/admin/backup`) require the logged-in user to have an admin role. The seeded `admin@receipts.local` user is an admin.
+- **Admin routes** (`/audit`, `/trash`, `/admin/users`, `/admin/backup`, `/admin/restructure`) require the logged-in user to have an admin role. The seeded `admin@receipts.local` user is an admin.
 - **Auth guard behavior**: Unauthenticated access to protected routes redirects to `/login`. Non-admin access to admin routes redirects to `/` (dashboard).
 
 ## Removed Routes (historical)

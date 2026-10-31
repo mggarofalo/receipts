@@ -9,6 +9,16 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
+/// <summary>One historical row the chunk decided to append, with its tracked purchase.</summary>
+internal sealed record HistoricalWrite(HistoricalOperationItemEntity Row, ReceiptItemEntity Item, ClassificationCommand Command);
+
+/// <summary>
+/// Writes a chunk's appended assignments inside the chunk transaction, which already holds the taxonomy head, receipt and
+/// item locks. Returns each written assignment ID by item ID.
+/// </summary>
+internal delegate Task<IReadOnlyDictionary<Guid, Guid>> HistoricalChunkWriter(ApplicationDbContext db, string actor,
+	IReadOnlyList<HistoricalWrite> writes, bool reverting, CancellationToken ct);
+
 public sealed class HistoricalReclassificationService(IDbContextFactory<ApplicationDbContext> factory,
 		TimeProvider clock, IOptions<ClassificationOptions> options) : IHistoricalOperationService
 {
@@ -261,13 +271,20 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		return RunChunkAsync(actor, id, command, limit, ct, HistoricalOperationKind.ApprovedMappingV1, expectedRestoreGeneration);
 	}
 
-	public async Task<HistoricalProgress> CancelAsync(string actor, Guid id, CancellationToken ct = default)
+	public Task<HistoricalProgress> CancelAsync(string actor, Guid id, CancellationToken ct = default) =>
+		CancelAsync(actor, id, HistoricalOperationKind.ManualV1, ct);
+
+	internal Task<HistoricalProgress> RunRestructureChunkAsync(string actor, Guid id, HistoricalUndoCommand? undo, int limit,
+		HistoricalChunkWriter writer, CancellationToken ct = default) =>
+		RunChunkAsync(actor, id, undo, limit, ct, HistoricalOperationKind.RestructureV1, null, writer);
+
+	internal async Task<HistoricalProgress> CancelAsync(string actor, Guid id, HistoricalOperationKind kind, CancellationToken ct)
 	{
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = await db.Database.BeginTransactionAsync(ct);
 		await NormalizationWriteGuard.AcquireWriteGateAsync(db, ct);
 		HistoricalOperationEntity operation = await OwnedAsync(db, actor, id, true, ct);
-		if (operation.Kind != HistoricalOperationKind.ManualV1)
+		if (operation.Kind != kind || kind is not (HistoricalOperationKind.ManualV1 or HistoricalOperationKind.RestructureV1))
 		{ throw new TaxonomyException(409, "Automatic historical operations cannot be run by the manual service."); }
 		operation.State = HistoricalReclassificationPolicy.Cancel(operation.State);
 		await db.SaveChangesAsync(ct);
@@ -276,7 +293,8 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	}
 
 	private async Task<HistoricalProgress> RunChunkAsync(string actor, Guid id, HistoricalUndoCommand? undo, int limit, CancellationToken ct,
-			HistoricalOperationKind kind = HistoricalOperationKind.ManualV1, Guid? expectedRestoreGeneration = null)
+			HistoricalOperationKind kind = HistoricalOperationKind.ManualV1, Guid? expectedRestoreGeneration = null,
+			HistoricalChunkWriter? writer = null)
 	{
 		ValidateLimit(limit);
 		if (undo != null && (undo.TaxonomyRevisionId == Guid.Empty || string.IsNullOrWhiteSpace(undo.Reason) || undo.Reason.Contains('\0')))
@@ -318,15 +336,31 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 		operation.State = reverting ? HistoricalReclassificationPolicy.BeginUndo(operation.State) : HistoricalReclassificationPolicy.BeginApply(operation.State);
 		if (reverting) { operation.UndoTaxonomyRevisionId = undo!.TaxonomyRevisionId; operation.UndoReason = undo.Reason; }
 		List<HistoricalOperationItemEntity> rows = await Pending(db, id, reverting).OrderBy(x => x.ItemId).Take(limit).ToListAsync(ct);
+		// A restructure checks readiness once per chunk rather than once per purchase.
+		if (kind == HistoricalOperationKind.RestructureV1 && rows.Count > 0) { await ClassificationService.RequireReadyAsync(db, ct); }
 		await ReceiptFactLock.AcquireAsync(db, rows.Select(x => x.ReceiptId), ct);
-		await NormalizationWriteGuard.LockItemsAsync(db, rows.Select(x => x.ItemId).ToArray(), ct);
+		Guid[] itemIds = rows.Select(x => x.ItemId).ToArray();
+		await NormalizationWriteGuard.LockItemsAsync(db, itemIds, ct);
+		// Read the whole chunk's current state once, under the locks just taken.
+		Dictionary<Guid, ReceiptItemEntity> items = await db.ReceiptItems.IgnoreAutoIncludes()
+			.Where(x => itemIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+		Guid[] receiptIds = items.Values.Select(x => x.ReceiptId).Distinct().ToArray();
+		Dictionary<Guid, ReceiptEntity> receipts = await db.Receipts.AsNoTracking()
+			.Where(x => receiptIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+		Dictionary<Guid, Guid> assignments = await db.CurrentClassifications.AsNoTracking()
+			.Where(x => itemIds.Contains(x.ReceiptItemId)).ToDictionaryAsync(x => x.ReceiptItemId, x => x.AssignmentId, ct);
+		Guid[] categoryIds = rows.Select(x => reverting ? x.PreviousCategoryId : x.TargetCategoryId).OfType<Guid>().Distinct().ToArray();
+		HashSet<Guid> selectableIds = (await db.TaxonomyNodes.AsNoTracking()
+			.Where(x => x.RevisionId == head.RevisionId && !x.Archived && categoryIds.Contains(x.CategoryId))
+			.Select(x => x.CategoryId).ToListAsync(ct)).ToHashSet();
+		List<HistoricalWrite> deferred = [];
 		foreach (HistoricalOperationItemEntity row in rows)
 		{
-			ReceiptItemEntity? item = await db.ReceiptItems.IgnoreAutoIncludes().SingleOrDefaultAsync(x => x.Id == row.ItemId, ct);
-			ReceiptEntity? receipt = item == null ? null : await db.Receipts.SingleOrDefaultAsync(x => x.Id == item.ReceiptId, ct);
-			Guid? assignment = await db.CurrentClassifications.Where(x => x.ReceiptItemId == row.ItemId).Select(x => (Guid?)x.AssignmentId).SingleOrDefaultAsync(ct);
+			ReceiptItemEntity? item = items.GetValueOrDefault(row.ItemId);
+			ReceiptEntity? receipt = item == null ? null : receipts.GetValueOrDefault(item.ReceiptId);
+			Guid? assignment = assignments.TryGetValue(row.ItemId, out Guid found) ? found : null;
 			Guid? category = reverting ? row.PreviousCategoryId : row.TargetCategoryId;
-			bool selectable = category == null || await db.TaxonomyNodes.AnyAsync(x => x.RevisionId == head.RevisionId && x.CategoryId == category && !x.Archived, ct);
+			bool selectable = category is not Guid categoryId || selectableIds.Contains(categoryId);
 			HistoricalCurrentState current = new(item != null && receipt != null,
 				new(receipt?.Location ?? "", item?.Description ?? "", item?.ReceiptItemCode),
 				item?.NormalizationRevision ?? Guid.Empty, receipt?.NormalizationRevision ?? Guid.Empty,
@@ -340,12 +374,23 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 				ClassificationCommand command = reverting
 					? HistoricalReclassificationPolicy.UndoCommand(row.Evidence(), row.AppliedAssignmentId!.Value, undo!.TaxonomyRevisionId, undo.Reason)
 					: HistoricalReclassificationPolicy.Command(row.Evidence(), operation.TaxonomyRevisionId, operation.Reason);
-				resultId = (await ClassificationService.AssignInTransactionAsync(db, actor, row.ItemId, command, options.Value.WritesEnabled, clock, ct)).Id;
+				if (writer is null)
+				{ resultId = (await ClassificationService.AssignInTransactionAsync(db, actor, row.ItemId, command, options.Value.WritesEnabled, clock, ct)).Id; }
+				else { deferred.Add(new(row, item!, command)); }
 			}
 			HistoricalItemState state = decision.Kind switch
 			{ HistoricalDecisionKind.Append => HistoricalItemState.Applied, HistoricalDecisionKind.Conflict => HistoricalItemState.Conflicted, _ => HistoricalItemState.Skipped };
 			if (reverting) { row.UndoState = state; row.UndoAssignmentId = resultId; row.UndoReason = decision.Reason; }
 			else { row.State = state; row.AppliedAssignmentId = resultId; row.Reason = decision.Reason; }
+		}
+		if (writer is not null && deferred.Count > 0)
+		{
+			IReadOnlyDictionary<Guid, Guid> written = await writer(db, actor, deferred, reverting, ct);
+			foreach (HistoricalWrite write in deferred)
+			{
+				if (reverting) { write.Row.UndoAssignmentId = written[write.Row.ItemId]; }
+				else { write.Row.AppliedAssignmentId = written[write.Row.ItemId]; }
+			}
 		}
 		await db.SaveChangesAsync(ct);
 		if (!await Pending(db, id, reverting).AnyAsync(ct))
@@ -388,7 +433,7 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	private static void ValidateLimit(int limit)
 	{ if (limit is < 1 or > HistoricalReclassificationPolicy.MaximumChunkSize) { throw new ArgumentOutOfRangeException(nameof(limit)); } }
 
-	private static async Task<HistoricalProgress> ProgressAsync(ApplicationDbContext db, HistoricalOperationEntity operation, CancellationToken ct)
+	internal static async Task<HistoricalProgress> ProgressAsync(ApplicationDbContext db, HistoricalOperationEntity operation, CancellationToken ct)
 	{
 		var counts = await db.HistoricalOperationItems.Where(x => x.OperationId == operation.Id).GroupBy(x => 1)
 			.Select(g => new

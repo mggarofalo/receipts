@@ -16,6 +16,7 @@ const routeLabels: Record<string, string> = {
   "/trash": "Recycle Bin",
   "/admin/users": "User Management",
   "/admin/backup": "Backup & Restore",
+  "/admin/restructure": "Restructure Categories",
   "/admin/normalized-descriptions": "Normalized Descriptions",
   "/login": "Login",
   "/change-password": "Change Password",

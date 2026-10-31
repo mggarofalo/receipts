@@ -3872,10 +3872,349 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/restructure-plans/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate a restructure plan and report what applying it would do */
+        post: operations["RestructurePlans_Preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/restructure-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List restructure applications, newest first */
+        get: operations["RestructurePlans_List"];
+        put?: never;
+        /** Apply a restructure plan's category changes and capture its purchase reassignments */
+        post: operations["RestructurePlans_Begin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/restructure-plans/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a restructure application's progress and report */
+        get: operations["RestructurePlans_Read"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/restructure-plans/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Page a restructure application's reassigned purchases */
+        get: operations["RestructurePlans_Items"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/restructure-plans/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reassign the next chunk of purchases */
+        post: operations["RestructurePlans_Apply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/restructure-plans/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop reassigning purchases; reassigned purchases stay until undone */
+        post: operations["RestructurePlans_Cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/restructure-plans/{id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Undo a restructure: categories first, then the next chunk of purchases */
+        post: operations["RestructurePlans_Undo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        RestructureApplicationPage: {
+            items: components["schemas"]["RestructureApplicationSummary"][];
+            /** Format: int32 */
+            nextOffset: null | number;
+        };
+        RestructureApplicationSummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            planId: string;
+            reason: string;
+            /** Format: date-time */
+            appliedAt: string;
+            /** Format: date-time */
+            undoneAt: null | string;
+            state: components["schemas"]["HistoricalOperationState"];
+            progress: components["schemas"]["HistoricalProgress"];
+            report: components["schemas"]["RestructureReport"];
+        };
+        RestructureBeginBody: {
+            /** Format: uuid */
+            applicationId: string;
+            plan: components["schemas"]["RestructurePlan"];
+        };
+        RestructureBudgetReport: {
+            /** Format: int32 */
+            itemsChangingEnvelope: number;
+            /** Format: int32 */
+            itemsChangingYnabCategory: number;
+        };
+        RestructureChunkBody: {
+            /** Format: int32 */
+            limit: number;
+        };
+        RestructureDefaultsReport: {
+            /** Format: int32 */
+            kept: number;
+            /** Format: int32 */
+            moved: number;
+            /** Format: int32 */
+            removed: number;
+            /** Format: int32 */
+            set: number;
+        };
+        RestructureEnvelopeDefault: {
+            /** Format: uuid */
+            categoryId: string;
+            envelope: null | components["schemas"]["RestructureEnvelopeRef"];
+        };
+        RestructureEnvelopeMerge: {
+            source: components["schemas"]["RestructureEnvelopeRef"];
+            target: components["schemas"]["RestructureEnvelopeRef"];
+        };
+        RestructureEnvelopeRef: {
+            name: string;
+            ynabCategoryId?: null | string;
+        };
+        /**
+         * @default all
+         * @enum {unknown}
+         */
+        RestructureItemFilter: "all" | "conflicted" | "cleared";
+        RestructureItemPage: {
+            items: components["schemas"]["RestructureItemRow"][];
+            /** Format: int32 */
+            nextOffset: null | number;
+        };
+        RestructureItemReassignment: {
+            /** Format: uuid */
+            itemId: string;
+            /** Format: uuid */
+            targetCategoryId?: null | string;
+            /** @default false */
+            clear: boolean;
+            occasion?: null | string;
+            /** @default  */
+            rule: string;
+            evidence?: unknown;
+        };
+        RestructureItemReport: {
+            /** Format: int32 */
+            considered: number;
+            /** Format: int32 */
+            reassigned: number;
+            /** Format: int32 */
+            cleared: number;
+            /** Format: int32 */
+            unchanged: number;
+            /** Format: int32 */
+            conflicts: number;
+            /** Format: int32 */
+            missingFromDeployment: number;
+            byRule: {
+                [key: string]: number;
+            };
+        };
+        RestructureItemRow: {
+            /** Format: uuid */
+            itemId: string;
+            /** Format: uuid */
+            receiptId: string;
+            store: string;
+            description: string;
+            fromPath: string;
+            toPath: string;
+            rule: string;
+            state: components["schemas"]["HistoricalItemState"];
+            reason: null | string;
+            undoState: components["schemas"]["HistoricalItemState"];
+            undoReason: null | string;
+        };
+        RestructureMappingsReport: {
+            /** Format: int32 */
+            reapproved: number;
+            /** Format: int32 */
+            repointed: number;
+            /** Format: int32 */
+            revoked: number;
+            /** Format: int32 */
+            leftStale: number;
+        };
+        RestructureMergeReport: {
+            source: string;
+            target: string;
+            /** Format: int32 */
+            items: number;
+            /** Format: int32 */
+            receipts: number;
+            /** Format: int32 */
+            defaults: number;
+            /** Format: int32 */
+            itemsChangingYnabCategory: number;
+        };
+        RestructureNodeMapping: {
+            /** Format: uuid */
+            categoryId: string;
+            /** Format: uuid */
+            targetCategoryId?: null | string;
+            /** @default false */
+            clear: boolean;
+            occasion?: null | string;
+        };
+        RestructureOccasionReport: {
+            name: string;
+            created: boolean;
+            /** Format: int32 */
+            items: number;
+        };
+        RestructurePlan: {
+            format: string;
+            /** Format: int32 */
+            version: number;
+            /** Format: uuid */
+            planId: string;
+            reason: string;
+            /** Format: uuid */
+            baseTaxonomyRevisionId: string;
+            /** Format: date-time */
+            snapshotAt: string;
+            taxonomyChanges: components["schemas"]["RestructureCategoryChange"][];
+            nodeMappings: components["schemas"]["RestructureNodeMapping"][];
+            items?: null | components["schemas"]["RestructureItemReassignment"][];
+            occasions?: null | string[];
+            envelopeDefaults?: null | components["schemas"]["RestructureEnvelopeDefault"][];
+            envelopeMerges?: null | components["schemas"]["RestructureEnvelopeMerge"][];
+        };
+        RestructurePreview: {
+            valid: boolean;
+            errors: string[];
+            warnings: string[];
+            report: components["schemas"]["RestructureReport"];
+        };
+        RestructureReport: {
+            taxonomy: components["schemas"]["RestructureTaxonomyReport"];
+            items: components["schemas"]["RestructureItemReport"];
+            transitions: components["schemas"]["RestructureTransition"][];
+            defaults: components["schemas"]["RestructureDefaultsReport"];
+            mappings: components["schemas"]["RestructureMappingsReport"];
+            envelopeMerges: components["schemas"]["RestructureMergeReport"][];
+            budget: components["schemas"]["RestructureBudgetReport"];
+            occasions: components["schemas"]["RestructureOccasionReport"][];
+        };
+        RestructureTaxonomyReport: {
+            /** Format: int32 */
+            created: number;
+            /** Format: int32 */
+            renamed: number;
+            /** Format: int32 */
+            moved: number;
+            /** Format: int32 */
+            defined: number;
+            /** Format: int32 */
+            archived: number;
+            /** Format: int32 */
+            restored: number;
+            /** Format: int32 */
+            activeBefore: number;
+            /** Format: int32 */
+            activeAfter: number;
+        };
+        RestructureTransition: {
+            /** Format: uuid */
+            fromCategoryId: null | string;
+            fromPath: string;
+            /** Format: uuid */
+            toCategoryId: null | string;
+            toPath: string;
+            /** Format: int32 */
+            count: number;
+        };
+        RestructureCategoryChange: {
+            kind: string;
+            /** Format: uuid */
+            categoryId: string;
+            /** Format: uuid */
+            parentId?: null | string;
+            name?: null | string;
+            definition?: null | string;
+        };
         HistoricalChunkBody: {
             /** Format: int32 */
             limit: number | string;
@@ -17102,6 +17441,506 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReceiptYnabSyncStatusListResponse"];
+                };
+            };
+        };
+    };
+    RestructurePlans_Preview: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestructurePlan"];
+                "text/json": components["schemas"]["RestructurePlan"];
+                "application/*+json": components["schemas"]["RestructurePlan"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructurePreview"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RestructurePlans_List: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: {
+                "api-version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructureApplicationPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RestructurePlans_Begin: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestructureBeginBody"];
+                "text/json": components["schemas"]["RestructureBeginBody"];
+                "application/*+json": components["schemas"]["RestructureBeginBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructureApplicationSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    RestructurePlans_Read: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructureApplicationSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    RestructurePlans_Items: {
+        parameters: {
+            query?: {
+                filter?: components["schemas"]["RestructureItemFilter"];
+                offset?: number;
+                limit?: number;
+            };
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructureItemPage"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    RestructurePlans_Apply: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestructureChunkBody"];
+                "text/json": components["schemas"]["RestructureChunkBody"];
+                "application/*+json": components["schemas"]["RestructureChunkBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructureApplicationSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    RestructurePlans_Cancel: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructureApplicationSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    RestructurePlans_Undo: {
+        parameters: {
+            query?: never;
+            header?: {
+                "api-version"?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestructureChunkBody"];
+                "text/json": components["schemas"]["RestructureChunkBody"];
+                "application/*+json": components["schemas"]["RestructureChunkBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestructureApplicationSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
         };

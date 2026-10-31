@@ -62,6 +62,9 @@ vi.mock("@/pages/new-receipt/NewReceiptPage", () => ({
 vi.mock("@/pages/settings/YnabSettings", () => ({
   default: () => <div data-testid="page-ynab-settings">YnabSettings</div>,
 }));
+vi.mock("@/pages/RestructureCategories", () => ({
+  default: () => <div data-testid="page-restructure">RestructureCategories</div>,
+}));
 vi.mock("@/pages/BackupRestore", () => ({
   default: () => <div data-testid="page-backup-restore">BackupRestore</div>,
 }));
@@ -156,6 +159,11 @@ describe("App router", () => {
     expect(
       await screen.findByTestId("page-backup-restore"),
     ).toBeInTheDocument();
+  });
+
+  it('renders RestructureCategories page at "/admin/restructure" route', async () => {
+    renderRoute("/admin/restructure");
+    expect(await screen.findByTestId("page-restructure")).toBeInTheDocument();
   });
 
   it("renders NotFound for deprecated redirect routes", async () => {

@@ -118,6 +118,7 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 		var seed = await SeedAsync(root: 0.95, leaf: 0.95, portable: true);
 		(await Writer().ApplyNextAsync()).Should().BeTrue();
 		await using var db = fixture.CreateDbContext();
+		string latest = await StepDownToJevMigrationAsync(db);
 		string[] current = [.. await db.Database.GetAppliedMigrationsAsync()];
 		current[^1].Should().Be(JevMigration);
 
@@ -129,6 +130,7 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(current);
 		(await db.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == seed.Attempt)).State.Should().Be("applied");
 		(await CurrentAsync(seed.Items[0])).Source.Should().Be("jev");
+		await db.GetService<IMigrator>().MigrateAsync(latest);
 	}
 
 	[Fact]
@@ -148,6 +150,7 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 			await setup.SaveChangesAsync();
 		}
 		await using var db = fixture.CreateDbContext();
+		string latest = await StepDownToJevMigrationAsync(db);
 		string[] current = [.. await db.Database.GetAppliedMigrationsAsync()];
 		current[^1].Should().Be(JevMigration);
 		var migrator = db.GetService<IMigrator>();
@@ -166,6 +169,15 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 		(await db.Database.GetAppliedMigrationsAsync()).Should().NotContain(JevMigration);
 		await migrator.MigrateAsync(current[^1]);
 		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(current);
+		await migrator.MigrateAsync(latest);
+	}
+
+	// Later migrations step down first (they hold no data here), so the Jev migration's own Down is what refuses.
+	private static async Task<string> StepDownToJevMigrationAsync(ApplicationDbContext db)
+	{
+		string latest = (await db.Database.GetAppliedMigrationsAsync()).Last();
+		await db.GetService<IMigrator>().MigrateAsync(JevMigration);
+		return latest;
 	}
 
 	private Task<string> ExportAsync() =>

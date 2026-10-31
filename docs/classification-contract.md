@@ -50,7 +50,9 @@ path. Manual, approved mapping, accepted provider suggestion, legacy import, and
 retrospective operation are distinct sources; unknown legacy origin is not proof
 of automatic or manual approval. A strong Jev match written automatically has source
 `jev` and a JSON reason with its probabilities and thresholds; an accepted suggestion
-remains `manual`. Provider/model/question-policy versions belong
+remains `manual`. A purchase moved by a [category restructure](restructure-plans.md) has source
+`restructure` and a JSON reason naming the plan, the rule that decided it and that rule's inputs.
+Provider/model/question-policy versions belong
 in provenance when used, never in category identity.
 
 The receipt date selects reporting periods. `recordedAt` orders observed

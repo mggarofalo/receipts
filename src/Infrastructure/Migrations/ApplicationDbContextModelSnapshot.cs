@@ -3323,6 +3323,122 @@ namespace Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.RestructureApplicationEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Actor")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .UseCollation("C");
+
+                    b.Property<DateTimeOffset>("AppliedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("AppliedRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BaseRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PlanHash")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PlanJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReportJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("UndoRevisionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UndoneAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppliedRevisionId");
+
+                    b.HasIndex("BaseRevisionId");
+
+                    b.HasIndex("PlanId");
+
+                    b.HasIndex("UndoRevisionId");
+
+                    b.ToTable("RestructureApplications", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.RestructureChangeEntity", b =>
+                {
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("After")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("Before")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UndoOutcome")
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.HasKey("ApplicationId", "Ordinal");
+
+                    b.ToTable("RestructureChanges", "taxonomy");
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.RestructureItemEntity", b =>
+                {
+                    b.Property<Guid>("ApplicationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("PreviousOccasionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Rule")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("TargetOccasionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("ApplicationId", "ItemId");
+
+                    b.ToTable("RestructureItems", "taxonomy");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyHeadEntity", b =>
                 {
                     b.Property<int>("Id")
@@ -4009,6 +4125,56 @@ namespace Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("TaxonomyRevisionId", "CategoryId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.RestructureApplicationEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("AppliedRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("BaseRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.HistoricalOperationEntity", null)
+                        .WithOne()
+                        .HasForeignKey("Infrastructure.Entities.Taxonomy.RestructureApplicationEntity", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.TaxonomyRevisionEntity", null)
+                        .WithMany()
+                        .HasForeignKey("UndoRevisionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.RestructureChangeEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.RestructureApplicationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Infrastructure.Entities.Taxonomy.RestructureItemEntity", b =>
+                {
+                    b.HasOne("Infrastructure.Entities.Taxonomy.RestructureApplicationEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Infrastructure.Entities.Taxonomy.HistoricalOperationItemEntity", null)
+                        .WithOne()
+                        .HasForeignKey("Infrastructure.Entities.Taxonomy.RestructureItemEntity", "ApplicationId", "ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Infrastructure.Entities.Taxonomy.TaxonomyHeadEntity", b =>

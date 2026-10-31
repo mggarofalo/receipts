@@ -9314,8 +9314,963 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReceiptYnabSyncStatusListResponse"
 
+  /api/restructure-plans/preview:
+    post:
+      operationId: RestructurePlans_Preview
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: Validate a restructure plan and report what applying it would do
+      parameters:
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestructurePlan'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/RestructurePlan'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/RestructurePlan'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructurePreview'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+  /api/restructure-plans:
+    post:
+      operationId: RestructurePlans_Begin
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: Apply a restructure plan's category changes and capture its purchase reassignments
+      parameters:
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestructureBeginBody'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/RestructureBeginBody'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/RestructureBeginBody'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructureApplicationSummary'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    get:
+      operationId: RestructurePlans_List
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: List restructure applications, newest first
+      parameters:
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 25
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructureApplicationPage'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+  /api/restructure-plans/{id}:
+    get:
+      operationId: RestructurePlans_Read
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: Read a restructure application's progress and report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructureApplicationSummary'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/restructure-plans/{id}/items:
+    get:
+      operationId: RestructurePlans_Items
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: Page a restructure application's reassigned purchases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: filter
+          in: query
+          schema:
+            $ref: '#/components/schemas/RestructureItemFilter'
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            format: int32
+            default: 100
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructureItemPage'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/restructure-plans/{id}/apply:
+    post:
+      operationId: RestructurePlans_Apply
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: Reassign the next chunk of purchases
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestructureChunkBody'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/RestructureChunkBody'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/RestructureChunkBody'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructureApplicationSummary'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/restructure-plans/{id}/cancel:
+    post:
+      operationId: RestructurePlans_Cancel
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: Stop reassigning purchases; reassigned purchases stay until undone
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructureApplicationSummary'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/restructure-plans/{id}/undo:
+    post:
+      operationId: RestructurePlans_Undo
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      tags:
+        - RestructurePlans
+      summary: 'Undo a restructure: categories first, then the next chunk of purchases'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: api-version
+          in: header
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestructureChunkBody'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/RestructureChunkBody'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/RestructureChunkBody'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestructureApplicationSummary'
+        '400':
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Authentication required
+        '403':
+          description: Administrator role required
+        '404':
+          description: Not Found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Conflict
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
+    RestructureApplicationPage:
+      required:
+        - items
+        - nextOffset
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestructureApplicationSummary'
+        nextOffset:
+          type:
+            - 'null'
+            - integer
+          format: int32
+    RestructureApplicationSummary:
+      required:
+        - id
+        - planId
+        - reason
+        - appliedAt
+        - undoneAt
+        - state
+        - progress
+        - report
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        planId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        appliedAt:
+          type: string
+          format: date-time
+        undoneAt:
+          type:
+            - 'null'
+            - string
+          format: date-time
+        state:
+          $ref: '#/components/schemas/HistoricalOperationState'
+        progress:
+          $ref: '#/components/schemas/HistoricalProgress'
+        report:
+          $ref: '#/components/schemas/RestructureReport'
+    RestructureBeginBody:
+      required:
+        - applicationId
+        - plan
+      type: object
+      properties:
+        applicationId:
+          type: string
+          format: uuid
+        plan:
+          $ref: '#/components/schemas/RestructurePlan'
+    RestructureBudgetReport:
+      required:
+        - itemsChangingEnvelope
+        - itemsChangingYnabCategory
+      type: object
+      properties:
+        itemsChangingEnvelope:
+          type: integer
+          format: int32
+        itemsChangingYnabCategory:
+          type: integer
+          format: int32
+    RestructureChunkBody:
+      required:
+        - limit
+      type: object
+      properties:
+        limit:
+          type: integer
+          format: int32
+    RestructureDefaultsReport:
+      required:
+        - kept
+        - moved
+        - removed
+        - set
+      type: object
+      properties:
+        kept:
+          type: integer
+          format: int32
+        moved:
+          type: integer
+          format: int32
+        removed:
+          type: integer
+          format: int32
+        set:
+          type: integer
+          format: int32
+    RestructureEnvelopeDefault:
+      required:
+        - categoryId
+        - envelope
+      type: object
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        envelope:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/RestructureEnvelopeRef'
+    RestructureEnvelopeMerge:
+      required:
+        - source
+        - target
+      type: object
+      properties:
+        source:
+          $ref: '#/components/schemas/RestructureEnvelopeRef'
+        target:
+          $ref: '#/components/schemas/RestructureEnvelopeRef'
+    RestructureEnvelopeRef:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          type: string
+        ynabCategoryId:
+          type:
+            - 'null'
+            - string
+    RestructureItemFilter:
+      enum:
+        - all
+        - conflicted
+        - cleared
+      default: all
+    RestructureItemPage:
+      required:
+        - items
+        - nextOffset
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestructureItemRow'
+        nextOffset:
+          type:
+            - 'null'
+            - integer
+          format: int32
+    RestructureItemReassignment:
+      required:
+        - itemId
+      type: object
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        targetCategoryId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        clear:
+          type: boolean
+          default: false
+        occasion:
+          type:
+            - 'null'
+            - string
+        rule:
+          type: string
+          default: ''
+        evidence: {}
+    RestructureItemReport:
+      required:
+        - considered
+        - reassigned
+        - cleared
+        - unchanged
+        - conflicts
+        - missingFromDeployment
+        - byRule
+      type: object
+      properties:
+        considered:
+          type: integer
+          format: int32
+        reassigned:
+          type: integer
+          format: int32
+        cleared:
+          type: integer
+          format: int32
+        unchanged:
+          type: integer
+          format: int32
+        conflicts:
+          type: integer
+          format: int32
+        missingFromDeployment:
+          type: integer
+          format: int32
+        byRule:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int32
+    RestructureItemRow:
+      required:
+        - itemId
+        - receiptId
+        - store
+        - description
+        - fromPath
+        - toPath
+        - rule
+        - state
+        - reason
+        - undoState
+        - undoReason
+      type: object
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        receiptId:
+          type: string
+          format: uuid
+        store:
+          type: string
+        description:
+          type: string
+        fromPath:
+          type: string
+        toPath:
+          type: string
+        rule:
+          type: string
+        state:
+          $ref: '#/components/schemas/HistoricalItemState'
+        reason:
+          type:
+            - 'null'
+            - string
+        undoState:
+          $ref: '#/components/schemas/HistoricalItemState'
+        undoReason:
+          type:
+            - 'null'
+            - string
+    RestructureMappingsReport:
+      required:
+        - reapproved
+        - repointed
+        - revoked
+        - leftStale
+      type: object
+      properties:
+        reapproved:
+          type: integer
+          format: int32
+        repointed:
+          type: integer
+          format: int32
+        revoked:
+          type: integer
+          format: int32
+        leftStale:
+          type: integer
+          format: int32
+    RestructureMergeReport:
+      required:
+        - source
+        - target
+        - items
+        - receipts
+        - defaults
+        - itemsChangingYnabCategory
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        items:
+          type: integer
+          format: int32
+        receipts:
+          type: integer
+          format: int32
+        defaults:
+          type: integer
+          format: int32
+        itemsChangingYnabCategory:
+          type: integer
+          format: int32
+    RestructureNodeMapping:
+      required:
+        - categoryId
+      type: object
+      properties:
+        categoryId:
+          type: string
+          format: uuid
+        targetCategoryId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        clear:
+          type: boolean
+          default: false
+        occasion:
+          type:
+            - 'null'
+            - string
+    RestructureOccasionReport:
+      required:
+        - name
+        - created
+        - items
+      type: object
+      properties:
+        name:
+          type: string
+        created:
+          type: boolean
+        items:
+          type: integer
+          format: int32
+    RestructurePlan:
+      required:
+        - format
+        - version
+        - planId
+        - reason
+        - baseTaxonomyRevisionId
+        - snapshotAt
+        - taxonomyChanges
+        - nodeMappings
+      type: object
+      properties:
+        format:
+          type: string
+        version:
+          type: integer
+          format: int32
+        planId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        baseTaxonomyRevisionId:
+          type: string
+          format: uuid
+        snapshotAt:
+          type: string
+          format: date-time
+        taxonomyChanges:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestructureCategoryChange'
+        nodeMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestructureNodeMapping'
+        items:
+          type:
+            - 'null'
+            - array
+          items:
+            $ref: '#/components/schemas/RestructureItemReassignment'
+        occasions:
+          type:
+            - 'null'
+            - array
+          items:
+            type: string
+        envelopeDefaults:
+          type:
+            - 'null'
+            - array
+          items:
+            $ref: '#/components/schemas/RestructureEnvelopeDefault'
+        envelopeMerges:
+          type:
+            - 'null'
+            - array
+          items:
+            $ref: '#/components/schemas/RestructureEnvelopeMerge'
+    RestructurePreview:
+      required:
+        - valid
+        - errors
+        - warnings
+        - report
+      type: object
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        report:
+          $ref: '#/components/schemas/RestructureReport'
+    RestructureReport:
+      required:
+        - taxonomy
+        - items
+        - transitions
+        - defaults
+        - mappings
+        - envelopeMerges
+        - budget
+        - occasions
+      type: object
+      properties:
+        taxonomy:
+          $ref: '#/components/schemas/RestructureTaxonomyReport'
+        items:
+          $ref: '#/components/schemas/RestructureItemReport'
+        transitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestructureTransition'
+        defaults:
+          $ref: '#/components/schemas/RestructureDefaultsReport'
+        mappings:
+          $ref: '#/components/schemas/RestructureMappingsReport'
+        envelopeMerges:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestructureMergeReport'
+        budget:
+          $ref: '#/components/schemas/RestructureBudgetReport'
+        occasions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestructureOccasionReport'
+    RestructureTaxonomyReport:
+      required:
+        - created
+        - renamed
+        - moved
+        - defined
+        - archived
+        - restored
+        - activeBefore
+        - activeAfter
+      type: object
+      properties:
+        created:
+          type: integer
+          format: int32
+        renamed:
+          type: integer
+          format: int32
+        moved:
+          type: integer
+          format: int32
+        defined:
+          type: integer
+          format: int32
+        archived:
+          type: integer
+          format: int32
+        restored:
+          type: integer
+          format: int32
+        activeBefore:
+          type: integer
+          format: int32
+        activeAfter:
+          type: integer
+          format: int32
+    RestructureTransition:
+      required:
+        - fromCategoryId
+        - fromPath
+        - toCategoryId
+        - toPath
+        - count
+      type: object
+      properties:
+        fromCategoryId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        fromPath:
+          type: string
+        toCategoryId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        toPath:
+          type: string
+        count:
+          type: integer
+          format: int32
+    RestructureCategoryChange:
+      required:
+        - kind
+        - categoryId
+      type: object
+      properties:
+        kind:
+          type: string
+        categoryId:
+          type: string
+          format: uuid
+        parentId:
+          type:
+            - 'null'
+            - string
+          format: uuid
+        name:
+          type:
+            - 'null'
+            - string
+        definition:
+          type:
+            - 'null'
+            - string
     HistoricalChunkBody:
       required:
         - limit
