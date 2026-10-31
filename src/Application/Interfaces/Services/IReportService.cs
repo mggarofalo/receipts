@@ -52,6 +52,17 @@ public interface IReportService
 		int topN,
 		CancellationToken cancellationToken, CategoryReportOptions options);
 
+	/// <summary>Spending over time by recorded envelope or occasion, optionally narrowed to one envelope or occasion.</summary>
+	Task<BudgetTrendsResult> GetBudgetTrendsAsync(
+		DateOnly startDate,
+		DateOnly endDate,
+		string granularity,
+		int topN,
+		BudgetTrendsDimension dimension,
+		Guid? envelopeId,
+		Guid? occasionId,
+		CancellationToken cancellationToken);
+
 	/// <param name="suggestionFilter">any, with (Jev has answered for the item) or without.</param>
 	/// <param name="includeSuggestions">False withholds Jev's answers and ignores the filter.</param>
 	Task<UncategorizedItemsResult> GetUncategorizedItemsAsync(

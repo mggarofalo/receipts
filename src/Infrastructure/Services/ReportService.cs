@@ -373,7 +373,10 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 			&& (options.View != CategoryReportView.CurrentHierarchy || revision == Guid.Empty
 				|| !await context.TaxonomyRevisions.AsNoTracking().AnyAsync(row => row.Id == revision, cancellationToken)))
 		{ throw new ArgumentException("capturedCurrentRevisionId must identify an existing revision and requires currentHierarchy", "capturedCurrentRevisionId"); }
-		var snapshot = await CategoryReportReader.ReadAsync(context, context.ReceiptItems, startDate, endDate,
+		IQueryable<ReceiptItemEntity> items = context.ReceiptItems
+			.Where(item => (options.EnvelopeId == null || item.EnvelopeId == options.EnvelopeId)
+				&& (options.OccasionId == null || item.OccasionId == options.OccasionId));
+		var snapshot = await CategoryReportReader.ReadAsync(context, items, startDate, endDate,
 			options.View, options.Rollup, options.CategoryId, cancellationToken,
 			options.KnowledgeCutoff, options.CapturedCurrentRevisionId, granularity);
 		if (snapshot.Buckets.Count == 0) { return new([], []) { Snapshot = snapshot }; }
@@ -398,6 +401,85 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		return new(series.Select(entry => entry.IsOther ? "Other" : entry.Bucket!.Path.Count > 0
 			? entry.Bucket.Path[^1].Name : entry.Bucket.State.ToString()).ToList(), buckets)
 		{ Snapshot = snapshot, Series = series };
+	}
+
+	public async Task<BudgetTrendsResult> GetBudgetTrendsAsync(DateOnly startDate, DateOnly endDate, string granularity,
+		int topN, BudgetTrendsDimension dimension, Guid? envelopeId, Guid? occasionId, CancellationToken cancellationToken)
+	{
+		if (topN is < 1 or > 50) { throw new ArgumentOutOfRangeException(nameof(topN)); }
+		granularity = granularity.ToLowerInvariant();
+		if (granularity is not ("daily" or "monthly" or "quarterly" or "yearly"))
+		{ throw new ArgumentException("Invalid granularity", nameof(granularity)); }
+		if (startDate > endDate) { throw new ArgumentException("Start date must not follow end date.", nameof(startDate)); }
+		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+
+		// Recorded values only: an item's envelope is what it was saved with, so history never moves.
+		var purchases = from item in context.ReceiptItems.AsNoTracking()
+						join receipt in context.Receipts.AsNoTracking() on item.ReceiptId equals receipt.Id
+						where item.DeletedAt == null && receipt.DeletedAt == null
+							&& receipt.Date >= startDate && receipt.Date <= endDate
+							&& (envelopeId == null || item.EnvelopeId == envelopeId)
+							&& (occasionId == null || item.OccasionId == occasionId)
+						select new
+						{
+							receipt.Date,
+							Key = dimension == BudgetTrendsDimension.Envelope ? item.EnvelopeId : item.OccasionId,
+							item.TotalAmount,
+							item.TotalAmountCurrency,
+						};
+		var facts = await purchases
+			.GroupBy(row => new { row.Date, row.Key, row.TotalAmountCurrency })
+			.Select(group => new
+			{
+				group.Key.Date,
+				group.Key.Key,
+				Currency = group.Key.TotalAmountCurrency,
+				Amount = group.Sum(row => row.TotalAmount),
+				Count = group.Count(),
+			})
+			.ToListAsync(cancellationToken);
+		if (facts.Count == 0) { return new(dimension, [], []); }
+
+		Guid[] ids = [.. facts.Select(fact => fact.Key).OfType<Guid>().Distinct()];
+		Dictionary<Guid, (string Name, bool IsActive)> names = dimension == BudgetTrendsDimension.Envelope
+			? await context.Envelopes.IgnoreQueryFilters().AsNoTracking().Where(row => ids.Contains(row.Id))
+				.ToDictionaryAsync(row => row.Id, row => (row.Name, row.IsActive), cancellationToken)
+			: await context.Occasions.IgnoreQueryFilters().AsNoTracking().Where(row => ids.Contains(row.Id))
+				.ToDictionaryAsync(row => row.Id, row => (row.Name, row.IsActive), cancellationToken);
+		string none = dimension == BudgetTrendsDimension.Envelope ? "No envelope" : "No occasion";
+
+		List<BudgetTrendsSeriesResult> series = [];
+		foreach (var currency in facts.GroupBy(fact => fact.Currency.ToString()).OrderBy(group => group.Key, StringComparer.Ordinal))
+		{
+			var totals = currency.GroupBy(fact => fact.Key)
+				.Select(group => new { Id = group.Key, Total = group.Sum(fact => fact.Amount), Count = group.Sum(fact => fact.Count) })
+				.OrderByDescending(row => row.Total).ThenBy(row => row.Id).ToList();
+			foreach (var row in totals.Take(topN))
+			{
+				(string Name, bool IsActive) label = row.Id is Guid id && names.TryGetValue(id, out var known) ? known : (none, true);
+				series.Add(new(row.Id, label.Name, label.IsActive, currency.Key, false, row.Total, row.Count));
+			}
+			if (totals.Count > topN)
+			{
+				var rest = totals.Skip(topN).ToList();
+				series.Add(new(null, "Other", true, currency.Key, true, rest.Sum(row => row.Total), rest.Sum(row => row.Count)));
+			}
+		}
+
+		// An open start date begins at the first purchase rather than the year 1.
+		DateOnly first = facts.Min(fact => fact.Date);
+		var amounts = facts.GroupBy(fact => FormatPeriod(fact.Date, granularity)).ToDictionary(group => group.Key, group => group.ToList());
+		List<CategoryTrendsBucketResult> buckets = GeneratePeriods(startDate == DateOnly.MinValue ? first : startDate, endDate, granularity)
+			.Select(period =>
+			{
+				var periodFacts = amounts.TryGetValue(period, out var found) ? found : [];
+				return new CategoryTrendsBucketResult(period, series.Select(entry => periodFacts
+					.Where(fact => fact.Currency.ToString() == entry.Currency && (entry.IsOther
+						? !series.Any(named => !named.IsOther && named.Currency == entry.Currency && named.Id == fact.Key)
+						: fact.Key == entry.Id))
+					.Sum(fact => fact.Amount)).ToList());
+			}).ToList();
+		return new(dimension, series, buckets);
 	}
 
 	private static string FormatPeriod(DateOnly date, string granularity)

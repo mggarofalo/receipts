@@ -75,6 +75,8 @@ export function categoryTrendsExport(
     "Granularity",
     "Top N per currency",
     "Category filter",
+    "Envelope filter",
+    "Occasion filter",
     "Period",
     "Currency",
     "Currency total",
@@ -101,6 +103,8 @@ export function categoryTrendsExport(
       params.granularity,
       params.topN,
       params.categoryId,
+      params.envelopeId,
+      params.occasionId,
       bucket.period,
       item.currency,
       data.currencyTotals?.find((total) => total.currency === item.currency)

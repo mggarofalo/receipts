@@ -79,8 +79,14 @@ const REPORT_GROUPS: ReportGroup[] = [
       {
         slug: "category-trends",
         name: "Category Trends",
-        description: "Smaller categories are grouped into Other.",
+        description: "What you buy, by item type. Smaller categories are grouped into Other.",
         component: lazy(() => import("@/components/reports/CategoryTrends")),
+      },
+      {
+        slug: "spending-by-envelope",
+        name: "Spending by Envelope",
+        description: "The budget view, by envelope or by occasion.",
+        component: lazy(() => import("@/components/reports/BudgetTrends")),
       },
       {
         slug: "item-cost-over-time",

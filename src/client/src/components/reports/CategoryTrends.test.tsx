@@ -2,6 +2,7 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithQueryClient } from "@/test/test-utils";
 import { useNavigate, useLocation } from "react-router";
+import { mockQueryResult } from "@/test/mock-hooks";
 import CategoryTrends from "./CategoryTrends";
 
 const { exportCsv } = vi.hoisted(() => ({ exportCsv: vi.fn() }));
@@ -32,6 +33,35 @@ function Navigation() {
 vi.mock("@/hooks/useCategoryTrendsReport", () => ({
   useCategoryTrendsReport: vi.fn(),
 }));
+
+const ENVELOPE_ID = "33333333-3333-3333-3333-333333333333";
+const OCCASION_ID = "44444444-4444-4444-4444-444444444444";
+vi.mock("@/hooks/useEnvelopes", () => {
+  const envelopes = [
+    {
+      id: "33333333-3333-3333-3333-333333333333",
+      name: "Groceries",
+      isActive: true,
+    },
+  ];
+  const occasions = [
+    {
+      id: "44444444-4444-4444-4444-444444444444",
+      name: "Birthday",
+      isActive: false,
+    },
+  ];
+  return {
+    useEnvelopes: () => ({
+      ...mockQueryResult({ data: { data: envelopes }, isLoading: false }),
+      envelopes,
+    }),
+    useOccasions: () => ({
+      ...mockQueryResult({ data: { data: occasions }, isLoading: false }),
+      occasions,
+    }),
+  };
+});
 
 vi.mock("@/components/dashboard/DateRangeSelector", () => ({
   DateRangeSelector: ({
@@ -142,6 +172,64 @@ describe("CategoryTrends", () => {
         capturedCurrentRevisionId: undefined,
         rollup: "root",
       }),
+    );
+  });
+
+  it("narrows by envelope and occasion through the URL", async () => {
+    setupMock();
+    renderWithQueryClient(
+      <>
+        <Navigation />
+        <CategoryTrends />
+      </>,
+      { route: `/?report=category-trends&occasionId=${OCCASION_ID}` },
+    );
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        occasionId: OCCASION_ID,
+        envelopeId: undefined,
+      }),
+    );
+    expect(screen.getByLabelText("Occasion filter")).toHaveValue(OCCASION_ID);
+    expect(
+      screen.getByRole("option", { name: "Birthday (archived)" }),
+    ).toBeInTheDocument();
+
+    await userEvent.selectOptions(
+      screen.getByLabelText("Envelope filter"),
+      "Groceries",
+    );
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        envelopeId: ENVELOPE_ID,
+        occasionId: OCCASION_ID,
+      }),
+    );
+    const url = () =>
+      new URLSearchParams(screen.getByTestId("url").textContent!);
+    expect(url().get("envelopeId")).toBe(ENVELOPE_ID);
+
+    await userEvent.selectOptions(
+      screen.getByLabelText("Occasion filter"),
+      "All occasions",
+    );
+    expect(url().has("occasionId")).toBe(false);
+    expect(url().get("report")).toBe("category-trends");
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        envelopeId: ENVELOPE_ID,
+        occasionId: undefined,
+      }),
+    );
+  });
+
+  it("ignores a malformed envelope id in the URL", () => {
+    setupMock();
+    renderWithQueryClient(<CategoryTrends />, {
+      route: "/?envelopeId=not-a-uuid",
+    });
+    expect(mockHook).toHaveBeenLastCalledWith(
+      expect.objectContaining({ envelopeId: undefined }),
     );
   });
 

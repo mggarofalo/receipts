@@ -7866,6 +7866,20 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: envelopeId
+          in: query
+          required: false
+          description: Only purchases recorded with this envelope.
+          schema:
+            type: string
+            format: uuid
+        - name: occasionId
+          in: query
+          required: false
+          description: Only purchases tagged with this occasion.
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: OK
@@ -7880,6 +7894,79 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+  /api/reports/budget-trends:
+    get:
+      operationId: GetBudgetTrendsReport
+      tags: [Reports]
+      summary: Get spending trends by envelope or occasion
+      description: Returns time-series spending by each purchase's recorded envelope (the budget view) or occasion. Per currency, series beyond topN are collapsed into Other. Purchases with no envelope or occasion form their own series. Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: startDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Start date. Defaults to the first purchase.
+        - name: endDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: End date. Defaults to today.
+        - name: granularity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [daily, monthly, quarterly, yearly]
+            default: monthly
+        - name: topN
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 7
+        - name: groupBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [envelope, occasion]
+            default: envelope
+        - name: envelopeId
+          in: query
+          required: false
+          description: Only purchases recorded with this envelope.
+          schema:
+            type: string
+            format: uuid
+        - name: occasionId
+          in: query
+          required: false
+          description: Only purchases tagged with this occasion.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetTrendsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
   /api/reports/uncategorized-items:
     get:
       operationId: GetUncategorizedItemsReport
@@ -12465,6 +12552,47 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/CategoryTrendsCurrencyTotal"
+
+    BudgetTrendsResponse:
+      type: object
+      required: [groupBy, series, buckets]
+      properties:
+        groupBy:
+          type: string
+          description: envelope or occasion.
+        series:
+          type: array
+          description: Ordered series; each bucket's amounts parallel this list.
+          items:
+            $ref: "#/components/schemas/BudgetTrendsSeries"
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryTrendsBucket"
+
+    BudgetTrendsSeries:
+      type: object
+      required: [name, isActive, currency, isOther, total, purchaseCount]
+      properties:
+        id:
+          type: [string, "null"]
+          format: uuid
+          description: The envelope or occasion; null for purchases with none, and for Other.
+        name:
+          type: string
+        isActive:
+          type: boolean
+          description: False for an archived envelope or occasion, which keeps its history.
+        currency:
+          type: string
+        isOther:
+          type: boolean
+        total:
+          type: number
+          format: double
+        purchaseCount:
+          type: integer
+          format: int32
 
     CategoryTrendsCurrencyTotal:
       type: object

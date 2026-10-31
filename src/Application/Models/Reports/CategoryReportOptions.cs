@@ -5,4 +5,7 @@ public sealed record CategoryReportOptions(
 	CategoryReportRollup Rollup = CategoryReportRollup.AssignedCategory,
 	Guid? CategoryId = null,
 	DateTimeOffset? KnowledgeCutoff = null,
-	Guid? CapturedCurrentRevisionId = null);
+	Guid? CapturedCurrentRevisionId = null,
+	// Budget filters narrow the purchases before categorizing; category trends applies them.
+	Guid? EnvelopeId = null,
+	Guid? OccasionId = null);

@@ -77,6 +77,8 @@ it("freezes response and metadata before asynchronous export completion", async 
     {
       categoryView: "currentHierarchy",
       categoryId: "filter",
+      envelopeId: "envelope-1",
+      occasionId: "occasion-1",
       granularity: "monthly",
       topN: 3,
     },
@@ -90,11 +92,19 @@ it("freezes response and metadata before asynchronous export completion", async 
   const row = Object.fromEntries(
     resolved.headers.map((header, index) => [header, resolved.rows[0][index]]),
   );
+  expect(
+    resolved.headers.slice(
+      resolved.headers.indexOf("Category filter"),
+      resolved.headers.indexOf("Period"),
+    ),
+  ).toEqual(["Category filter", "Envelope filter", "Occasion filter"]);
   expect(row).toMatchObject({
     View: "currentHierarchy",
     "Generated at": "generated",
     Amount: 10.5,
     "Category filter": "filter",
+    "Envelope filter": "envelope-1",
+    "Occasion filter": "occasion-1",
     Path: "Food (archived) / Same",
     "Captured current revision": "head",
     "Path revision": "r1",
