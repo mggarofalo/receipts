@@ -24,7 +24,6 @@ const cacheKeys = {
   events: ["ynab", "events"],
   status: ["ynab", "status"],
   similarItems: ["similarItems", "milk"],
-  categoryRecommendations: ["categoryRecommendations", "milk"],
   envelopes: ["envelopes", "all"],
   occasions: ["occasions", "all"],
   itemTypeEnvelopeDefaults: ["item-type-envelope-defaults"],
@@ -92,7 +91,7 @@ describe("YNAB committed-change invalidation", () => {
     },
     {
       change: "item-embedding",
-      affected: [cacheKeys.similarItems, cacheKeys.categoryRecommendations],
+      affected: [cacheKeys.similarItems],
     },
   ])(
     "$change repairs exactly its projection family",

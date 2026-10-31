@@ -66,39 +66,6 @@ public class ItemTemplateSimilarityService(
 		})];
 	}
 
-	public async Task<List<CategoryRecommendation>> GetCategoryRecommendationsAsync(string description, int limit, CancellationToken cancellationToken)
-	{
-		// Get similar items (top 20) to aggregate category patterns
-		List<SimilarItemResult> similar = await GetSimilarItemsAsync(description, 20, 0.1, true, cancellationToken);
-
-		if (similar.Count == 0)
-		{
-			return [];
-		}
-
-		// Group by Category+Subcategory, weight by combined score
-		List<SimilarItemResult> withCategories = similar
-			.Where(s => !string.IsNullOrEmpty(s.DefaultCategory))
-			.ToList();
-
-		if (withCategories.Count == 0)
-		{
-			return [];
-		}
-
-		return [.. withCategories
-			.GroupBy(s => new { s.DefaultCategory, s.DefaultSubcategory })
-			.Select(g => new CategoryRecommendation
-			{
-				Category = g.Key.DefaultCategory!,
-				Subcategory = g.Key.DefaultSubcategory,
-				Confidence = g.Sum(s => s.CombinedScore) / withCategories.Count,
-				OccurrenceCount = g.Count(),
-			})
-			.OrderByDescending(r => r.Confidence)
-			.Take(limit)];
-	}
-
 	private static async Task<List<SimilarItemRow>> RunHybridSearchAsync(
 		ApplicationDbContext context, string searchText, Vector searchVector, int limit, double threshold, CancellationToken cancellationToken)
 	{

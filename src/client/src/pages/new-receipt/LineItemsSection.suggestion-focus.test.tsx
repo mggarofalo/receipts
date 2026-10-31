@@ -69,9 +69,6 @@ const server = setupServer(
     await responseGate.promise;
     return HttpResponse.json(withMatch ? [match] : []);
   }),
-  http.get("*/api/item-templates/category-suggestions", () =>
-    HttpResponse.json([]),
-  ),
   http.get("*/api/receipt-items/suggestions", () => HttpResponse.json([])),
 );
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
