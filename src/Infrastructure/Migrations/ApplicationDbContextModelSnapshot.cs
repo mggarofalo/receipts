@@ -1141,9 +1141,6 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<double?>("PreviousScore")
-                        .HasColumnType("double precision");
-
                     b.Property<Guid?>("PreviousTargetId")
                         .HasColumnType("uuid");
 
@@ -1519,9 +1516,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<Guid?>("NormalizedDescriptionId")
                         .HasColumnType("uuid");
-
-                    b.Property<double?>("NormalizedDescriptionMatchScore")
-                        .HasColumnType("double precision");
 
                     b.Property<Guid?>("OccasionId")
                         .HasColumnType("uuid");
@@ -2303,9 +2297,6 @@ namespace Infrastructure.Migrations
 
                     b.Property<string>("SourceLocation")
                         .HasColumnType("text");
-
-                    b.Property<double?>("SourceMatchScore")
-                        .HasColumnType("double precision");
 
                     b.Property<Guid?>("SourceReceiptRevision")
                         .HasColumnType("uuid");

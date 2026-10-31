@@ -101,7 +101,6 @@ public sealed partial class NormalizationCatalogTests
 		var late = rows.Single(x => x.Id == lateId);
 		late.NormalizedDescriptionId.Should().Be(keep.Id);
 		late.NormalizationReviewState.Should().Be(NormalizationReviewState.NeedsReview);
-		late.NormalizedDescriptionMatchScore.Should().BeNull("a merge clears the score measured against the discarded row");
 		await using var db = fixture.CreateDbContext();
 		(await db.NormalizedDescriptions.AnyAsync(x => x.Id == discard.Id)).Should().BeFalse();
 	}

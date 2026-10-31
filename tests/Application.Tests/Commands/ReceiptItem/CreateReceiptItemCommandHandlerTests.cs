@@ -70,7 +70,6 @@ public class CreateReceiptItemCommandHandlerTests
 		Guid receiptId = Guid.NewGuid(), templateId = Guid.NewGuid(), callerCanonical = Guid.NewGuid();
 		List<Domain.Core.ReceiptItem> input = ReceiptItemGenerator.GenerateList(3);
 		input[0].NormalizedDescriptionId = callerCanonical;
-		input[0].NormalizedDescriptionMatchScore = 0.42;
 		IReadOnlyList<Guid?> hints = new Guid?[] { templateId, null, templateId };
 		_receiptService.Setup(service => service.ExistsAsync(receiptId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
 		_receiptItemService.Setup(service => service.CreateAsync(It.IsAny<List<Domain.Core.ReceiptItem>>(), receiptId, It.IsAny<IReadOnlyList<Guid?>>(), It.IsAny<CancellationToken>()))
@@ -78,7 +77,6 @@ public class CreateReceiptItemCommandHandlerTests
 		await CreateHandler().Handle(new(input, receiptId, hints.ToList()), CancellationToken.None);
 		_receiptItemService.Verify(service => service.CreateAsync(It.Is<List<Domain.Core.ReceiptItem>>(items => items.SequenceEqual(input)), receiptId, It.Is<IReadOnlyList<Guid?>>(actual => actual.SequenceEqual(hints)), It.IsAny<CancellationToken>()), Times.Once);
 		input[0].NormalizedDescriptionId.Should().Be(callerCanonical);
-		input[0].NormalizedDescriptionMatchScore.Should().Be(0.42, "the handler forwards provenance; persistence owns trusted stamping and generic metadata rejection");
 	}
 
 	[Fact]

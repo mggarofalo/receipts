@@ -69,7 +69,6 @@ public partial class NormalizedDescriptionStaleWriteTests
 			if (changeDescription)
 			{
 				edited.NormalizedDescriptionId.Should().BeNull("an earlier null original must not hide a Milk assignment committed after that read");
-				edited.NormalizedDescriptionMatchScore.Should().BeNull();
 			}
 			else
 			{

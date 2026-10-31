@@ -509,7 +509,8 @@ public class BackupService(
 			cmd.Parameters.AddWithValue("$cat", item.Category);
 			cmd.Parameters.AddWithValue("$subcat", (object?)item.Subcategory ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$canonicalId", (object?)item.NormalizedDescriptionId?.ToString() ?? DBNull.Value);
-			cmd.Parameters.AddWithValue("$matchScore", (object?)item.NormalizedDescriptionMatchScore?.ToString("R", CultureInfo.InvariantCulture) ?? DBNull.Value);
+			// The column stays (RECEIPTS-1105) because every v5+ importer selects it; the score is retired.
+			cmd.Parameters.AddWithValue("$matchScore", DBNull.Value);
 			await cmd.ExecuteNonQueryAsync(cancellationToken);
 		}
 	}

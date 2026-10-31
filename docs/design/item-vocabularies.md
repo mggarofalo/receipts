@@ -56,11 +56,11 @@ cleared and it re-enters the queue naturally.
 receipt item: merge, split, reject and rename all treat it exactly like a resolver-derived one.
 The template does not get a veto over later admin decisions.
 
-### No match score is fabricated
+### No match score is recorded
 
-A stamped item gets `NormalizedDescriptionMatchScore = null`. The column records a cosine
-similarity, and nothing was compared — this is a declaration, not a match. A fabricated `1.0`
-would be indistinguishable from a perfect measured hit.
+A stamped item is a declaration, not a match, so nothing records a similarity for it. The
+`NormalizedDescriptionMatchScore` column that once held measured similarities was dropped in
+RECEIPTS-1105.
 
 ## Creating a template creates its canonical entry
 

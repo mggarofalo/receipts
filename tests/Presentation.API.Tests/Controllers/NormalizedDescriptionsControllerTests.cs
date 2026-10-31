@@ -1005,14 +1005,13 @@ public class NormalizedDescriptionsControllerTests
 	{
 		_mediatorMock
 			.Setup(m => m.Send(It.IsAny<PreviewRequeuePendingQuery>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RequeuePendingPreview(4, "digest-abc", 120, 118, 3, 90));
+			.ReturnsAsync(new RequeuePendingPreview(4, "digest-abc", 120, 3, 90));
 
 		Ok<RequeuePendingPreviewResponse> result = await _controller.PreviewRequeuePending(CancellationToken.None);
 
 		result.Value!.PendingDescriptionCount.Should().Be(4);
 		result.Value.PendingFingerprint.Should().Be("digest-abc");
 		result.Value.LinkedItemCount.Should().Be(120);
-		result.Value.StaleMatchScoreCount.Should().Be(118);
 		result.Value.EstimatedResolverCycles.Should().Be(3);
 		result.Value.EstimatedCatchUpSeconds.Should().Be(90);
 	}
@@ -1024,7 +1023,7 @@ public class NormalizedDescriptionsControllerTests
 
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedFingerprint == "digest-abc"), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RequeuePendingResult(4, 120, 118));
+			.ReturnsAsync(new RequeuePendingResult(4, 120));
 
 		Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem> result =
 			await _controller.RequeuePending(request, CancellationToken.None);
@@ -1032,7 +1031,6 @@ public class NormalizedDescriptionsControllerTests
 		Ok<RequeuePendingResponse> ok = Assert.IsType<Ok<RequeuePendingResponse>>(result.Result);
 		ok.Value!.DeletedDescriptionCount.Should().Be(4);
 		ok.Value.UnlinkedItemCount.Should().Be(120);
-		ok.Value.ClearedMatchScoreCount.Should().Be(118);
 	}
 
 	[Fact]
@@ -1076,7 +1074,7 @@ public class NormalizedDescriptionsControllerTests
 
 		_mediatorMock
 			.Setup(m => m.Send(It.Is<RequeuePendingCommand>(c => c.ExpectedFingerprint == "empty-digest"), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RequeuePendingResult(0, 0, 0));
+			.ReturnsAsync(new RequeuePendingResult(0, 0));
 
 		Results<Ok<RequeuePendingResponse>, BadRequestProblem, ConflictProblem> result =
 			await _controller.RequeuePending(request, CancellationToken.None);

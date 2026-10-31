@@ -146,7 +146,6 @@ public sealed partial class NormalizationCatalogService
 				|| !decisions[item.Id].Eligible)
 			{ member.State = "conflicted"; continue; }
 			item.NormalizedDescriptionId = operation.TargetId;
-			item.NormalizedDescriptionMatchScore = null;
 			item.NormalizationOrigin = operation.Exclude ? "excluded" : "mapped";
 			item.NormalizationMappingId = mapping.Id;
 			item.NormalizationAssignmentId = Guid.NewGuid();
@@ -282,7 +281,6 @@ public sealed partial class NormalizationCatalogService
 				|| item.NormalizationAssignmentId != member.AssignmentId || !parentCurrent || !targetValid)
 			{ member.State = "conflicted"; continue; }
 			item.NormalizedDescriptionId = member.PreviousTargetId;
-			item.NormalizedDescriptionMatchScore = member.PreviousScore;
 			item.NormalizationOrigin = member.PreviousOrigin;
 			item.NormalizationMappingId = member.PreviousMappingId;
 			// A new assignment token ensures an old operation cannot reclaim this restored state.

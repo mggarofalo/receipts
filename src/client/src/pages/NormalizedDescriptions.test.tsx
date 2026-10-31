@@ -234,7 +234,6 @@ const requeuePreview = {
   pendingDescriptionCount: 4,
   pendingFingerprint: "digest-abc",
   linkedItemCount: 120,
-  staleMatchScoreCount: 118,
   estimatedResolverCycles: 3,
   estimatedCatchUpSeconds: 90,
 };
@@ -1565,7 +1564,7 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
     const panel = await screen.findByTestId("requeue-preview-panel");
     expect(within(panel).getByText("4")).toBeInTheDocument();
     expect(within(panel).getByText("120")).toBeInTheDocument();
-    expect(within(panel).getByText("118")).toBeInTheDocument();
+    expect(within(panel).queryByText("Match scores")).not.toBeInTheDocument();
     // Even a legacy response carrying an estimate cannot promise automatic review.
     expect(screen.queryByText("1m 30s")).not.toBeInTheDocument();
     expect(
@@ -1632,7 +1631,6 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
           pendingDescriptionCount: 0,
           pendingFingerprint: "digest-empty",
           linkedItemCount: 0,
-          staleMatchScoreCount: 0,
           estimatedResolverCycles: 0,
           estimatedCatchUpSeconds: 0,
         },

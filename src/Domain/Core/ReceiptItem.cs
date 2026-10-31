@@ -27,11 +27,10 @@ public class ReceiptItem
 
 	// Resolver-populated fields — readonly from a domain-logic perspective, but public setters
 	// are required so Mapperly can populate them. Not included in the constructor: the
-	// NormalizedDescription resolver (see RECEIPTS-578) writes the FK, the match score, and
+	// NormalizedDescription resolver (see RECEIPTS-578) writes the FK, and
 	// read paths populate the denormalized name from the entity nav property.
 	public Guid? NormalizedDescriptionId { get; set; }
 	public string? NormalizedDescriptionName { get; set; }
-	public double? NormalizedDescriptionMatchScore { get; set; }
 
 	// The envelope recorded at save time; persistence derives it, so reads never recompute it.
 	public Guid? EnvelopeId { get; set; }

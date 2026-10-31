@@ -192,101 +192,6 @@ public class NormalizedDescriptionServiceTests
 				&& change.EntityId == null)), Times.Once);
 	}
 
-	// RECEIPTS-1099. A merge repoints items at the surviving row. Their match score was measured
-	// against the discarded row, and nothing re-measures it any more, so the merge clears it.
-	public sealed class MergeScoreClearing : NormalizedDescriptionServiceTests
-	{
-		private (Guid KeepId, Guid DiscardId, Guid ReceiptId) SeedMergePair()
-		{
-			Guid keepId = Guid.NewGuid();
-			Guid discardId = Guid.NewGuid();
-
-			using ApplicationDbContext seed = _contextFactory.CreateDbContext();
-			seed.NormalizedDescriptions.AddRange(
-				new NormalizedDescriptionEntity
-				{
-					Id = keepId,
-					CanonicalName = "Milk",
-					Status = NormalizedDescriptionStatus.Active,
-					CreatedAt = DateTimeOffset.UtcNow,
-					Embedding = new Vector(CreateFakeEmbedding()),
-				},
-				new NormalizedDescriptionEntity
-				{
-					Id = discardId,
-					CanonicalName = "Mlik",
-					Status = NormalizedDescriptionStatus.Active,
-					CreatedAt = DateTimeOffset.UtcNow,
-				});
-			seed.SaveChanges();
-
-			return (keepId, discardId, Guid.NewGuid());
-		}
-
-		[Fact]
-		public async Task MergeAsync_ClearsScoresOnLiveAndTrashedItemsWithoutEmbedding()
-		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair();
-
-			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-			{
-				ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.64, discardId);
-				trashed.DeletedAt = DateTimeOffset.UtcNow;
-				seed.ReceiptItems.AddRange(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId), trashed);
-				await SaveSeedAsync(seed);
-			}
-
-			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-			NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
-
-			await service.MergeAsync(keepId, discardId, CancellationToken.None);
-
-			// A trashed item restored from the recycle bin must not bring a stale score back
-			// with it — the same stranding class as RECEIPTS-801.
-			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-			List<ReceiptItemEntity> items = await verify.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().ToListAsync();
-			items.Should().HaveCount(2).And.OnlyContain(item => item.NormalizedDescriptionId == keepId && item.NormalizedDescriptionMatchScore == null);
-			_embeddingServiceMock.Verify(
-				e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-				Times.Never);
-		}
-
-		[Fact]
-		public async Task MergeAsync_RecordsTheLiveClearedCountOnBothAuditEntries()
-		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair();
-
-			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-			{
-				ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.5, discardId);
-				trashed.DeletedAt = DateTimeOffset.UtcNow;
-				seed.ReceiptItems.AddRange(
-					BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId),
-					BuildReceiptItemWithScore(receiptId, "Mlik whole", null, discardId),
-					trashed);
-				await SaveSeedAsync(seed);
-			}
-
-			NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
-
-			await service.MergeAsync(keepId, discardId, CancellationToken.None);
-
-			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-			List<AuditLogEntity> merges = await verify.AuditLogs
-				.Where(a => a.Action == AuditAction.Merge)
-				.ToListAsync();
-
-			merges.Should().HaveCount(2);
-			foreach (AuditLogEntity entry in merges)
-			{
-				Dictionary<string, string?> fields = entry.GetChanges()
-					.ToDictionary(c => c.FieldName, c => c.NewValue);
-				fields["clearedMatchScoreCount"].Should().Be("1");
-				fields.Should().NotContainKey("rescoredItemCount");
-			}
-		}
-	}
-
 	[Fact]
 	public async Task SplitAsync_CreatesNewActiveEntryAndRepointsReceiptItem()
 	{
@@ -1636,11 +1541,10 @@ public class NormalizedDescriptionServiceTests
 				BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview),
 				BuildDescription(activeId, "Active Row", NormalizedDescriptionStatus.Active));
 			seed.ReceiptItems.AddRange(
-				BuildReceiptItemWithScore(receiptId, "milk", 0.71, pendingId),
-				// No score: counts toward LinkedItemCount but not StaleMatchScoreCount.
-				BuildReceiptItemWithScore(receiptId, "bread", null, pendingId),
+				BuildLinkedReceiptItem(receiptId, "milk", pendingId),
+				BuildLinkedReceiptItem(receiptId, "bread", pendingId),
 				// Linked to an Active row — must not be counted at all.
-				BuildReceiptItemWithScore(receiptId, "eggs", 0.98, activeId));
+				BuildLinkedReceiptItem(receiptId, "eggs", activeId));
 			await SaveSeedAsync(seed);
 		}
 
@@ -1651,7 +1555,6 @@ public class NormalizedDescriptionServiceTests
 		preview.PendingDescriptionCount.Should().Be(1);
 		preview.PendingFingerprint.Should().Be(FingerprintOf(pendingId), "the digest identifies the exact set the caller was shown");
 		preview.LinkedItemCount.Should().Be(2);
-		preview.StaleMatchScoreCount.Should().Be(1);
 		// Similarity is advisory; returning purchases to review promises no scheduled rematching.
 		preview.EstimatedResolverCycles.Should().Be(0);
 		preview.EstimatedCatchUpSeconds.Should().Be(0);
@@ -1664,7 +1567,7 @@ public class NormalizedDescriptionServiceTests
 		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 		{
 			seed.NormalizedDescriptions.Add(BuildDescription(activeId, "Active Row", NormalizedDescriptionStatus.Active));
-			seed.ReceiptItems.Add(BuildReceiptItemWithScore(Guid.NewGuid(), "eggs", 0.98, activeId));
+			seed.ReceiptItems.Add(BuildLinkedReceiptItem(Guid.NewGuid(), "eggs", activeId));
 			await SaveSeedAsync(seed);
 		}
 
@@ -1677,13 +1580,12 @@ public class NormalizedDescriptionServiceTests
 		preview.PendingDescriptionCount.Should().Be(0);
 		preview.PendingFingerprint.Should().Be(FingerprintOf(), "the empty set still has a stable digest");
 		preview.LinkedItemCount.Should().Be(0);
-		preview.StaleMatchScoreCount.Should().Be(0);
 		preview.EstimatedResolverCycles.Should().Be(0);
 		preview.EstimatedCatchUpSeconds.Should().Be(0);
 	}
 
 	[Fact]
-	public async Task RequeuePendingAsync_DeletesPendingRowsAndClearsFkAndScore()
+	public async Task RequeuePendingAsync_DeletesPendingRowsAndClearsFk()
 	{
 		Guid pendingId = Guid.NewGuid();
 		Guid activeId = Guid.NewGuid();
@@ -1694,8 +1596,8 @@ public class NormalizedDescriptionServiceTests
 				BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview),
 				BuildDescription(activeId, "Active Row", NormalizedDescriptionStatus.Active));
 			seed.ReceiptItems.AddRange(
-				BuildReceiptItemWithScore(receiptId, "milk", 0.71, pendingId),
-				BuildReceiptItemWithScore(receiptId, "eggs", 0.98, activeId));
+				BuildLinkedReceiptItem(receiptId, "milk", pendingId),
+				BuildLinkedReceiptItem(receiptId, "eggs", activeId));
 			await SaveSeedAsync(seed);
 		}
 
@@ -1706,7 +1608,6 @@ public class NormalizedDescriptionServiceTests
 		result.Should().NotBeNull();
 		result!.DeletedDescriptionCount.Should().Be(1);
 		result.UnlinkedItemCount.Should().Be(1);
-		result.ClearedMatchScoreCount.Should().Be(1);
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		verify.NormalizedDescriptions.Should().ContainSingle().Which.Id.Should().Be(activeId);
@@ -1716,12 +1617,10 @@ public class NormalizedDescriptionServiceTests
 		// Both halves must be cleared. The FK alone would leave a score with nothing behind it —
 		// the delete cascade covers the FK only, which is exactly why this is done explicitly.
 		requeued.NormalizedDescriptionId.Should().BeNull();
-		requeued.NormalizedDescriptionMatchScore.Should().BeNull();
 
 		ReceiptItemEntity untouched = await verify.ReceiptItems.IgnoreAutoIncludes()
 			.SingleAsync(r => r.Description == "eggs");
 		untouched.NormalizedDescriptionId.Should().Be(activeId);
-		untouched.NormalizedDescriptionMatchScore.Should().Be(0.98);
 		_committedChangePublisherMock.Verify(p => p.PublishAsync(
 			It.Is<CommittedEntityChange>(change =>
 				change.EntityType == CommittedEntityType.NormalizedDescription
@@ -1738,10 +1637,10 @@ public class NormalizedDescriptionServiceTests
 		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 		{
 			seed.NormalizedDescriptions.Add(BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview));
-			ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "trashed milk", 0.71, pendingId);
+			ReceiptItemEntity trashed = BuildLinkedReceiptItem(receiptId, "trashed milk", pendingId);
 			trashed.Id = trashedId;
 			trashed.DeletedAt = DateTimeOffset.UtcNow;
-			seed.ReceiptItems.AddRange(BuildReceiptItemWithScore(receiptId, "live milk", 0.71, pendingId), trashed);
+			seed.ReceiptItems.AddRange(BuildLinkedReceiptItem(receiptId, "live milk", pendingId), trashed);
 			await SaveSeedAsync(seed);
 		}
 
@@ -1751,7 +1650,6 @@ public class NormalizedDescriptionServiceTests
 
 		// Counts describe live items only, matching MergeAsync's established convention.
 		result!.UnlinkedItemCount.Should().Be(1);
-		result.ClearedMatchScoreCount.Should().Be(1);
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		ReceiptItemEntity trashedAfter = await verify.ReceiptItems
@@ -1761,7 +1659,6 @@ public class NormalizedDescriptionServiceTests
 		// Repointed even though it isn't counted: restoring it from the recycle bin must not
 		// resurrect an item carrying a stale score for a description that no longer exists.
 		trashedAfter.NormalizedDescriptionId.Should().BeNull();
-		trashedAfter.NormalizedDescriptionMatchScore.Should().BeNull();
 	}
 
 	[Fact]
@@ -1772,7 +1669,7 @@ public class NormalizedDescriptionServiceTests
 		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 		{
 			seed.NormalizedDescriptions.Add(BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview));
-			seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "milk", 0.71, pendingId));
+			seed.ReceiptItems.Add(BuildLinkedReceiptItem(receiptId, "milk", pendingId));
 			await SaveSeedAsync(seed);
 		}
 
@@ -1788,7 +1685,6 @@ public class NormalizedDescriptionServiceTests
 		verify.NormalizedDescriptions.Should().ContainSingle();
 		ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
 		item.NormalizedDescriptionId.Should().Be(pendingId);
-		item.NormalizedDescriptionMatchScore.Should().Be(0.71);
 	}
 
 	[Fact]
@@ -1808,7 +1704,6 @@ public class NormalizedDescriptionServiceTests
 		result.Should().NotBeNull();
 		result!.DeletedDescriptionCount.Should().Be(0);
 		result.UnlinkedItemCount.Should().Be(0);
-		result.ClearedMatchScoreCount.Should().Be(0);
 		_committedChangePublisherMock.Verify(
 			p => p.PublishAsync(It.IsAny<CommittedEntityChange>()),
 			Times.Never);
@@ -1828,11 +1723,11 @@ public class NormalizedDescriptionServiceTests
 			seed.NormalizedDescriptions.AddRange(
 				BuildDescription(keepId, "Strawberry Jam", NormalizedDescriptionStatus.Active),
 				BuildDescription(discardId, "Strawbery Jam", NormalizedDescriptionStatus.PendingReview));
-			ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "trashed jam", 0.86, discardId);
+			ReceiptItemEntity trashed = BuildLinkedReceiptItem(receiptId, "trashed jam", discardId);
 			trashed.DeletedAt = DateTimeOffset.UtcNow;
 			seed.ReceiptItems.AddRange(
-				BuildReceiptItemWithScore(receiptId, "jam a", 0.86, discardId),
-				BuildReceiptItemWithScore(receiptId, "jam b", 0.86, discardId),
+				BuildLinkedReceiptItem(receiptId, "jam a", discardId),
+				BuildLinkedReceiptItem(receiptId, "jam b", discardId),
 				trashed);
 			await SaveSeedAsync(seed);
 		}
@@ -2100,9 +1995,9 @@ public class NormalizedDescriptionServiceTests
 		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 		{
 			seed.NormalizedDescriptions.Add(BuildDescription(pendingId, "Pending Row", NormalizedDescriptionStatus.PendingReview));
-			ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "trashed milk", 0.71, pendingId);
+			ReceiptItemEntity trashed = BuildLinkedReceiptItem(receiptId, "trashed milk", pendingId);
 			trashed.DeletedAt = DateTimeOffset.UtcNow;
-			seed.ReceiptItems.AddRange(BuildReceiptItemWithScore(receiptId, "live milk", 0.71, pendingId), trashed);
+			seed.ReceiptItems.AddRange(BuildLinkedReceiptItem(receiptId, "live milk", pendingId), trashed);
 			await SaveSeedAsync(seed);
 		}
 
@@ -2122,7 +2017,6 @@ public class NormalizedDescriptionServiceTests
 		fields["operation"].Should().Be("RequeuePending");
 		fields["deletedDescriptionCount"].Should().Be("1");
 		fields["unlinkedItemCount"].Should().Be("1");
-		fields["clearedMatchScoreCount"].Should().Be("1");
 		fields["unlinkedTrashedItemCount"].Should().Be("1");
 	}
 
@@ -2192,7 +2086,7 @@ public class NormalizedDescriptionServiceTests
 		};
 	}
 
-	private static ReceiptItemEntity BuildReceiptItemWithScore(Guid receiptId, string description, double? score, Guid? normalizedId)
+	private static ReceiptItemEntity BuildLinkedReceiptItem(Guid receiptId, string description, Guid? normalizedId)
 	{
 		return new ReceiptItemEntity
 		{
@@ -2206,7 +2100,6 @@ public class NormalizedDescriptionServiceTests
 			TotalAmountCurrency = Currency.USD,
 			Category = "Groceries",
 			NormalizedDescriptionId = normalizedId,
-			NormalizedDescriptionMatchScore = score,
 		};
 	}
 
@@ -2285,35 +2178,6 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
-	public async Task SplitAsync_ClearsTheScoreOfMovedItems()
-	{
-		// Arrange — the item carries a score measured against the row it is leaving.
-		Guid originId = Guid.NewGuid();
-		Guid receiptId = Guid.NewGuid();
-		Guid itemId = Guid.NewGuid();
-
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(BuildDescription(originId, "Dairy", NormalizedDescriptionStatus.Active));
-			ReceiptItemEntity item = BuildReceiptItem(itemId, receiptId, "Milk", originId);
-			item.NormalizedDescriptionMatchScore = 0.62;
-			seed.ReceiptItems.Add(item);
-			await SaveSeedAsync(seed);
-		}
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
-
-		// Act — the new row's name equals the item's raw text, which is a perfect logical match.
-		await service.SplitAsync([itemId], "Milk", CancellationToken.None);
-
-		// Assert — the stale 0.62 measured against "Dairy" is cleared, not re-measured (RECEIPTS-1099).
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == itemId)
-			.NormalizedDescriptionMatchScore.Should().BeNull();
-	}
-
-	[Fact]
 	public async Task SplitAsync_EmptySelection_Throws()
 	{
 		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
@@ -2374,7 +2238,7 @@ public class NormalizedDescriptionServiceTests
 
 
 	[Fact]
-	public async Task UpdateStatusAsync_ToRejected_UnlinksItemsAndClearsScores()
+	public async Task UpdateStatusAsync_ToRejected_UnlinksItems()
 	{
 		// Arrange
 		Guid descriptionId = Guid.NewGuid();
@@ -2392,10 +2256,8 @@ public class NormalizedDescriptionServiceTests
 			});
 
 			ReceiptItemEntity live = BuildReceiptItem(liveItemId, Guid.NewGuid(), "misc 4.99", descriptionId);
-			live.NormalizedDescriptionMatchScore = 0.71;
 
 			ReceiptItemEntity trashed = BuildReceiptItem(trashedItemId, Guid.NewGuid(), "misc 4.99", descriptionId);
-			trashed.NormalizedDescriptionMatchScore = 0.68;
 			trashed.DeletedAt = DateTimeOffset.UtcNow;
 
 			seed.ReceiptItems.AddRange(live, trashed);
@@ -2427,7 +2289,6 @@ public class NormalizedDescriptionServiceTests
 
 		// The score has to go with the link. A live item carrying a score with nothing to explain
 		// it is the inconsistent state RECEIPTS-883 exists to prevent.
-		items.Should().OnlyContain(r => r.NormalizedDescriptionMatchScore == null);
 	}
 
 	[Fact]

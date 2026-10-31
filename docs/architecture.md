@@ -247,7 +247,7 @@ Receipt edits own location, date, and tax amount/currency. Legacy image-path col
 are inert archival metadata owned only by portable backup import/export; receipt
 photos and their filesystem workers are retired (see [retirement](receipt-image-storage.md)). Item edits own the item code, raw description, quantity, prices/currencies, category, and subcategory; each item retains its stored `ReceiptId`, including batches spanning multiple receipts. Categories and subcategories remain historical string snapshots.
 
-An item edit with an identical raw description preserves both `NormalizedDescriptionId` and `NormalizedDescriptionMatchScore`, including curated links and null scores. Any ordinal text change, including case or whitespace, clears both fields in the same item update. The existing background resolver can then classify the new description; while unavailable, the item remains unresolved. A null score does not identify manual curation, so it is not used to infer provenance. Explicit normalization operations retain ownership of assigning and changing canonical links.
+An item edit with an identical raw description preserves `NormalizedDescriptionId`, including curated links. Any ordinal text change, including case or whitespace, clears it in the same item update. The existing background resolver can then classify the new description; while unavailable, the item remains unresolved. Explicit normalization operations retain ownership of assigning and changing canonical links.
 
 **Ignoring Navigation Properties:**
 ```csharp

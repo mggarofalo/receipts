@@ -25,7 +25,6 @@ public partial class TemplateNormalizationOwnershipTests
 		List<ReceiptItem> items = Enumerable.Range(0, 4).Select(_ => NewItem(seed.Bread)).ToList();
 		var created = await provider.GetRequiredService<CreateReceiptItemCommandHandler>().Handle(new(items, seed.Receipt, [seed.Template, null, seed.Template, Guid.NewGuid()]), CancellationToken.None);
 		created.Select(item => item.NormalizedDescriptionId).Should().Equal(seed.Milk, null, seed.Milk, null);
-		created.Should().OnlyContain(item => item.NormalizedDescriptionMatchScore == null);
 	}
 
 	[Theory]
@@ -71,7 +70,6 @@ public partial class TemplateNormalizationOwnershipTests
 		await transaction.CommitAsync();
 		var created = await creating.WaitAsync(TimeSpan.FromSeconds(10));
 		created.Should().ContainSingle().Which.NormalizedDescriptionId.Should().Be(deleting ? null : seed.Bread);
-		created[0].NormalizedDescriptionMatchScore.Should().BeNull();
 	}
 
 	[Fact]

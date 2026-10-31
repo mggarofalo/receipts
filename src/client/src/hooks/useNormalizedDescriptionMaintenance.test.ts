@@ -24,7 +24,6 @@ const previewBody = {
   pendingDescriptionCount: 4,
   pendingFingerprint: "digest-abc",
   linkedItemCount: 120,
-  staleMatchScoreCount: 118,
   estimatedResolverCycles: 3,
   estimatedCatchUpSeconds: 90,
 };
@@ -83,7 +82,6 @@ describe("useRequeuePendingMutation", () => {
       data: {
         deletedDescriptionCount: 4,
         unlinkedItemCount: 120,
-        clearedMatchScoreCount: 118,
       },
       error: undefined,
       response: { status: 200, ok: true } as Response,
@@ -111,7 +109,6 @@ describe("useRequeuePendingMutation", () => {
       data: {
         deletedDescriptionCount: 1,
         unlinkedItemCount: 1,
-        clearedMatchScoreCount: 1,
       },
       error: undefined,
       response: { status: 200, ok: true } as Response,
@@ -135,7 +132,6 @@ describe("useRequeuePendingMutation", () => {
       data: {
         deletedDescriptionCount: 0,
         unlinkedItemCount: 0,
-        clearedMatchScoreCount: 0,
       },
       error: undefined,
       response: { status: 200, ok: true } as Response,

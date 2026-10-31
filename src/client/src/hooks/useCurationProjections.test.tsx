@@ -131,7 +131,6 @@ const server = setupServer(
       return HttpResponse.json({
         deletedDescriptionCount: 1,
         unlinkedItemCount: 1,
-        clearedMatchScoreCount: 1,
       });
     },
   ),

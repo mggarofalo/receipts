@@ -385,7 +385,6 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			PendingDescriptionCount = preview.PendingDescriptionCount,
 			PendingFingerprint = preview.PendingFingerprint,
 			LinkedItemCount = preview.LinkedItemCount,
-			StaleMatchScoreCount = preview.StaleMatchScoreCount,
 			EstimatedResolverCycles = preview.EstimatedResolverCycles,
 			EstimatedCatchUpSeconds = preview.EstimatedCatchUpSeconds,
 		});
@@ -417,7 +416,6 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 		{
 			DeletedDescriptionCount = result.DeletedDescriptionCount,
 			UnlinkedItemCount = result.UnlinkedItemCount,
-			ClearedMatchScoreCount = result.ClearedMatchScoreCount,
 		});
 	}
 

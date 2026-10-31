@@ -396,6 +396,66 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 		finally { SqliteConnection.ClearAllPools(); File.Delete(path); }
 	}
 
+	// RECEIPTS-1105. The column stays in the archive, always empty, because every v5+ importer selects
+	// it; older backups still carry values, including the unlinked-but-scored rows earlier importers
+	// rejected. Import ignores every value.
+	[Fact]
+	public async Task RetiredMatchScores_AreExportedEmptyAndBackupsThatCarryThemStillRestore()
+	{
+		Guid receiptId = Guid.NewGuid(), canonicalId = Guid.NewGuid(), linkedId = Guid.NewGuid(), unlinkedId = Guid.NewGuid();
+		await using (ApplicationDbContext ctx = Source())
+		{
+			ctx.Receipts.Add(new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2024, 3, 4) });
+			ctx.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = canonicalId,
+				CanonicalName = "Scored butter",
+				Status = Domain.NormalizedDescriptions.NormalizedDescriptionStatus.Active,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			ctx.ReceiptItems.AddRange(
+				new ReceiptItemEntity { Id = linkedId, ReceiptId = receiptId, Description = "Butter", Quantity = 1, UnitPrice = 2, TotalAmount = 2, Category = "Food", NormalizedDescriptionId = canonicalId },
+				new ReceiptItemEntity { Id = unlinkedId, ReceiptId = receiptId, Description = "Bread", Quantity = 1, UnitPrice = 2, TotalAmount = 2, Category = "Food" });
+			await ctx.SaveChangesAsync();
+		}
+
+		string path = await new BackupService(new Factory(_source.CreateOptions()), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+		SqliteConnection.ClearAllPools();
+		try
+		{
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand count = sqlite.CreateCommand();
+				count.CommandText = "SELECT COUNT(*), COUNT(normalized_description_match_score) FROM receipt_items";
+				await using (SqliteDataReader reader = await count.ExecuteReaderAsync())
+				{
+					await reader.ReadAsync();
+					reader.GetInt64(0).Should().Be(2);
+					reader.GetInt64(1).Should().Be(0, "the retired score is exported empty");
+				}
+				await using SqliteCommand legacy = sqlite.CreateCommand();
+				legacy.CommandText = "UPDATE receipt_items SET normalized_description_match_score = '0.87'";
+				(await legacy.ExecuteNonQueryAsync()).Should().Be(2);
+			}
+
+			BackupImportService importer = new(new Factory(_target.CreateOptions()), NullLogger<BackupImportService>.Instance);
+			await using (FileStream stream = File.OpenRead(path))
+			{
+				Func<Task> import = () => importer.ImportFromSqliteAsync(stream, CancellationToken.None);
+				await import.Should().NotThrowAsync("an older backup that carries match scores must still restore");
+			}
+
+			await using ApplicationDbContext target = Target();
+			List<ReceiptItemEntity> restored = await target.ReceiptItems.IgnoreAutoIncludes().AsNoTracking()
+				.Where(item => item.Id == linkedId || item.Id == unlinkedId).ToListAsync();
+			restored.Should().HaveCount(2);
+			restored.Single(item => item.Id == linkedId).NormalizedDescriptionId.Should().Be(canonicalId);
+			restored.Single(item => item.Id == unlinkedId).NormalizedDescriptionId.Should().BeNull();
+		}
+		finally { SqliteConnection.ClearAllPools(); File.Delete(path); }
+	}
+
 	[Fact]
 	public async Task V13_YnabStableMappings_RestoreFreshReplayAndPreserveOnV12Import()
 	{

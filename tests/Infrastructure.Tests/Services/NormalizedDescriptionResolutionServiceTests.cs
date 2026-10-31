@@ -46,7 +46,7 @@ public class NormalizedDescriptionResolutionServiceTests
 	}
 
 	[Fact]
-	public async Task ApprovedScope_LinksDuplicatesOfflineWithoutInventingScores_AndPublishesOnce()
+	public async Task ApprovedScope_LinksDuplicatesOffline_AndPublishesOnce()
 	{
 		var first = BuildItem("Milk"); var second = BuildItem("Milk");
 		await SeedReceiptAndItemsAsync(first, second);
@@ -60,7 +60,7 @@ public class NormalizedDescriptionResolutionServiceTests
 		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(2);
 		(await service.ProcessPendingResolutionsAsync(CancellationToken.None)).Linked.Should().Be(0);
 		await using var verify = _contextFactory.CreateDbContext();
-		verify.ReceiptItems.Should().OnlyContain(i => i.NormalizedDescriptionId == target && i.NormalizedDescriptionMatchScore == null);
+		verify.ReceiptItems.Should().OnlyContain(i => i.NormalizedDescriptionId == target);
 		verify.NormalizedDescriptions.Should().ContainSingle();
 		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(c => c.EntityType == CommittedEntityType.ReceiptItem && c.ChangeType == CommittedChangeType.Updated && c.SuppressToast)), Times.Once);
 	}
@@ -96,7 +96,6 @@ public class NormalizedDescriptionResolutionServiceTests
 			context.NormalizedDescriptions.Add(new() { Id = historicalTarget, CanonicalName = "Historical identity", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow });
 			await context.SaveChangesAsync();
 			item.NormalizedDescriptionId = historicalTarget;
-			item.NormalizedDescriptionMatchScore = 0.42;
 		}
 		await SeedReceiptAndItemsAsync(item);
 		await ApproveAsync("Milk", reason == "rejected-target" ? NormalizedDescriptionStatus.Rejected : NormalizedDescriptionStatus.Active);
@@ -105,7 +104,6 @@ public class NormalizedDescriptionResolutionServiceTests
 		await using var verify = _contextFactory.CreateDbContext();
 		var stored = await verify.ReceiptItems.IgnoreQueryFilters().SingleAsync();
 		stored.NormalizedDescriptionId.Should().Be(reason == "linked" ? historicalTarget : null);
-		stored.NormalizedDescriptionMatchScore.Should().Be(reason == "linked" ? 0.42 : null);
 		_publisherMock.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);
 	}
 

@@ -284,7 +284,6 @@ public class ReceiptItemRepositoryTests
 
 			ReceiptItemEntity linked = ReceiptItemEntityGenerator.Generate(receipt.Id);
 			linked.NormalizedDescriptionId = normalizedId;
-			linked.NormalizedDescriptionMatchScore = 0.91;
 			context.ReceiptItems.Add(linked);
 			await context.SaveChangesAsync(CancellationToken.None);
 		}
@@ -295,7 +294,6 @@ public class ReceiptItemRepositoryTests
 
 		ReceiptItemEntity row = actual.Should().ContainSingle().Subject;
 		row.NormalizedDescriptionId.Should().Be(normalizedId);
-		row.NormalizedDescriptionMatchScore.Should().Be(0.91);
 		// The neighbour comes through as a trimmed stand-in so the mapper can denormalize a name
 		// without an Include dragging the embedding across the wire for every row.
 		row.NormalizedDescription.Should().NotBeNull();

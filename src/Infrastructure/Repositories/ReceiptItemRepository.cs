@@ -125,7 +125,6 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			Category = ri.Category,
 			Subcategory = ri.Subcategory,
 			NormalizedDescriptionId = ri.NormalizedDescriptionId,
-			NormalizedDescriptionMatchScore = ri.NormalizedDescriptionMatchScore,
 			EnvelopeId = ri.EnvelopeId,
 			EnvelopeSource = ri.EnvelopeSource,
 			OccasionId = ri.OccasionId,
@@ -332,7 +331,6 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			{
 				ReceiptItemEntity entity = entities[i];
 				entity.NormalizedDescriptionId = null;
-				entity.NormalizedDescriptionMatchScore = null;
 				if (i < hints.Length && hints[i] is { } templateId && templates.TryGetValue(templateId, out ItemTemplateEntity? template)
 					&& template.NormalizedDescriptionId is { } targetId && targets.ContainsKey(targetId))
 				{
@@ -414,11 +412,10 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			ReceiptItemEntity existingEntity = existingEntities.Single(e => e.Id == entity.Id);
 			await ClassificationService.ProtectLegacyEditAsync(context, entity, existingEntity, cancellationToken);
 			// Canonical identity describes the raw text. Ordinary edits preserve it; a text
-			// change invalidates both fields so the resolver can classify the new description.
+			// change clears it so the resolver can classify the new description.
 			if (!string.Equals(existingEntity.Description, entity.Description, StringComparison.Ordinal))
 			{
 				existingEntity.NormalizedDescriptionId = null;
-				existingEntity.NormalizedDescriptionMatchScore = null;
 			}
 
 			existingEntity.NormalizationIntent = entity.NormalizationIntent;

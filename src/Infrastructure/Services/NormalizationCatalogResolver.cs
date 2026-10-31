@@ -74,7 +74,6 @@ internal static class NormalizationCatalogResolver
 				item.NormalizedDescriptionId = mapping.TargetId;
 				item.NormalizationOrigin = mapping.Exclude ? "excluded" : "mapped";
 				item.NormalizationMappingId = mapping.Id;
-				item.NormalizedDescriptionMatchScore = null;
 			}
 			else { continue; }
 			item.NormalizationAssignmentId = Guid.NewGuid();

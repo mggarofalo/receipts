@@ -64,7 +64,7 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server)
 	}
 
 	[Fact]
-	public async Task ProcessPendingResolutionsAsync_LinksItems_ViaSeparatelyApprovedCaseSensitiveScopes_WithoutSimilarityScores()
+	public async Task ProcessPendingResolutionsAsync_LinksItems_ViaSeparatelyApprovedCaseSensitiveScopes()
 	{
 		// Arrange — pre-seed canonical entries so the resolver routes every description
 		await ResetTablesAsync();
@@ -129,9 +129,6 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server)
 		persistedSecond.NormalizedDescriptionId.Should().Be(milkId);
 		persistedThird.NormalizedDescriptionId.Should().Be(bananaId);
 
-		persistedFirst.NormalizedDescriptionMatchScore.Should().BeNull();
-		persistedSecond.NormalizedDescriptionMatchScore.Should().BeNull();
-		persistedThird.NormalizedDescriptionMatchScore.Should().BeNull();
 
 		int canonicalCount = await verify.NormalizedDescriptions.AsNoTracking().CountAsync();
 		canonicalCount.Should().Be(2);
@@ -182,7 +179,6 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server)
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		List<ReceiptItemEntity> items = await verify.ReceiptItems.AsNoTracking().ToListAsync();
 		items.Should().OnlyContain(i => i.NormalizedDescriptionId == canonicalId);
-		items.Should().OnlyContain(i => i.NormalizedDescriptionMatchScore == null);
 	}
 
 	[Fact]
@@ -269,7 +265,6 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server)
 			// Already-linked: the resolver must not re-touch this row.
 			ReceiptItemEntity linked = WithDescription(receipt.Id, "Pre-existing");
 			linked.NormalizedDescriptionId = existingCanonicalId;
-			linked.NormalizedDescriptionMatchScore = 0.42;
 
 			// Soft-deleted: the resolver must skip it.
 			ReceiptItemEntity deleted = WithDescription(receipt.Id, "Unresolved");
@@ -304,7 +299,6 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server)
 			.AsNoTracking()
 			.SingleAsync(i => i.Description == "Pre-existing");
 		persistedLinked.NormalizedDescriptionId.Should().Be(existingCanonicalId);
-		persistedLinked.NormalizedDescriptionMatchScore.Should().Be(0.42);
 
 		// The soft-deleted row is still unresolved.
 		ReceiptItemEntity persistedDeleted = await verify.ReceiptItems
@@ -322,7 +316,6 @@ public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server)
 			.AsNoTracking()
 			.SingleAsync(i => i.Description == "Unresolved" && i.DeletedAt == null);
 		persistedTarget.NormalizedDescriptionId.Should().Be(newCanonicalId);
-		persistedTarget.NormalizedDescriptionMatchScore.Should().BeNull();
 	}
 
 	private async Task ApproveMatchingSourcesAsync()

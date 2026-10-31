@@ -6,7 +6,7 @@ namespace Application.Tests.Normalization;
 
 public class NormalizationAiDecisionPolicyTests
 {
-	private static NormalizationAiSourceState Source() => new(Guid.NewGuid(), "Raw milk", null, null, null, null);
+	private static NormalizationAiSourceState Source() => new(Guid.NewGuid(), "Raw milk", null, null, null);
 
 	[Theory]
 	[InlineData("unresolved", true)]

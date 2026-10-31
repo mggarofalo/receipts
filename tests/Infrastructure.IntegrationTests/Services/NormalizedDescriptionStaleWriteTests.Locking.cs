@@ -108,7 +108,6 @@ public partial class NormalizedDescriptionStaleWriteTests
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		ReceiptItemEntity item = await verify.ReceiptItems.SingleAsync(item => item.Id == seed.Item);
 		item.NormalizedDescriptionId.Should().BeNull();
-		item.NormalizedDescriptionMatchScore.Should().BeNull();
 		(await verify.NormalizedDescriptions.SingleAsync(row => row.Id == seed.Milk)).Status.Should().Be(NormalizedDescriptionStatus.Rejected);
 		(await AuditCountAsync(seed.Item)).Should().Be(rejectionWins ? 1 : 3, "only committed insert, attachment and rejection detachment belong in the item history");
 	}
@@ -142,7 +141,6 @@ public partial class NormalizedDescriptionStaleWriteTests
 		{
 			ReceiptItemEntity unchanged = await verify.ReceiptItems.SingleAsync(item => item.Id == seed.Item);
 			unchanged.NormalizedDescriptionId.Should().BeNull();
-			unchanged.NormalizedDescriptionMatchScore.Should().BeNull();
 		}
 		(await AuditCountAsync(seed.Item)).Should().Be(1, "the failed transaction cannot leave a normalization audit without its business change");
 		publisher.Verify(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()), Times.Never);

@@ -4,7 +4,7 @@ namespace Application.NormalizationAi;
 
 /// <summary>Observed business state; storage adapters supply these facts while holding write guards.</summary>
 public sealed record NormalizationAiSourceState(Guid Revision, string Description, Guid? CanonicalId,
-	Guid? CanonicalRevision, NormalizedDescriptionStatus? CanonicalStatus, double? MatchScore,
+	Guid? CanonicalRevision, NormalizedDescriptionStatus? CanonicalStatus,
 	bool ItemActive = true, bool ParentActive = true, bool TemplateProtected = false, bool ExactRejected = false);
 
 /// <summary>

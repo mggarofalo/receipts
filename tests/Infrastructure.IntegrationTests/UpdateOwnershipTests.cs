@@ -70,11 +70,9 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 	}
 
 	[Theory]
-	[InlineData(1, null)]
-	[InlineData(2, null)]
-	[InlineData(1, 0.42)]
-	[InlineData(2, 0.42)]
-	public async Task ItemService_UnchangedDescriptions_PreserveCanonicalIdentityAndScore(int count, double? score)
+	[InlineData(1)]
+	[InlineData(2)]
+	public async Task ItemService_UnchangedDescriptions_PreserveCanonicalIdentity(int count)
 	{
 		Guid receiptId = Guid.NewGuid();
 		Guid canonicalId = Guid.NewGuid();
@@ -88,7 +86,6 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			TotalAmount = 3,
 			Category = "Food",
 			NormalizedDescriptionId = canonicalId,
-			NormalizedDescriptionMatchScore = score,
 		}).ToList();
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
@@ -122,7 +119,6 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			stored.Subcategory.Should().Be("Dairy");
 			stored.ReceiptItemCode.Should().Be("new-code");
 			stored.NormalizedDescriptionId.Should().Be(canonicalId);
-			stored.NormalizedDescriptionMatchScore.Should().Be(score);
 		}
 	}
 
@@ -193,7 +189,6 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			TotalAmount = 3,
 			Category = "Food",
 			NormalizedDescriptionId = canonicalId,
-			NormalizedDescriptionMatchScore = index == 0 ? null : 0.42,
 		}).ToList();
 		await using (ApplicationDbContext seed = fixture.CreateDbContext())
 		{
@@ -233,7 +228,6 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			stored.Subcategory.Should().Be("Dairy");
 			stored.ReceiptItemCode.Should().Be("new-code");
 			stored.NormalizedDescriptionId.Should().Be(original.NormalizedDescriptionId);
-			stored.NormalizedDescriptionMatchScore.Should().Be(original.NormalizedDescriptionMatchScore);
 		}
 	}
 
@@ -248,8 +242,8 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			seed.Receipts.Add(new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 1, 1) });
 			seed.NormalizedDescriptions.AddRange(Canonical(milkId, milk), Canonical(breadId, bread));
 			seed.ReceiptItems.AddRange(
-				new ReceiptItemEntity { Id = changedId, ReceiptId = receiptId, Description = milk, Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = milkId, NormalizedDescriptionMatchScore = 0.42 },
-				new ReceiptItemEntity { Id = unchangedId, ReceiptId = receiptId, Description = unchanged, Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = milkId, NormalizedDescriptionMatchScore = 0.71 });
+				new ReceiptItemEntity { Id = changedId, ReceiptId = receiptId, Description = milk, Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = milkId },
+				new ReceiptItemEntity { Id = unchangedId, ReceiptId = receiptId, Description = unchanged, Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = milkId });
 			await seed.SaveChangesAsync();
 		}
 		DescriptionChangeSignal signal = new();
@@ -267,10 +261,8 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 		{
 			ReceiptItemEntity changed = await read.ReceiptItems.IgnoreAutoIncludes().SingleAsync(item => item.Id == changedId);
 			changed.NormalizedDescriptionId.Should().BeNull();
-			changed.NormalizedDescriptionMatchScore.Should().BeNull();
 			ReceiptItemEntity retained = await read.ReceiptItems.IgnoreAutoIncludes().SingleAsync(item => item.Id == unchangedId);
 			retained.NormalizedDescriptionId.Should().Be(milkId);
-			retained.NormalizedDescriptionMatchScore.Should().Be(0.71);
 			(await read.DistinctDescriptions.AnyAsync(description => description.Description == milk)).Should().BeFalse();
 			(await read.DistinctDescriptions.AnyAsync(description => description.Description == bread)).Should().BeTrue();
 		}
@@ -287,7 +279,6 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			var pending = await approve.ReceiptItems.AsNoTracking().SingleAsync(item => item.Id == changedId);
 			pending.NormalizedDescriptionId.Should().BeNull();
 			pending.NormalizationReviewState.Should().Be(NormalizationReviewState.NeedsReview);
-			pending.NormalizedDescriptionMatchScore.Should().BeNull();
 			(await approve.NormalizationReviewWork.AnyAsync(work => work.ItemId == changedId)).Should().BeTrue();
 			var key = NormalizationCatalogPolicy.Normalize(new("Store", bread, null));
 			approve.NormalizationSourceMappings.Add(new()
@@ -308,13 +299,11 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		ReceiptItemEntity resolved = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync(item => item.Id == changedId);
 		resolved.NormalizedDescriptionId.Should().Be(breadId);
-		resolved.NormalizedDescriptionMatchScore.Should().BeNull("mapping authority is not a similarity score");
 		resolved.NormalizationReviewState.Should().Be(NormalizationReviewState.Verified);
 		resolved.ReviewedTargetId.Should().Be(breadId);
 		(await verify.NormalizationReviewWork.AnyAsync(work => work.ItemId == changedId)).Should().BeFalse();
 		ReceiptItemEntity stillCurated = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync(item => item.Id == unchangedId);
 		stillCurated.NormalizedDescriptionId.Should().Be(milkId);
-		stillCurated.NormalizedDescriptionMatchScore.Should().Be(0.71);
 	}
 
 	private static NormalizedDescriptionEntity Canonical(Guid id, string name) => new()

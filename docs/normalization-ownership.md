@@ -94,7 +94,7 @@ Real PostgreSQL creation-chain and controlled matching/lock-wait tests cover the
 
 ## Retired threshold matcher
 
-The settings-page matcher (auto-accept and pending-review thresholds, impact preview and match test) was removed in RECEIPTS-1099; see [the decision](decisions/2026-10-31-retire-threshold-matcher.md). It only simulated a semantic resolver that no longer runs. Live resolution uses reviewed exact scoped mappings. Catalog source review shows the real candidate shortlist. Merge and split clear the moved items' `NormalizedDescriptionMatchScore` rather than measuring it again against the surviving row.
+The settings-page matcher (auto-accept and pending-review thresholds, impact preview and match test) was removed in RECEIPTS-1099; see [the decision](decisions/2026-10-31-retire-threshold-matcher.md). It only simulated a semantic resolver that no longer runs. Live resolution uses reviewed exact scoped mappings. Catalog source review shows the real candidate shortlist. RECEIPTS-1105 then dropped `NormalizedDescriptionMatchScore`, together with the catalog-undo snapshot of it and the ChatGPT proposal's `SourceMatchScore`, because nothing read them.
 
 ## Product identity and readable display labels
 

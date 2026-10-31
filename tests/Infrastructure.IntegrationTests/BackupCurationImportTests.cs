@@ -298,7 +298,6 @@ public partial class BackupCurationImportTests
 		await using ApplicationDbContext read = target.CreateDbContext();
 		ReceiptItemEntity stored = await read.ReceiptItems.SingleAsync(row => row.Id == item);
 		stored.NormalizedDescriptionId.Should().BeNull();
-		stored.NormalizedDescriptionMatchScore.Should().BeNull();
 		(await read.ItemTemplates.SingleAsync(row => row.Id == template)).NormalizedDescriptionId.Should().BeNull();
 		(await read.AcceptedDuplicatePairs.AnyAsync(row => row.Id == existingPair)).Should().BeTrue();
 		if (version == 4)
@@ -324,7 +323,7 @@ public partial class BackupCurationImportTests
 			seed.NormalizedDescriptions.AddRange(
 				new() { Id = neighbour, CanonicalName = $"Neighbour {neighbour}", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
 				new() { Id = canonical, CanonicalName = canonicalName, DisplayLabel = $"Human label {canonical}", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow, NearestNeighbourId = neighbour, NearestNeighbourSimilarity = 0.86 });
-			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = canonical, NormalizedDescriptionMatchScore = 0.79 });
+			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = canonical });
 			seed.ItemTemplates.Add(new() { Id = template, Name = $"Template {template}", NormalizedDescriptionId = canonical });
 			await seed.SaveChangesAsync();
 		}
@@ -341,7 +340,6 @@ public partial class BackupCurationImportTests
 		await using ApplicationDbContext read = target.CreateDbContext();
 		ReceiptItemEntity stored = await read.ReceiptItems.SingleAsync(row => row.Id == item);
 		stored.NormalizedDescriptionId.Should().Be(canonical);
-		stored.NormalizedDescriptionMatchScore.Should().Be(0.79);
 		(await read.ItemTemplates.SingleAsync(row => row.Id == template)).NormalizedDescriptionId.Should().Be(canonical);
 		NormalizedDescriptionEntity row = await read.NormalizedDescriptions.SingleAsync(row => row.Id == canonical);
 		row.DisplayLabel.Should().Be($"Human label {canonical}");
@@ -363,7 +361,7 @@ public partial class BackupCurationImportTests
 			seed.NormalizedDescriptions.AddRange(
 				new() { Id = neighbour, CanonicalName = $"Neighbour {neighbour}", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow },
 				new() { Id = canonical, CanonicalName = canonicalName, DisplayLabel = $"Human label {canonical}", Status = NormalizedDescriptionStatus.Active, CreatedAt = DateTimeOffset.UtcNow, NearestNeighbourId = neighbour, NearestNeighbourSimilarity = 0.86 });
-			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = canonical, NormalizedDescriptionMatchScore = 0.79 });
+			seed.ReceiptItems.Add(new() { Id = item, ReceiptId = receipt, Description = "Milk", Quantity = 1, UnitPrice = 3, TotalAmount = 3, Category = "Food", NormalizedDescriptionId = canonical });
 			seed.ItemTemplates.Add(new() { Id = template, Name = $"Template {template}", NormalizedDescriptionId = canonical });
 			await seed.SaveChangesAsync();
 		}
@@ -379,7 +377,6 @@ public partial class BackupCurationImportTests
 		await using ApplicationDbContext read = target.CreateDbContext();
 		ReceiptItemEntity stored = await read.ReceiptItems.SingleAsync(row => row.Id == item);
 		stored.NormalizedDescriptionId.Should().Be(changed ? null : canonical);
-		stored.NormalizedDescriptionMatchScore.Should().Be(changed ? null : 0.79);
 		(await read.ItemTemplates.SingleAsync(row => row.Id == template)).NormalizedDescriptionId.Should().Be(canonical);
 		NormalizedDescriptionEntity row = await read.NormalizedDescriptions.SingleAsync(row => row.Id == canonical);
 		row.DisplayLabel.Should().Be($"Human label {canonical}");

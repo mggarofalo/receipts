@@ -43,7 +43,6 @@ public sealed class NormalizationAiProposalEntity
 	public string? SuggestedDisplayLabel { get; set; }
 	public Guid? SourceCanonicalId { get; set; }
 	public Guid? SourceCanonicalRevision { get; set; }
-	public double? SourceMatchScore { get; set; }
 	public string Description { get; set; } = string.Empty;
 	public string CandidatesJson { get; set; } = "[]";
 	public string Action { get; set; } = "pending";

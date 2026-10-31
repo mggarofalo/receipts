@@ -648,7 +648,6 @@ public class ReceiptItemsControllerTests
 		ReceiptItem mediatorReturn = ReceiptItemGenerator.Generate();
 		mediatorReturn.NormalizedDescriptionId = normalizedId;
 		mediatorReturn.NormalizedDescriptionName = "Grapes";
-		mediatorReturn.NormalizedDescriptionMatchScore = 0.87;
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetReceiptItemByIdQuery>(q => q.Id == mediatorReturn.Id),
@@ -663,7 +662,6 @@ public class ReceiptItemsControllerTests
 		ReceiptItemResponse response = Assert.IsType<ReceiptItemResponse>(okResult.Value);
 		response.NormalizedDescriptionId.Should().Be(normalizedId);
 		response.NormalizedDescriptionName.Should().Be("Grapes");
-		response.NormalizedDescriptionMatchScore.Should().Be(0.87);
 	}
 
 	[Fact]
@@ -685,7 +683,6 @@ public class ReceiptItemsControllerTests
 		ReceiptItemResponse response = Assert.IsType<ReceiptItemResponse>(okResult.Value);
 		response.NormalizedDescriptionId.Should().BeNull();
 		response.NormalizedDescriptionName.Should().BeNull();
-		response.NormalizedDescriptionMatchScore.Should().BeNull();
 	}
 
 	[Fact]

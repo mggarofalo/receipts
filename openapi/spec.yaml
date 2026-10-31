@@ -4674,9 +4674,8 @@ paths:
       tags: [NormalizedDescriptions]
       summary: Preview what a requeue of pending descriptions would destroy
       description: |
-        Reports how many `PendingReview` rows would be deleted, how many live
-        ReceiptItems would be unlinked, and how many stale
-        `NormalizedDescriptionMatchScore` values would be cleared. Nothing rebuilds
+        Reports how many `PendingReview` rows would be deleted and how many live
+        ReceiptItems would be unlinked. Nothing rebuilds
         the deleted rows automatically; the unlinked items wait for review in Catalog.
 
         Read-only â€” nothing is modified. Also serves as the post-run
@@ -4700,9 +4699,8 @@ paths:
       summary: Delete every pending-review description and return its items to review
       description: |
         Deletes every `PendingReview` NormalizedDescription and, in the same
-        transaction, nulls both `NormalizedDescriptionId` and
-        `NormalizedDescriptionMatchScore` on every ReceiptItem that pointed at
-        one. Those items become unresolved. No similarity matcher re-links them:
+        transaction, nulls `NormalizedDescriptionId` on every ReceiptItem that
+        pointed at one. Those items become unresolved. No similarity matcher re-links them:
         automatic resolution applies only exact, reviewed source mappings, so the
         items wait for review in Catalog.
 
@@ -13797,7 +13795,6 @@ components:
           pendingDescriptionCount,
           pendingFingerprint,
           linkedItemCount,
-          staleMatchScoreCount,
           estimatedResolverCycles,
           estimatedCatchUpSeconds,
         ]
@@ -13813,10 +13810,6 @@ components:
           type: integer
           format: int32
           description: Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here â€” the same convention the merge endpoint uses.
-        staleMatchScoreCount:
-          type: integer
-          format: int32
-          description: Number of those live items that also carry a non-null NormalizedDescriptionMatchScore, which the requeue clears in the same transaction. Reads zero after a successful run.
         estimatedResolverCycles:
           type: integer
           format: int32
@@ -13829,7 +13822,7 @@ components:
     RequeuePendingResponse:
       type: object
       required:
-        [deletedDescriptionCount, unlinkedItemCount, clearedMatchScoreCount]
+        [deletedDescriptionCount, unlinkedItemCount]
       properties:
         deletedDescriptionCount:
           type: integer
@@ -13839,10 +13832,6 @@ components:
           type: integer
           format: int32
           description: Number of live ReceiptItems whose NormalizedDescriptionId was nulled.
-        clearedMatchScoreCount:
-          type: integer
-          format: int32
-          description: Number of live ReceiptItems whose NormalizedDescriptionMatchScore was nulled.
 
     # â”€â”€ Receipt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -14361,10 +14350,6 @@ components:
         normalizedDescriptionName:
           type: ["string", "null"]
           description: "Display label of a live active or pending identity. Provisional unless normalizationReviewState is verified; rejected and excluded associations are hidden."
-        normalizedDescriptionMatchScore:
-          type: ["number", "null"]
-          format: double
-          description: "Cosine similarity captured when the resolver linked this item; null for unresolved or no-match-created items."
 
     ReceiptItemListResponse:
       type: object
