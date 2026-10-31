@@ -15,6 +15,7 @@ import Taxonomy from "@/pages/Taxonomy";
 import HistoricalCleanup from "@/pages/HistoricalCleanup";
 import ClassificationWorkspace from "@/pages/ClassificationWorkspace";
 import CategoryAssistanceSettings from "@/pages/settings/CategoryAssistanceSettings";
+import RestructureCategories from "@/pages/RestructureCategories";
 import Receipts from "@/pages/Receipts";
 import Reports from "@/pages/Reports";
 import PurchaseSearch from "@/pages/PurchaseSearch";
@@ -64,6 +65,14 @@ export const routeConfig = [
             element: (
               <AdminRoute>
                 <CategoryAssistanceSettings />
+              </AdminRoute>
+            ),
+          },
+          {
+            path: "/admin/restructure",
+            element: (
+              <AdminRoute>
+                <RestructureCategories />
               </AdminRoute>
             ),
           },

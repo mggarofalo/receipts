@@ -55,7 +55,7 @@ public sealed partial class ClassificationTests
 		}
 		await RejectHistoricalSql(db, "DELETE FROM taxonomy.\"HistoricalOperationItems\" WHERE \"OperationId\" = {0}", request.OperationId, "evidence is retained");
 		await RejectHistoricalSql(db, "DELETE FROM taxonomy.\"HistoricalOperations\" WHERE \"Id\" = {0}", request.OperationId, "evidence is retained");
-		await RejectHistoricalSql(db, "TRUNCATE taxonomy.\"HistoricalOperationItems\"", request.OperationId, "evidence is retained");
+		await RejectHistoricalSql(db, "TRUNCATE taxonomy.\"HistoricalOperationItems\" CASCADE", request.OperationId, "evidence is retained");
 		await RejectHistoricalSql(db, "TRUNCATE taxonomy.\"HistoricalOperations\" CASCADE", request.OperationId, "evidence is retained");
 		(await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == request.OperationId)).Should().BeEquivalentTo(header);
 		(await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == request.OperationId)).Should().BeEquivalentTo(item);

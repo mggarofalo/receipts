@@ -40,6 +40,9 @@ Persistence applies it at the write chokepoints (`Infrastructure.Services.ItemEn
   reclassification, category assistance or a legacy-label save. There, an item
   whose source is `default`, or whose envelope is still unresolved, takes the
   new type's default. `receipt`, `item` and `historical` envelopes are kept.
+  A [category restructure](restructure-plans.md) is the exception: it changes
+  what a purchase is, not who paid, so it keeps every recorded envelope. Only
+  an envelope merge in the plan moves purchases between envelopes.
 - **Ordinary edits** keep the recorded envelope and occasion unless the request
   names new ones.
 - **Changing a receipt's paid-from envelope** applies it to every item except

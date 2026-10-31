@@ -48,7 +48,7 @@ public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContex
 			|| source.Location.Contains('\0') || source.Description.Contains('\0') || source.ItemCode?.Contains('\0') == true)
 		{ throw new TaxonomyException(400, "Valid actor, operation, revisions, source and reason are required."); }
 		if (fingerprint != command.SourceFingerprint) { throw new TaxonomyException(409, "Source changed. Review the current source before approving.", new Dictionary<string, object?> { ["sourceFingerprint"] = fingerprint, ["expectedSourceFingerprint"] = command.SourceFingerprint }); }
-		string requestHash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(command with { Source = source })));
+		string requestHash = RequestHash(command with { Source = source });
 		await using ApplicationDbContext db = await factory.CreateDbContextAsync(ct);
 		await using var transaction = db.Database.IsRelational() ? await db.Database.BeginTransactionAsync(ct) : null;
 		// Same first lock as taxonomy edits. Serializes absent-source creation, revocation, and approvals
@@ -59,49 +59,8 @@ public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContex
 		DateTimeOffset now = clock.GetUtcNow();
 		if (!await db.Users.AnyAsync(user => user.Id == actor && !(user.LockoutEnabled && user.LockoutEnd > now), ct))
 		{ throw new TaxonomyException(403, "An enabled user is required to approve category mappings."); }
-		CategoryMappingRevisionEntity? replay = await db.CategoryMappingRevisions.AsNoTracking()
-			.SingleOrDefaultAsync(row => row.Actor == actor && row.OperationId == command.OperationId, ct);
-		if (replay != null)
-		{
-			if (replay.RequestHash != requestHash) { throw new TaxonomyException(409, "Operation ID was already used with a different request."); }
-			return Read(replay);
-		}
-		CategoryMappingHeadEntity? head = await db.CategoryMappingHeads.SingleOrDefaultAsync(row => row.SourceFingerprint == fingerprint, ct);
-		TaxonomyException Conflict(string detail) => new(409, detail, new Dictionary<string, object?>
-		{
-			["sourceFingerprint"] = fingerprint,
-			["currentMappingRevisionId"] = head?.RevisionId,
-			["expectedMappingRevisionId"] = command.ExpectedMappingRevisionId,
-			["currentTaxonomyRevisionId"] = taxonomy.RevisionId,
-			["expectedTaxonomyRevisionId"] = command.ExpectedTaxonomyRevisionId
-		});
-		if (head?.RevisionId != command.ExpectedMappingRevisionId) { throw Conflict("Category mapping changed. Refresh before retrying."); }
-		if (taxonomy.RevisionId != command.ExpectedTaxonomyRevisionId) { throw Conflict("Taxonomy changed. Refresh before approving."); }
-		string? semantics = command.CategoryId is Guid categoryId
-			? CategoryMappingPolicy.SemanticFingerprint(await NodesAsync(db, taxonomy.RevisionId, ct), categoryId) : null;
-		if (command.CategoryId != null && semantics == null) { throw new TaxonomyException(409, "Select an active category with active ancestors."); }
-		if (command.CategoryId == null && head == null) { throw new TaxonomyException(409, "There is no approved mapping to revoke."); }
-		now = new DateTimeOffset(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
-		CategoryMappingRevisionEntity revision = new()
-		{
-			Id = Guid.NewGuid(),
-			PreviousRevisionId = head?.RevisionId,
-			SourceFingerprint = fingerprint,
-			Location = source.Location,
-			Description = source.Description,
-			ItemCode = source.ItemCode,
-			CategoryId = command.CategoryId,
-			TaxonomyRevisionId = taxonomy.RevisionId,
-			SemanticFingerprint = semantics,
-			Actor = actor,
-			OperationId = command.OperationId,
-			RequestHash = requestHash,
-			Reason = command.Reason,
-			RecordedAt = now
-		};
-		db.CategoryMappingRevisions.Add(revision);
-		if (head == null) { db.CategoryMappingHeads.Add(new() { SourceFingerprint = fingerprint, RevisionId = revision.Id }); }
-		else { head.RevisionId = revision.Id; }
+		CategoryMappingRevisionEntity revision = await ChangeInTransactionAsync(db, taxonomy, actor, command with { Source = source }, fingerprint, requestHash, now, ct);
+		if (db.Entry(revision).State == EntityState.Detached) { return Read(revision); }
 		await db.SaveChangesAsync(ct);
 		if (transaction != null) { await transaction.CommitAsync(ct); }
 		return Read(revision);
@@ -151,4 +110,63 @@ public sealed class CategoryMappingService(IDbContextFactory<ApplicationDbContex
 	private static CategoryMappingRevision Read(CategoryMappingRevisionEntity row)
 		=> new(row.Id, row.PreviousRevisionId, new(row.Location, row.Description, row.ItemCode), row.SourceFingerprint,
 			row.CategoryId, row.TaxonomyRevisionId, row.SemanticFingerprint, row.Actor, row.OperationId, row.Reason, row.RecordedAt);
+
+	/// <summary>
+	/// Appends a mapping revision and advances its head, or returns the original revision for a replayed
+	/// operation (detached). The caller owns the transaction, holds <paramref name="taxonomy"/> locked and
+	/// has validated the normalized source and actor.
+	/// </summary>
+	internal static async Task<CategoryMappingRevisionEntity> ChangeInTransactionAsync(ApplicationDbContext db,
+		TaxonomyHeadEntity taxonomy, string actor, CategoryMappingCommand command, string fingerprint, string requestHash,
+		DateTimeOffset now, CancellationToken ct)
+	{
+		NormalizationSourceKey source = command.Source;
+		CategoryMappingRevisionEntity? replay = await db.CategoryMappingRevisions.AsNoTracking()
+			.SingleOrDefaultAsync(row => row.Actor == actor && row.OperationId == command.OperationId, ct);
+		if (replay != null)
+		{
+			if (replay.RequestHash != requestHash) { throw new TaxonomyException(409, "Operation ID was already used with a different request."); }
+			return replay;
+		}
+		CategoryMappingHeadEntity? head = await db.CategoryMappingHeads.SingleOrDefaultAsync(row => row.SourceFingerprint == fingerprint, ct);
+		TaxonomyException Conflict(string detail) => new(409, detail, new Dictionary<string, object?>
+		{
+			["sourceFingerprint"] = fingerprint,
+			["currentMappingRevisionId"] = head?.RevisionId,
+			["expectedMappingRevisionId"] = command.ExpectedMappingRevisionId,
+			["currentTaxonomyRevisionId"] = taxonomy.RevisionId,
+			["expectedTaxonomyRevisionId"] = command.ExpectedTaxonomyRevisionId
+		});
+		if (head?.RevisionId != command.ExpectedMappingRevisionId) { throw Conflict("Category mapping changed. Refresh before retrying."); }
+		if (taxonomy.RevisionId != command.ExpectedTaxonomyRevisionId) { throw Conflict("Taxonomy changed. Refresh before approving."); }
+		string? semantics = command.CategoryId is Guid categoryId
+			? CategoryMappingPolicy.SemanticFingerprint(await NodesAsync(db, taxonomy.RevisionId, ct), categoryId) : null;
+		if (command.CategoryId != null && semantics == null) { throw new TaxonomyException(409, "Select an active category with active ancestors."); }
+		if (command.CategoryId == null && head == null) { throw new TaxonomyException(409, "There is no approved mapping to revoke."); }
+		now = new DateTimeOffset(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
+		CategoryMappingRevisionEntity revision = new()
+		{
+			Id = Guid.NewGuid(),
+			PreviousRevisionId = head?.RevisionId,
+			SourceFingerprint = fingerprint,
+			Location = source.Location,
+			Description = source.Description,
+			ItemCode = source.ItemCode,
+			CategoryId = command.CategoryId,
+			TaxonomyRevisionId = taxonomy.RevisionId,
+			SemanticFingerprint = semantics,
+			Actor = actor,
+			OperationId = command.OperationId,
+			RequestHash = requestHash,
+			Reason = command.Reason,
+			RecordedAt = now
+		};
+		db.CategoryMappingRevisions.Add(revision);
+		if (head == null) { db.CategoryMappingHeads.Add(new() { SourceFingerprint = fingerprint, RevisionId = revision.Id }); }
+		else { head.RevisionId = revision.Id; }
+		return revision;
+	}
+
+	internal static string RequestHash(CategoryMappingCommand normalizedCommand) =>
+		Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(normalizedCommand)));
 }

@@ -256,7 +256,9 @@ public static class InfrastructureService
 		services.AddScoped<Application.Taxonomy.ICategoryMappingService, CategoryMappingService>();
 		services.Configure<Application.Taxonomy.ClassificationOptions>(configuration.GetSection("Classification"));
 		services.AddScoped<Application.Taxonomy.IClassificationService, ClassificationService>();
-		services.AddScoped<Application.Taxonomy.IHistoricalOperationService, HistoricalReclassificationService>();
+		services.AddScoped<HistoricalReclassificationService>();
+		services.AddScoped<Application.Taxonomy.IHistoricalOperationService>(provider => provider.GetRequiredService<HistoricalReclassificationService>());
+		services.AddScoped<Application.Taxonomy.Restructure.IRestructurePlanService, RestructurePlanService>();
 		services.AddScoped<Application.Taxonomy.IHistoricalGroupReader, HistoricalGroupReader>();
 		services.AddScoped<Application.Classification.ICategoryAssistanceHistoricalRequestStore, CategoryAssistanceHistoricalRequestStore>();
 		services.AddScoped<Application.Taxonomy.ILegacyTaxonomyMigrationService, LegacyTaxonomyMigrationService>();

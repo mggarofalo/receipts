@@ -30,8 +30,9 @@ internal static partial class PortableTaxonomyArchive
 	}
 
 	// Jev operations stay with the deployment: their evidence is the local attempt, which is never archived.
+	// Restructure applications are deployment-local too; their `restructure` assignments carry the evidence.
 	internal static IQueryable<HistoricalOperationEntity> PortableHistoricalOperations(ApplicationDbContext db) =>
-		db.HistoricalOperations.Where(x => x.Kind != HistoricalOperationKind.JevSuggestionV1);
+		db.HistoricalOperations.Where(x => x.Kind != HistoricalOperationKind.JevSuggestionV1 && x.Kind != HistoricalOperationKind.RestructureV1);
 
 	internal static IQueryable<HistoricalOperationItemEntity> PortableHistoricalItems(ApplicationDbContext db) =>
 		db.HistoricalOperationItems.Where(i => PortableHistoricalOperations(db).Any(h => h.Id == i.OperationId));

@@ -312,6 +312,15 @@ export const COMMANDS: Command[] = [
     run: goTo("/admin/backup"),
   },
   {
+    id: "nav:restructure",
+    label: "Go to Restructure Categories",
+    group: "navigate",
+    icon: Database,
+    keywords: ["categories", "item types", "plan", "taxonomy", "admin"],
+    requiresAdmin: true,
+    run: goTo("/admin/restructure"),
+  },
+  {
     id: "nav:normalized-descriptions",
     label: "Go to Normalized Descriptions",
     group: "navigate",

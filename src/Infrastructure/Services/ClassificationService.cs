@@ -63,6 +63,69 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		return AssignCoreAsync(db, actor, itemId, command, enabled, clock, ct, false, null, null, evidence);
 	}
 
+	/// <summary>
+	/// Appends a chunk of <c>restructure</c> assignments with one save. The caller owns the transaction, holds the taxonomy
+	/// head, receipt and item locks, and has checked readiness. A restructure describes what a purchase is, never who paid:
+	/// the recorded envelope stays exactly as it is. Returns each assignment ID by item ID; a replayed operation returns
+	/// the assignment it wrote first.
+	/// </summary>
+	internal static async Task<IReadOnlyDictionary<Guid, Guid>> AssignRestructureInTransactionAsync(ApplicationDbContext db,
+		string actor, IReadOnlyList<(Guid ItemId, ClassificationCommand Command)> writes, bool enabled, TimeProvider clock,
+		CancellationToken ct)
+	{
+		if (db.Database.CurrentTransaction == null)
+		{ throw new InvalidOperationException("Restructure assignment requires a caller-owned transaction."); }
+		if (string.IsNullOrWhiteSpace(actor) || writes.Any(x => x.Command.OperationId == Guid.Empty || x.Command.TaxonomyRevisionId == Guid.Empty
+			|| string.IsNullOrWhiteSpace(x.Command.Reason) || x.Command.Reason.Contains('\0')))
+		{ throw new TaxonomyException(400, "Actor, operation ID, taxonomy revision and reason are required."); }
+		if (writes.Select(x => x.ItemId).Distinct().Count() != writes.Count)
+		{ throw new InvalidOperationException("A restructure chunk writes each purchase once."); }
+		if (!enabled) { throw new TaxonomyException(409, WritesDisabledMessage); }
+		Dictionary<Guid, Guid> written = [];
+		if (writes.Count == 0) { return written; }
+		TaxonomyHeadEntity head = await db.TaxonomyHeads.FromSqlRaw("SELECT * FROM taxonomy.\"Head\" WHERE \"Id\" = 1 FOR UPDATE").AsNoTracking().SingleAsync(ct);
+		Dictionary<Guid, string> hashes = writes.ToDictionary(x => x.ItemId, x => Convert.ToHexString(SHA256.HashData(
+			JsonSerializer.SerializeToUtf8Bytes(new { itemId = x.ItemId, command = x.Command, Source = "restructure" }))));
+		Guid[] operationIds = writes.Select(x => x.Command.OperationId).ToArray();
+		Dictionary<Guid, ClassificationOperationEntity> replays = await db.ClassificationOperations.AsNoTracking()
+			.Where(x => x.Actor == actor && operationIds.Contains(x.OperationId)).ToDictionaryAsync(x => x.OperationId, ct);
+		List<(Guid ItemId, ClassificationCommand Command)> fresh = [];
+		foreach ((Guid itemId, ClassificationCommand command) in writes)
+		{
+			if (!replays.TryGetValue(command.OperationId, out ClassificationOperationEntity? replay)) { fresh.Add((itemId, command)); continue; }
+			if (replay.RequestHash != hashes[itemId]) { throw new TaxonomyException(409, "Operation ID was already used with a different request."); }
+			written[itemId] = replay.AssignmentId;
+		}
+		if (fresh.Count == 0) { return written; }
+		if (fresh.Any(x => x.Command.TaxonomyRevisionId != head.RevisionId)) { throw new TaxonomyException(409, "Taxonomy changed. Refresh before retrying."); }
+		Guid[] itemIds = fresh.Select(x => x.ItemId).ToArray();
+		db.ChangeTracker.DetectChanges();
+		if (db.ChangeTracker.Entries<CurrentClassificationEntity>().Any(entry => itemIds.Contains(entry.Entity.ReceiptItemId)
+			&& entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted))
+		{ throw new TaxonomyException(409, "Pending changes must be saved or discarded before classification."); }
+		int present = await db.ReceiptItems.IgnoreAutoIncludes().CountAsync(x => itemIds.Contains(x.Id) && db.Receipts.Any(r => r.Id == x.ReceiptId), ct);
+		if (present != itemIds.Length) { throw new TaxonomyException(404, "Receipt item does not exist."); }
+		Dictionary<Guid, CurrentClassificationEntity> currents = await db.CurrentClassifications
+			.Where(x => itemIds.Contains(x.ReceiptItemId)).ToDictionaryAsync(x => x.ReceiptItemId, ct);
+		Guid[] currentIds = currents.Values.Select(x => x.AssignmentId).ToArray();
+		Dictionary<Guid, long> sequences = await db.Classifications.Where(x => currentIds.Contains(x.Id))
+			.ToDictionaryAsync(x => x.Id, x => x.Sequence, ct);
+		Guid[] categoryIds = fresh.Select(x => x.Command.CategoryId).OfType<Guid>().Distinct().ToArray();
+		int selectable = await db.TaxonomyNodes.CountAsync(x => x.RevisionId == head.RevisionId && !x.Archived && categoryIds.Contains(x.CategoryId), ct);
+		if (selectable != categoryIds.Length) { throw new TaxonomyException(400, "Category must be selectable in the expected taxonomy revision."); }
+		foreach ((Guid itemId, ClassificationCommand command) in fresh)
+		{
+			CurrentClassificationEntity? current = currents.GetValueOrDefault(itemId);
+			if (current?.AssignmentId != command.ExpectedAssignmentId) { throw new TaxonomyException(409, "Classification changed. Refresh before retrying."); }
+			PurchaseClassificationEntity assignment = Append(db, actor, itemId, command.CategoryId, head.RevisionId, current,
+				current == null ? 1 : 1 + sequences[current.AssignmentId], command.OperationId, "restructure", command.Reason, clock);
+			db.ClassificationOperations.Add(new() { Actor = actor, OperationId = command.OperationId, RequestHash = hashes[itemId], AssignmentId = assignment.Id });
+			written[itemId] = assignment.Id;
+		}
+		await db.SaveChangesAsync(ct);
+		return written;
+	}
+
 	private static async Task<PurchaseClassification> AssignCoreAsync(ApplicationDbContext db, string actor, Guid itemId,
 		ClassificationCommand command, bool enabled, TimeProvider clock, CancellationToken ct, bool prepared,
 		Action? onChanged, CategoryMappingReuseEvidence? mappingEvidence, JevAutoWriteEvidence? jevEvidence)
@@ -118,7 +181,8 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			{ throw new TaxonomyException(409, "Approved mapping evidence changed. Refresh before retrying."); }
 		}
 		PurchaseClassificationEntity assignment = await AppendAsync(db, actor, itemId, command.CategoryId, head.RevisionId,
-			current, command.OperationId, mappingEvidence != null ? "approved_mapping" : jevEvidence != null ? "jev" : "manual", command.Reason, clock, ct);
+			current, command.OperationId, mappingEvidence != null ? "approved_mapping" : jevEvidence != null ? "jev" : "manual",
+			command.Reason, clock, ct);
 		db.ClassificationOperations.Add(new() { Actor = actor, OperationId = command.OperationId, RequestHash = hash, AssignmentId = assignment.Id });
 		await db.SaveChangesAsync(ct);
 		onChanged?.Invoke();
@@ -130,6 +194,17 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		TimeProvider clock, CancellationToken ct, string? legacyCategory = null, string? legacySubcategory = null, string? legacyResolution = null)
 	{
 		long sequence = current == null ? 1 : 1 + await db.Classifications.Where(x => x.Id == current.AssignmentId).Select(x => x.Sequence).SingleAsync(ct);
+		PurchaseClassificationEntity assignment = Append(db, actor, itemId, categoryId, revisionId, current, sequence, operationId,
+			source, reason, clock, legacyCategory, legacySubcategory, legacyResolution);
+		// Every classification write but a restructure appends here, so this is where envelopes follow the item type.
+		await ItemEnvelopeWriter.AfterItemTypeChangeAsync(db, itemId, categoryId, revisionId, ct);
+		return assignment;
+	}
+
+	private static PurchaseClassificationEntity Append(ApplicationDbContext db, string actor, Guid itemId, Guid? categoryId,
+		Guid revisionId, CurrentClassificationEntity? current, long sequence, Guid operationId, string source, string reason,
+		TimeProvider clock, string? legacyCategory = null, string? legacySubcategory = null, string? legacyResolution = null)
+	{
 		// Persist and return the same PostgreSQL microsecond precision so retries reproduce the original result exactly.
 		DateTimeOffset now = clock.GetUtcNow();
 		now = new DateTimeOffset(now.Ticks - now.Ticks % 10, TimeSpan.Zero);
@@ -153,8 +228,6 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		db.Classifications.Add(assignment);
 		if (current == null) { db.CurrentClassifications.Add(new() { ReceiptItemId = itemId, AssignmentId = assignment.Id }); }
 		else { current.AssignmentId = assignment.Id; }
-		// Every classification write appends here, so this is where envelopes follow the item type.
-		await ItemEnvelopeWriter.AfterItemTypeChangeAsync(db, itemId, categoryId, revisionId, ct);
 		return assignment;
 	}
 
@@ -174,7 +247,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 	}
 	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ApplicationDbContext, AggregateState> Aggregates = new();
 
-	private static async Task RequireReadyAsync(ApplicationDbContext db, CancellationToken ct)
+	internal static async Task RequireReadyAsync(ApplicationDbContext db, CancellationToken ct)
 	{
 		if (!await db.LegacyMigrations.AnyAsync(x => x.OperationKind == LegacyTaxonomyMigrationService.InitialOperationKind, ct))
 		{ throw new TaxonomyException(409, "Classification writes require a completed legacy taxonomy backfill."); }
