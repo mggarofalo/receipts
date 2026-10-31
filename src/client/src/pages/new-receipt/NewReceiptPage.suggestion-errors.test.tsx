@@ -92,6 +92,8 @@ let failed: boolean;
 let reads: number;
 let bodies: unknown[];
 const server = setupServer(
+  http.get("*/api/envelopes", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/occasions", () => HttpResponse.json({ data: [] })),
   http.get("*/api/receipts/locations", async () => {
     reads++;
     const capturedFailure = failed;
@@ -262,6 +264,8 @@ it.each([false, true])(
           location: "Manual market",
           date: "2024-01-15",
           taxAmount: 17.42,
+          paidFromEnvelopeId: null,
+          occasionId: null,
         },
         transactions: [
           {
@@ -276,6 +280,7 @@ it.each([false, true])(
             description: "Milk",
             quantity: 1,
             unitPrice: 5,
+            envelopeId: null,
             category: "Food",
             subcategory: "Dairy",
           },

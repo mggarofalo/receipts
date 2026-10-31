@@ -25,6 +25,11 @@ import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useEnvelopes, useOccasions } from "@/hooks/useEnvelopes";
+import {
+  OccasionChip,
+  PaidFromSelect,
+} from "@/components/envelopes/BudgetChoices";
 import { useCreateCompleteReceipt } from "@/hooks/useReceipts";
 import { useLocationHistory } from "@/hooks/useLocationHistory";
 import {
@@ -91,6 +96,12 @@ export default function NewReceiptPage() {
   const [transactions, setTransactions] = useState<ReceiptTransaction[]>([]);
   const [items, setItems] = useState<ReceiptLineItem[]>([]);
   const [adjustments, setAdjustments] = useState<ReceiptAdjustment[]>([]);
+  const [paidFromEnvelopeId, setPaidFromEnvelopeId] = useState<string | null>(
+    null,
+  );
+  const [occasionId, setOccasionId] = useState<string | null>(null);
+  const { envelopes } = useEnvelopes();
+  const { occasions } = useOccasions();
   const [showDiscard, setShowDiscard] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitErrorSummary, setSubmitErrorSummary] = useState<string | null>(
@@ -256,6 +267,8 @@ export default function NewReceiptPage() {
           location: headerValues.location,
           date: headerValues.date,
           taxAmount: headerValues.taxAmount,
+          paidFromEnvelopeId,
+          occasionId,
         },
         transactions: transactions.map((txn) => ({
           cardId: txn.cardId,
@@ -267,6 +280,7 @@ export default function NewReceiptPage() {
           description: item.description,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
+          envelopeId: item.envelopeId ?? null,
           category: item.category,
           classification: item.categoryOperationId
             ? classificationChange(
@@ -318,6 +332,8 @@ export default function NewReceiptPage() {
     transactions,
     items,
     adjustments,
+    paidFromEnvelopeId,
+    occasionId,
     createCompleteReceiptAsync,
     addLocation,
     navigate,
@@ -418,6 +434,19 @@ export default function NewReceiptPage() {
               </FormItem>
             )}
           />
+
+          <div className="flex w-full flex-wrap items-center gap-2">
+            <PaidFromSelect
+              envelopes={envelopes}
+              value={paidFromEnvelopeId}
+              onChange={setPaidFromEnvelopeId}
+            />
+            <OccasionChip
+              occasions={occasions}
+              value={occasionId}
+              onChange={setOccasionId}
+            />
+          </div>
         </div>
       </Form>
 
@@ -429,7 +458,12 @@ export default function NewReceiptPage() {
         />
       </div>
 
-      <LineItemsSection items={items} onChange={setItems} location={location} />
+      <LineItemsSection
+        items={items}
+        onChange={setItems}
+        location={location}
+        paidFromEnvelopeId={paidFromEnvelopeId}
+      />
 
       <AdjustmentsSection adjustments={adjustments} onChange={setAdjustments} />
 

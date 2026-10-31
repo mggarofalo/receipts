@@ -40,6 +40,22 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatUnitPrice, formatCurrency } from "@/lib/format";
 import { Pencil } from "lucide-react";
+import {
+  EnvelopeBadge,
+  EnvelopeOverrideMenu,
+  OccasionChip,
+  PaidFromSelect,
+} from "@/components/envelopes/BudgetChoices";
+import {
+  useEnvelopes,
+  useItemTypeEnvelopeDefaults,
+  useOccasions,
+} from "@/hooks/useEnvelopes";
+import {
+  useSetReceiptBudgetChoices,
+  useSetReceiptItemBudgetChoices,
+} from "@/hooks/useBudgetChoices";
+import { previewItemEnvelope, receiptEnvelope } from "@/lib/envelope-display";
 import type { components } from "@/generated/api";
 
 interface ReceiptItem {
@@ -54,6 +70,9 @@ interface ReceiptItem {
   normalizedDescriptionName?: string | null;
   normalizationRevision?: string;
   normalizationReviewState?: components["schemas"]["NormalizationReviewState"];
+  envelopeId?: string | null;
+  envelopeSource?: components["schemas"]["EnvelopeSource"];
+  occasionId?: string | null;
 }
 
 interface ReceiptItemsCardProps {
@@ -61,6 +80,8 @@ interface ReceiptItemsCardProps {
   items: ReceiptItem[];
   subtotal: number;
   location?: string | null;
+  paidFromEnvelopeId?: string | null;
+  occasionId?: string | null;
 }
 
 function categoryLabel(item: ReceiptItem): string {
@@ -86,8 +107,30 @@ export function ReceiptItemsCard({
   items,
   subtotal,
   location,
+  paidFromEnvelopeId = null,
+  occasionId = null,
 }: ReceiptItemsCardProps) {
   const createReceiptItem = useCreateReceiptItem();
+  const { envelopes } = useEnvelopes();
+  const { occasions } = useOccasions();
+  const { defaults } = useItemTypeEnvelopeDefaults();
+  const setReceiptChoices = useSetReceiptBudgetChoices();
+  const setItemChoices = useSetReceiptItemBudgetChoices();
+  const choicesBusy = setReceiptChoices.isPending || setItemChoices.isPending;
+  const paidFrom = receiptEnvelope(
+    paidFromEnvelopeId,
+    // An override counts as the envelope the item would get automatically.
+    items.map((item) =>
+      item.envelopeSource === "item"
+        ? previewItemEnvelope(
+            { typePath: item.currentClassification?.recordedPath },
+            null,
+            defaults,
+            envelopes,
+          )
+        : item.envelopeId,
+    ),
+  );
   const updateReceiptItem = useUpdateReceiptItem();
   const deleteReceiptItems = useDeleteReceiptItems();
 
@@ -191,7 +234,33 @@ export function ReceiptItemsCard({
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle>Items ({items.length})</CardTitle>
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle>Items ({items.length})</CardTitle>
+              <PaidFromSelect
+                envelopes={envelopes}
+                value={paidFromEnvelopeId}
+                disabled={choicesBusy}
+                onChange={(next) =>
+                  setReceiptChoices.mutate({
+                    receiptId,
+                    paidFromEnvelopeId: next,
+                    occasionId,
+                  })
+                }
+              />
+              <OccasionChip
+                occasions={occasions}
+                value={occasionId}
+                disabled={choicesBusy}
+                onChange={(next) =>
+                  setReceiptChoices.mutate({
+                    receiptId,
+                    paidFromEnvelopeId,
+                    occasionId: next,
+                  })
+                }
+              />
+            </div>
             <div className="flex gap-2">
               {selectedItems.size > 0 && (
                 <Button
@@ -311,6 +380,13 @@ export function ReceiptItemsCard({
                             classification={item.currentClassification}
                           />
                         )}
+                        {item.envelopeSource && (
+                          <EnvelopeBadge
+                            envelopes={envelopes}
+                            envelopeId={item.envelopeId ?? null}
+                            receiptEnvelopeId={paidFrom}
+                          />
+                        )}
                       </TableCell>
                       <TableCell>
                         <Button
@@ -326,6 +402,23 @@ export function ReceiptItemsCard({
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
+                        <EnvelopeOverrideMenu
+                          envelopes={envelopes}
+                          value={
+                            item.envelopeSource === "item"
+                              ? (item.envelopeId ?? null)
+                              : null
+                          }
+                          itemLabel={item.description}
+                          disabled={choicesBusy}
+                          onChange={(envelopeId) =>
+                            setItemChoices.mutate({
+                              itemId: item.id,
+                              envelopeId,
+                              occasionId: item.occasionId ?? null,
+                            })
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   ))}

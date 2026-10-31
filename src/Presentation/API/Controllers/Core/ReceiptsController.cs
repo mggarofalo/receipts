@@ -2,11 +2,13 @@ using API.Generated.Dtos;
 using API.Http;
 using API.Mapping.Core;
 using API.Services;
+using Application.Commands.Receipt.BudgetChoices;
 using Application.Commands.Receipt.Create;
 using Application.Commands.Receipt.CreateComplete;
 using Application.Commands.Receipt.Delete;
 using Application.Commands.Receipt.Restore;
 using Application.Commands.Receipt.Update;
+using Application.Envelopes;
 using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Receipt;
@@ -43,6 +45,7 @@ public class ReceiptsController(
 	public const string RouteGetLocations = "locations";
 	public const string RouteGetDeleted = "deleted";
 	public const string RouteRestore = "{id}/restore";
+	public const string RouteBudgetChoices = "{id}/budget-choices";
 
 	[HttpGet(RouteGetById)]
 	[EndpointSummary("Get a receipt by ID")]
@@ -339,6 +342,28 @@ public class ReceiptsController(
 		{
 			logger.LogWarning("Receipt {Id} not found or not deleted for restore", id);
 			return TypedResults.NotFound();
+		}
+
+		await notifier.NotifyUpdated("receipt", id);
+		return TypedResults.NoContent();
+	}
+
+	[HttpPut(RouteBudgetChoices)]
+	[EndpointSummary("Set a receipt's paid-from envelope and occasion")]
+	public async Task<Results<NoContent, NotFound, BadRequestProblem>> SetReceiptBudgetChoices([FromRoute] Guid id,
+		[FromBody] ReceiptBudgetChoicesRequest request, CancellationToken cancellationToken = default)
+	{
+		try
+		{
+			bool updated = await mediator.Send(new SetReceiptBudgetChoicesCommand(id, request.PaidFromEnvelopeId, request.OccasionId), cancellationToken);
+			if (!updated)
+			{
+				return TypedResults.NotFound();
+			}
+		}
+		catch (EnvelopeException ex) when (ex.Status == StatusCodes.Status400BadRequest)
+		{
+			return ApiProblem.BadRequest(ex.Message);
 		}
 
 		await notifier.NotifyUpdated("receipt", id);

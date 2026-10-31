@@ -3,11 +3,13 @@ using API.Generated.Dtos;
 using API.Http;
 using API.Mapping.Core;
 using API.Services;
+using Application.Commands.Receipt.BudgetChoices;
 using Application.Commands.Receipt.Create;
 using Application.Commands.Receipt.CreateComplete;
 using Application.Commands.Receipt.Delete;
 using Application.Commands.Receipt.Restore;
 using Application.Commands.Receipt.Update;
+using Application.Envelopes;
 using Application.Exceptions;
 using Application.Models;
 using Application.Queries.Core.Receipt;
@@ -812,6 +814,77 @@ public class ReceiptsControllerTests
 		var conflict = Assert.IsType<ConflictProblem>(result.Result);
 		conflict.Value!.Status.Should().Be(409);
 		conflict.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task SetReceiptBudgetChoices_ReturnsNoContentAndNotifies_WhenSuccessful()
+	{
+		// Arrange
+		Guid id = Guid.NewGuid(), paidFrom = Guid.NewGuid(), occasion = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<SetReceiptBudgetChoicesCommand>(c => c.ReceiptId == id && c.PaidFromEnvelopeId == paidFrom && c.OccasionId == occasion),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+
+		// Act
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.SetReceiptBudgetChoices(id,
+			new ReceiptBudgetChoicesRequest { PaidFromEnvelopeId = paidFrom, OccasionId = occasion });
+
+		// Assert
+		Assert.IsType<NoContent>(result.Result);
+		_notifierMock.Verify(n => n.NotifyUpdated("receipt", id), Times.Once);
+	}
+
+	[Fact]
+	public async Task SetReceiptBudgetChoices_ReturnsNotFoundWithoutNotification_WhenReceiptDoesNotExist()
+	{
+		// Arrange
+		Guid id = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<SetReceiptBudgetChoicesCommand>(c => c.ReceiptId == id),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false);
+
+		// Act
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.SetReceiptBudgetChoices(id, new ReceiptBudgetChoicesRequest());
+
+		// Assert
+		Assert.IsType<NotFound>(result.Result);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task SetReceiptBudgetChoices_ReturnsBadRequestProblemWithoutNotification_WhenChoiceIsNotSelectable()
+	{
+		// Arrange
+		const string detail = "Envelope must exist and be active.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<SetReceiptBudgetChoicesCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new EnvelopeException(400, detail));
+
+		// Act
+		Results<NoContent, NotFound, BadRequestProblem> result = await _controller.SetReceiptBudgetChoices(Guid.NewGuid(),
+			new ReceiptBudgetChoicesRequest { PaidFromEnvelopeId = Guid.NewGuid() });
+
+		// Assert
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
+		badRequestResult.Value!.Status.Should().Be(400);
+		badRequestResult.Value.Detail.Should().Be(detail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task SetReceiptBudgetChoices_RethrowsNon400EnvelopeException()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(It.IsAny<SetReceiptBudgetChoicesCommand>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new EnvelopeException(409, "conflict"));
+
+		// Act
+		Func<Task> act = () => _controller.SetReceiptBudgetChoices(Guid.NewGuid(), new ReceiptBudgetChoicesRequest());
+
+		// Assert
+		await act.Should().ThrowAsync<EnvelopeException>();
 		_notifierMock.VerifyNoOtherCalls();
 	}
 }

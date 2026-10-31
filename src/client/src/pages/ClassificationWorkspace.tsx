@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import client from "@/lib/api-client";
@@ -11,6 +11,7 @@ import { localErrorPolicy } from "@/lib/request-error-policy";
 import { extractErrorMessage } from "@/lib/problem-details";
 import { categoryPaths, type CategoryChoice } from "@/lib/category-paths";
 import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
+import { assistanceSuggestions } from "@/lib/assistance-candidates";
 import { RememberCategoryControl } from "@/components/categories/RememberCategory";
 import { AutomaticClassificationActivity } from "@/components/categories/AutomaticClassificationActivity";
 import { PageHead } from "@/components/primitives";
@@ -448,6 +449,7 @@ function SuggestionCard({
               item.proposedPath.join("/"),
         )
       : undefined;
+  const suggestions = useMemo(() => assistanceSuggestions(item), [item]);
   const selectedChoice =
     choice ??
     (proposed && taxonomy.data
@@ -1009,6 +1011,7 @@ function SuggestionCard({
                 </p>
                 <CategoryPathPicker
                   revision={taxonomy.data}
+                  suggestions={suggestions}
                   value={selectedChoice}
                   onValueChange={(next) => {
                     setChoice(next);

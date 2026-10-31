@@ -5501,6 +5501,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemDetails"
 
+  /api/receipts/{id}/budget-choices:
+    put:
+      operationId: SetReceiptBudgetChoices
+      tags: [Receipts]
+      summary: Set a receipt's paid-from envelope and occasion
+      description: Replaces both choices. A null envelope is automatic, which returns receipt-sourced items to their item-type default; an envelope applies to every item without a per-item override. A changed occasion replaces it on items that carried the previous one. Keeping an archived choice is allowed.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptBudgetChoicesRequest"
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: A newly chosen envelope or occasion is missing or archived
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Not Found
+
   /api/receipts/complete:
     post:
       operationId: CreateCompleteReceipt
@@ -5902,6 +5936,40 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ReceiptItemSuggestionResponse"
+
+  /api/receipt-items/{id}/budget-choices:
+    put:
+      operationId: SetReceiptItemBudgetChoices
+      tags: [ReceiptItems]
+      summary: Set an item's envelope override and occasion
+      description: Replaces both choices. An envelope is a per-item override; null returns an overridden item to automatic (the receipt's active paid-from envelope, else its item type's default). A null occasion clears the tag. Keeping an archived choice is allowed.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptItemBudgetChoicesRequest"
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: A newly chosen envelope or occasion is missing or archived
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "404":
+          description: Not Found
 
   /api/receipt-items/{id}/restore:
     post:
@@ -15872,6 +15940,30 @@ components:
           items:
             $ref: "#/components/schemas/ItemTypeEnvelopeDefaultResponse"
 
+    ReceiptBudgetChoicesRequest:
+      type: object
+      description: Both choices are replaced; an omitted choice counts as null.
+      properties:
+        paidFromEnvelopeId:
+          type: [string, "null"]
+          format: uuid
+          description: The envelope every item without an override is paid from. Null is automatic.
+        occasionId:
+          type: [string, "null"]
+          format: uuid
+          description: Null is no occasion.
+    ReceiptItemBudgetChoicesRequest:
+      type: object
+      description: Both choices are replaced; an omitted choice counts as null.
+      properties:
+        envelopeId:
+          type: [string, "null"]
+          format: uuid
+          description: A per-item envelope override. Null is automatic.
+        occasionId:
+          type: [string, "null"]
+          format: uuid
+          description: Null is no occasion.
     SetItemTypeEnvelopeDefaultRequest:
       type: object
       required: [envelopeId]

@@ -74,6 +74,61 @@ public class EnvelopeDerivationPolicyTests
 	}
 
 	[Theory]
+	[InlineData(EnvelopeSource.Default)]
+	[InlineData(EnvelopeSource.Receipt)]
+	[InlineData(EnvelopeSource.Item)]
+	[InlineData(EnvelopeSource.Historical)]
+	public void AfterOverrideChange_OverrideChosen_RecordsItemSourceOverAnySource(EnvelopeSource source)
+	{
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(new(Recorded, source), Override, PaidFrom, ItemTypeDefault);
+
+		// Assert
+		actual.Should().Be(new EnvelopeAssignment(Override, EnvelopeSource.Item));
+	}
+
+	[Fact]
+	public void AfterOverrideChange_ClearedOverride_ReturnsToReceiptPaidFrom()
+	{
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(new(Override, EnvelopeSource.Item), null, PaidFrom, ItemTypeDefault);
+
+		// Assert
+		actual.Should().Be(new EnvelopeAssignment(PaidFrom, EnvelopeSource.Receipt));
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public void AfterOverrideChange_ClearedOverrideWithoutPaidFrom_ReturnsToItemTypeDefault(bool hasDefault)
+	{
+		// Arrange
+		Guid? itemTypeDefault = hasDefault ? ItemTypeDefault : null;
+
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(new(Override, EnvelopeSource.Item), null, null, itemTypeDefault);
+
+		// Assert
+		actual.Should().Be(new EnvelopeAssignment(itemTypeDefault, EnvelopeSource.Default));
+	}
+
+	[Theory]
+	[InlineData(EnvelopeSource.Default)]
+	[InlineData(EnvelopeSource.Receipt)]
+	[InlineData(EnvelopeSource.Historical)]
+	public void AfterOverrideChange_NoOverrideOnNonOverriddenItem_KeepsStoredAssignment(EnvelopeSource source)
+	{
+		// Arrange
+		EnvelopeAssignment stored = new(Recorded, source);
+
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(stored, null, PaidFrom, ItemTypeDefault);
+
+		// Assert
+		actual.Should().Be(stored);
+	}
+
+	[Theory]
 	[InlineData(EnvelopeSource.Default, true, true)]
 	[InlineData(EnvelopeSource.Default, false, true)]
 	[InlineData(EnvelopeSource.Receipt, true, false)]

@@ -91,8 +91,25 @@ function optionName(option: Option) {
   return option.row.label;
 }
 
-/** Where the panel opens: beside the current choice, so a correction is one step. */
-function initialPlace(index: CategoryIndex, value?: CategoryChoice) {
+/**
+ * Where the panel opens: at the top beside the suggestions when there are any,
+ * else beside the current choice, so a correction is one step.
+ */
+function initialPlace(
+  index: CategoryIndex,
+  value?: CategoryChoice,
+  suggestions?: CategorySuggestion[],
+) {
+  const suggested = (suggestions ?? [])
+    .map((suggestion) => suggestion.categoryId)
+    .filter((id) => index.byId.has(id));
+  if (suggested.length > 0) {
+    const active =
+      value?.categoryId && suggested.includes(value.categoryId)
+        ? value.categoryId
+        : suggested[0];
+    return { levelId: null, activeKey: `suggested:${active}` };
+  }
   if (value?.categoryId === null)
     return { levelId: null, activeKey: "unclassified" };
   const row = value?.categoryId ? index.byId.get(value.categoryId) : undefined;
@@ -172,11 +189,11 @@ export function CategoryBrowser({
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [place, setPlace] = useState(() => ({
-    levelId: initialPlace(index, value).levelId,
+    levelId: initialPlace(index, value, suggestions).levelId,
     direction: "none" as "in" | "out" | "none",
   }));
   const [activeKey, setActiveKey] = useState(
-    () => initialPlace(index, value).activeKey,
+    () => initialPlace(index, value, suggestions).activeKey,
   );
   const [recentIds] = useState(getRecentCategoryIds);
 

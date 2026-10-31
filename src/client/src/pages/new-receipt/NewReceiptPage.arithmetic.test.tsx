@@ -1,7 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
-import { mockMutationResult } from "@/test/mock-hooks";
+import { mockMutationResult, mockQueryResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
 import NewReceiptPage from "./NewReceiptPage";
 import { BalanceSummaryCard } from "@/components/BalanceSummaryCard";
@@ -26,6 +26,24 @@ vi.mock("@/hooks/useLocationHistory", () => ({
   useLocationHistory: () => ({
     options: [{ value: "Market", label: "Market" }],
     add: vi.fn(),
+  }),
+}));
+vi.mock("@/hooks/useEnvelopes", () => ({
+  useEnvelopes: () => ({
+    ...mockQueryResult({
+      data: { data: [] },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    envelopes: [],
+  }),
+  useOccasions: () => ({
+    ...mockQueryResult({
+      data: { data: [] },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    occasions: [],
   }),
 }));
 vi.mock("react-router", async (importOriginal) => ({

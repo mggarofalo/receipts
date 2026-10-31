@@ -6,6 +6,8 @@ using Application.Commands.ItemTypeEnvelopeDefault.Set;
 using Application.Commands.Occasion.Create;
 using Application.Commands.Occasion.Delete;
 using Application.Commands.Occasion.Update;
+using Application.Commands.Receipt.BudgetChoices;
+using Application.Commands.ReceiptItem.BudgetChoices;
 using Application.Interfaces.Services;
 using Application.Queries.Core.Envelope;
 using Application.Queries.Core.ItemTypeEnvelopeDefault;
@@ -21,6 +23,7 @@ public class EnvelopeHandlerTests
 	private readonly Mock<IEnvelopeService> _envelopes = new();
 	private readonly Mock<IOccasionService> _occasions = new();
 	private readonly Mock<IItemTypeEnvelopeDefaultService> _defaults = new();
+	private readonly Mock<IBudgetChoiceService> _budgetChoices = new();
 
 	[Fact]
 	public async Task CreateEnvelope_ReturnsCreatedEnvelope()
@@ -205,6 +208,72 @@ public class EnvelopeHandlerTests
 
 		// Assert
 		actual.Should().Be(expected);
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task SetReceiptBudgetChoices_PassesChoicesAndReturnsWhetherItExisted(bool expected)
+	{
+		// Arrange
+		Guid receiptId = Guid.NewGuid(), paidFrom = Guid.NewGuid(), occasion = Guid.NewGuid();
+		_budgetChoices.Setup(s => s.SetReceiptChoicesAsync(receiptId, paidFrom, occasion, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+
+		// Act
+		bool actual = await new SetReceiptBudgetChoicesCommandHandler(_budgetChoices.Object)
+			.Handle(new(receiptId, paidFrom, occasion), CancellationToken.None);
+
+		// Assert
+		actual.Should().Be(expected);
+		_budgetChoices.Verify(s => s.SetReceiptChoicesAsync(receiptId, paidFrom, occasion, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task SetReceiptBudgetChoices_PassesNullsThrough()
+	{
+		// Arrange
+		Guid receiptId = Guid.NewGuid();
+		_budgetChoices.Setup(s => s.SetReceiptChoicesAsync(receiptId, null, null, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+		// Act
+		bool actual = await new SetReceiptBudgetChoicesCommandHandler(_budgetChoices.Object)
+			.Handle(new(receiptId, null, null), CancellationToken.None);
+
+		// Assert
+		actual.Should().BeTrue();
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task SetReceiptItemBudgetChoices_PassesChoicesAndReturnsWhetherItExisted(bool expected)
+	{
+		// Arrange
+		Guid itemId = Guid.NewGuid(), envelope = Guid.NewGuid(), occasion = Guid.NewGuid();
+		_budgetChoices.Setup(s => s.SetItemChoicesAsync(itemId, envelope, occasion, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+
+		// Act
+		bool actual = await new SetReceiptItemBudgetChoicesCommandHandler(_budgetChoices.Object)
+			.Handle(new(itemId, envelope, occasion), CancellationToken.None);
+
+		// Assert
+		actual.Should().Be(expected);
+		_budgetChoices.Verify(s => s.SetItemChoicesAsync(itemId, envelope, occasion, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task SetReceiptItemBudgetChoices_PassesNullsThrough()
+	{
+		// Arrange
+		Guid itemId = Guid.NewGuid();
+		_budgetChoices.Setup(s => s.SetItemChoicesAsync(itemId, null, null, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+		// Act
+		bool actual = await new SetReceiptItemBudgetChoicesCommandHandler(_budgetChoices.Object)
+			.Handle(new(itemId, null, null), CancellationToken.None);
+
+		// Assert
+		actual.Should().BeTrue();
 	}
 
 	[Fact]

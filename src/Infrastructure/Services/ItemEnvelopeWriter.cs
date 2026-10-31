@@ -16,11 +16,11 @@ internal static class ItemEnvelopeWriter
 	internal static async Task PrepareNewItemsAsync(ApplicationDbContext db, IReadOnlyList<ReceiptItemEntity> items,
 		ReceiptEntity? newReceipt, CancellationToken ct)
 	{
-		Guid[] receiptIds = items.Select(item => item.ReceiptId).Distinct().ToArray();
+		// A new receipt's choices were just checked. An existing receipt's may have been archived since:
+		// those are skipped, as archived defaults are, so the item falls back to its default.
 		Dictionary<Guid, (Guid? PaidFrom, Guid? Occasion)> receipts = newReceipt is not null
 			? new() { [newReceipt.Id] = (newReceipt.PaidFromEnvelopeId, newReceipt.OccasionId) }
-			: await db.Receipts.IgnoreQueryFilters().AsNoTracking().Where(receipt => receiptIds.Contains(receipt.Id))
-				.ToDictionaryAsync(receipt => receipt.Id, receipt => (receipt.PaidFromEnvelopeId, receipt.OccasionId), ct);
+			: await SelectableReceiptChoicesAsync(db, items.Select(item => item.ReceiptId).Distinct().ToArray(), ct);
 		await RequireChoicesAsync(db, items.Select(item => item.EnvelopeOverrideId), items.Select(item => item.OccasionId), ct);
 		foreach (ReceiptItemEntity item in items)
 		{
@@ -47,6 +47,36 @@ internal static class ItemEnvelopeWriter
 	}
 
 	/// <summary>
+	/// Records an item's explicit choices: an envelope is a per-item override and null returns the item to
+	/// automatic (the receipt's paid-from, else its item type's default); a null occasion clears the tag.
+	/// </summary>
+	internal static async Task ApplyItemChoicesAsync(ApplicationDbContext db, ReceiptItemEntity item, Guid? envelopeOverride,
+		Guid? occasion, CancellationToken ct)
+	{
+		EnvelopeAssignment stored = Get(item);
+		// Only new choices must be selectable; keeping an archived envelope or occasion is allowed.
+		await RequireChoicesAsync(db,
+			[stored.Source == EnvelopeSource.Item && stored.EnvelopeId == envelopeOverride ? null : envelopeOverride],
+			[occasion != item.OccasionId ? occasion : null], ct);
+		item.OccasionId = occasion;
+		if (envelopeOverride is null && stored.Source != EnvelopeSource.Item)
+		{
+			return;
+		}
+		Guid? paidFrom = null;
+		Guid? itemTypeDefault = null;
+		if (envelopeOverride is null)
+		{
+			paidFrom = (await SelectableReceiptChoicesAsync(db, [item.ReceiptId], ct)).GetValueOrDefault(item.ReceiptId).PaidFrom;
+			if (paidFrom is null && (await CurrentTypesAsync(db, [item.Id], ct)).TryGetValue(item.Id, out var type))
+			{
+				itemTypeDefault = await ResolveDefaultAsync(db, type.CategoryId, type.RevisionId, ct);
+			}
+		}
+		Set(item, EnvelopeDerivationPolicy.AfterOverrideChange(stored, envelopeOverride, paidFrom, itemTypeDefault));
+	}
+
+	/// <summary>
 	/// Every classification write passes here: default-sourced or unresolved envelopes follow the
 	/// new item type. The caller saves the tracked item with its assignment.
 	/// </summary>
@@ -61,6 +91,20 @@ internal static class ItemEnvelopeWriter
 			return;
 		}
 		Set(item, EnvelopeDerivationPolicy.AfterItemTypeChange(stored, await ResolveDefaultAsync(db, categoryId, revisionId, ct)));
+	}
+
+	/// <summary>Records a receipt's paid-from envelope and occasion (null clears) and applies a change to its items.</summary>
+	internal static async Task ApplyReceiptChoicesAsync(ApplicationDbContext db, ReceiptEntity receipt, Guid? paidFrom,
+		Guid? occasion, CancellationToken ct)
+	{
+		Guid? previousPaidFrom = receipt.PaidFromEnvelopeId;
+		Guid? previousOccasion = receipt.OccasionId;
+		// Only new choices must be selectable; keeping an archived envelope or occasion is allowed.
+		await RequireChoicesAsync(db, [paidFrom != previousPaidFrom ? paidFrom : null],
+			[occasion != previousOccasion ? occasion : null], ct);
+		receipt.PaidFromEnvelopeId = paidFrom;
+		receipt.OccasionId = occasion;
+		await AfterReceiptChoiceChangeAsync(db, receipt, previousPaidFrom, previousOccasion, ct);
 	}
 
 	/// <summary>Applies a changed receipt paid-from envelope and occasion to its items.</summary>
@@ -137,6 +181,21 @@ internal static class ItemEnvelopeWriter
 				  where itemIds.Contains(current.ReceiptItemId)
 				  select new { current.ReceiptItemId, assignment.CategoryId, assignment.TaxonomyRevisionId })
 			.ToDictionaryAsync(row => row.ReceiptItemId, row => (row.CategoryId, row.TaxonomyRevisionId), ct);
+
+	/// <summary>Each receipt's paid-from envelope and occasion, or null where the choice is archived.</summary>
+	private static async Task<Dictionary<Guid, (Guid? PaidFrom, Guid? Occasion)>> SelectableReceiptChoicesAsync(
+		ApplicationDbContext db, Guid[] receiptIds, CancellationToken ct)
+		=> await (from receipt in db.Receipts.IgnoreQueryFilters().AsNoTracking()
+				  where receiptIds.Contains(receipt.Id)
+				  select new
+				  {
+					  receipt.Id,
+					  PaidFrom = db.Envelopes.Any(envelope => envelope.Id == receipt.PaidFromEnvelopeId && envelope.IsActive)
+						  ? receipt.PaidFromEnvelopeId : null,
+					  Occasion = db.Occasions.Any(occasion => occasion.Id == receipt.OccasionId && occasion.IsActive)
+						  ? receipt.OccasionId : null,
+				  })
+			.ToDictionaryAsync(row => row.Id, row => (row.PaidFrom, row.Occasion), ct);
 
 	private static EnvelopeAssignment Get(ReceiptItemEntity item) => new(item.EnvelopeId, item.EnvelopeSource);
 

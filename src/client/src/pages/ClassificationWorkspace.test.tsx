@@ -480,6 +480,13 @@ it("supports manual correction before grouped approval", async () => {
     screen.getByRole("checkbox", { name: /Select Low Fat Milk/i }),
   );
   await userEvent.click(screen.getByRole("combobox"));
+  // Jev's candidates open at the top level; Bakery is not among them, so
+  // browse into Food to correct the proposal.
+  await userEvent.click(
+    within(screen.getByRole("dialog")).getByRole("option", {
+      name: "Food, 2 subcategories",
+    }),
+  );
   await userEvent.click(
     within(screen.getByRole("dialog")).getByRole("option", {
       name: "Food / Bakery",
@@ -496,6 +503,86 @@ it("supports manual correction before grouped approval", async () => {
           itemIds: [itemA, itemB],
           categoryId: revision.nodes[2].id,
         }),
+      }),
+    ),
+  );
+});
+
+it("offers Jev's ranked candidates as suggested paths in the picker", async () => {
+  mockClient.GET.mockImplementation(async (path: string) => {
+    if (path.endsWith("/status")) return ok(status);
+    if (path.endsWith("/review-preference"))
+      return ok({
+        attemptId,
+        state: "active",
+        revision: zeroRevision,
+        excludedItemIds: [],
+      });
+    if (path.endsWith("/suggestions"))
+      return ok({
+        total: 1,
+        offset: 0,
+        limit: 25,
+        items: [
+          {
+            ...suggestion,
+            rootCandidates: [
+              { categoryId: revision.nodes[0].id, probability: 0.95 },
+            ],
+            leafCandidates: [
+              { categoryId: revision.nodes[1].id, probability: 0.7 },
+              { categoryId: revision.nodes[2].id, probability: 0.2 },
+            ],
+          },
+        ],
+      });
+    if (path.endsWith("/items"))
+      return ok({
+        total: 2,
+        offset: 0,
+        limit: 100,
+        itemIds: [itemA, itemB],
+        items: eligibleItems,
+      });
+    if (path === "/api/taxonomy") return ok(revision);
+    throw new Error(path);
+  });
+  renderWithQueryClient(<ClassificationWorkspace />);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Review details" }),
+  );
+  await screen.findByText("Low Fat Milk");
+  await userEvent.click(screen.getByRole("combobox"));
+
+  const suggested = within(screen.getByRole("dialog")).getByRole("group", {
+    name: "Suggested",
+  });
+  // Item-type candidates first, then the group candidates, each in Jev's rank.
+  expect(
+    within(suggested)
+      .getAllByRole("option")
+      .map((option) => option.getAttribute("aria-label")),
+  ).toEqual([
+    "Food / Dairy (suggested, 70% confidence)",
+    "Food / Bakery (suggested, 20% confidence)",
+    "Food (suggested, 95% confidence)",
+  ]);
+  await userEvent.click(
+    within(suggested).getByRole("option", {
+      name: "Food / Bakery (suggested, 20% confidence)",
+    }),
+  );
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /Select Whole Milk/i }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Apply to selected" }),
+  );
+  await waitFor(() =>
+    expect(mockClient.POST).toHaveBeenCalledWith(
+      "/api/category-assistance/suggestions/{attemptId}/accept",
+      expect.objectContaining({
+        body: expect.objectContaining({ categoryId: revision.nodes[2].id }),
       }),
     ),
   );

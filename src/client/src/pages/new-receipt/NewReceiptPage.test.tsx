@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
-import { mockMutationResult } from "@/test/mock-hooks";
+import { mockMutationResult, mockQueryResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
 import NewReceiptPage from "./NewReceiptPage";
 import { http, HttpResponse } from "msw";
@@ -16,6 +16,12 @@ import type { QueryClient } from "@tanstack/react-query";
 
 vi.hoisted(() => vi.stubEnv("VITE_API_URL", "http://new-receipt.session.test"));
 afterAll(() => vi.unstubAllEnvs());
+beforeAll(() => {
+  // Radix Select (the "Paid from" control) needs pointer capture in jsdom.
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+});
 
 vi.mock("@/hooks/usePageTitle", () => ({
   usePageTitle: vi.fn(),
@@ -35,6 +41,27 @@ vi.mock("@/hooks/useLocationHistory", () => ({
     options: [{ value: "Walmart", label: "Walmart" }],
     add: vi.fn(),
     clear: vi.fn(),
+  })),
+}));
+
+// The page's budget choices read these lists; empty by default so the header
+// shows only the location combobox, as when no envelopes or occasions exist.
+vi.mock("@/hooks/useEnvelopes", () => ({
+  useEnvelopes: vi.fn(() => ({
+    ...mockQueryResult({
+      data: { data: [] },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    envelopes: [],
+  })),
+  useOccasions: vi.fn(() => ({
+    ...mockQueryResult({
+      data: { data: [] },
+      isSuccess: true,
+      isLoading: false,
+    }),
+    occasions: [],
   })),
 }));
 
@@ -128,6 +155,24 @@ vi.mock("./LineItemsSection", () => ({
         }
       >
         Add Item
+      </button>
+      <button
+        onClick={() =>
+          onChange([
+            {
+              id: "i2",
+              receiptItemCode: "",
+              description: "Gift wrap",
+              quantity: 1,
+              unitPrice: 50,
+              category: "Gifts",
+              subcategory: "",
+              envelopeId: "env-gifts",
+            },
+          ])
+        }
+      >
+        Add Overridden Item
       </button>
     </div>
   ),
@@ -741,5 +786,54 @@ describe("NewReceiptPage", () => {
     await user.click(screen.getByRole("button", { name: "Add Item" }));
     expect(screen.queryByText(/items? needs? review/)).not.toBeInTheDocument();
     expect(screen.queryByText("Review on save")).not.toBeInTheDocument();
+  });
+
+  it("sends the receipt's paid-from envelope, occasion and each item's override", async () => {
+    const { useEnvelopes, useOccasions } = await import("@/hooks/useEnvelopes");
+    vi.mocked(useEnvelopes).mockReturnValue({
+      ...mockQueryResult({ isSuccess: true, isLoading: false }),
+      envelopes: [
+        { id: "env-groceries", name: "Groceries", isActive: true },
+        { id: "env-gifts", name: "Gifts", isActive: true },
+      ],
+    });
+    vi.mocked(useOccasions).mockReturnValue({
+      ...mockQueryResult({ isSuccess: true, isLoading: false }),
+      occasions: [{ id: "occ-birthday", name: "Birthday", isActive: true }],
+    });
+    const user = userEvent.setup();
+    renderWithProviders(<NewReceiptPage />);
+
+    await user.click(screen.getByRole("combobox", { name: /^Location/ }));
+    await user.click(await screen.findByText("Walmart"));
+    const dateInput = screen.getByPlaceholderText("MM/DD/YYYY");
+    await user.click(dateInput);
+    await user.type(dateInput, "01/15/2024");
+    await user.click(screen.getByRole("combobox", { name: "Paid from" }));
+    await user.click(screen.getByRole("option", { name: "Groceries" }));
+    await user.click(screen.getByRole("button", { name: "Add occasion" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Birthday" }));
+    await user.click(screen.getAllByText("Add Transaction")[0]);
+    await user.click(
+      screen.getByRole("button", { name: "Add Overridden Item" }),
+    );
+    await user.click(screen.getAllByText("Submit Receipt")[0]);
+
+    await vi.waitFor(() => {
+      expect(mockCreateCompleteReceiptAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          receipt: expect.objectContaining({
+            paidFromEnvelopeId: "env-groceries",
+            occasionId: "occ-birthday",
+          }),
+          items: [
+            expect.objectContaining({
+              description: "Gift wrap",
+              envelopeId: "env-gifts",
+            }),
+          ],
+        }),
+      );
+    });
   });
 });

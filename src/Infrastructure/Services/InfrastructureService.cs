@@ -180,6 +180,7 @@ public static class InfrastructureService
 			.AddScoped<IEnvelopeService, EnvelopeService>()
 			.AddScoped<IOccasionService, OccasionService>()
 			.AddScoped<IItemTypeEnvelopeDefaultService, ItemTypeEnvelopeDefaultService>()
+			.AddScoped<IBudgetChoiceService, BudgetChoiceService>()
 			.AddScoped<IYnabMemoSyncService, YnabMemoSyncService>()
 			.AddScoped<IYnabResponseContext, YnabResponseContext>()
 			.AddSingleton<IYnabSplitCalculator, YnabSplitCalculator>();
