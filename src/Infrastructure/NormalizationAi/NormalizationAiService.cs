@@ -8,6 +8,7 @@ using Infrastructure.Entities.Core;
 using Infrastructure.Entities.NormalizationAi;
 using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.NormalizationAi;
@@ -19,7 +20,8 @@ public sealed partial class NormalizationAiService(
 	TimeProvider timeProvider,
 	ICommittedChangePublisher publisher,
 	IEmbeddingService? candidateEmbeddingService = null,
-		IOptions<PiNormalizationRunnerOptions>? runnerOptions = null) : INormalizationAiService
+		IOptions<PiNormalizationRunnerOptions>? runnerOptions = null,
+	ILoggerFactory? loggerFactory = null) : INormalizationAiService
 {
 	private NormalizationAiOptions Settings => options.Value;
 	private ChatGptCredentialBinding? Binding => runnerOptions is null ? null : new(runnerOptions.Value);

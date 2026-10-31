@@ -95,7 +95,10 @@ internal static class NormalizationCandidateRetrieval
 				if (include is not null)
 				{
 					string[] channels = existing.Channels.Append(channel).Distinct().ToArray();
-					if (!include(Candidate(target, channels, []))) { continue; }
+					// Only the semantic channel may rest on similarity; otherwise a near neighbour would be
+					// recorded, labelled and capped as if it carried exact, approved or lexical evidence.
+					NormalizationCatalogCandidate candidate = Candidate(target, channels, []);
+					if (!include(channel == "semantic" ? candidate : candidate with { SemanticSimilarity = null })) { continue; }
 				}
 				if (!found.ContainsKey(target.Id)) { found.Add(target.Id, existing); }
 				existing.Channels.Add(channel);

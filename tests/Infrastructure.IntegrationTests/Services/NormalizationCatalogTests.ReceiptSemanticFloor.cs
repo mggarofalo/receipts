@@ -50,6 +50,21 @@ public sealed partial class NormalizationCatalogTests
 	}
 
 	[Fact]
+	public async Task ReceiptSuggestions_LabelANeighbourAdmittedBySimilarityOnlyAsSemantic()
+	{
+		await ResetAsync();
+		float[] query = UnitVector(1, 0);
+		// "milk" is a substring of the name, but one shared word is not useful lexical evidence here.
+		var neighbour = await EmbeddedCanonicalAsync("Coconut milk", query);
+		var service = new ReceiptNormalizationCandidatesService(new Factory(fixture), TimeProvider.System, EmbeddingReturning("Whole milk", query));
+
+		var candidates = await service.GetCandidatesAsync(Actor, new("Synthetic market", "Whole milk", null), CancellationToken.None);
+
+		candidates.Should().ContainSingle(candidate => candidate.Id == neighbour.Id)
+			.Which.Channels.Should().Equal(["semantic"], "evidence the row lacks must not be claimed for it");
+	}
+
+	[Fact]
 	public async Task ReceiptSuggestions_DegradeToLexicalEvidenceWhenEmbeddingFails()
 	{
 		await ResetAsync();

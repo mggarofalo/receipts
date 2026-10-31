@@ -8,6 +8,7 @@ using Infrastructure.Entities.Core;
 using Infrastructure.Entities.NormalizationAi;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.NormalizationAi;
 
@@ -40,7 +41,8 @@ public sealed partial class NormalizationAiService
 		if (connection.Busy) { throw Error(409, "provider_busy", "Wait for the current ChatGPT operation."); }
 		if (!connection.CredentialsPresent) { throw Error(409, "not_connected", "Sign in to ChatGPT before requesting suggestions."); }
 		if (!connection.Models.Contains(model, StringComparer.Ordinal)) { throw Error(400, "invalid_model", "Choose an available model."); }
-		var catalog = new NormalizationCatalogService(contextFactory, timeProvider, publisher, candidateEmbeddingService);
+		var catalog = new NormalizationCatalogService(contextFactory, timeProvider, publisher, candidateEmbeddingService,
+			loggerFactory?.CreateLogger<NormalizationCatalogService>());
 		List<NormalizationAiProposalEntity> proposals = [];
 		foreach (var selection in selections)
 		{
