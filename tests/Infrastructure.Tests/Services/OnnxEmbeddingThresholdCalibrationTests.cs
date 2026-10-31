@@ -8,8 +8,9 @@ using Xunit.Abstractions;
 namespace Infrastructure.Tests.Services;
 
 /// <summary>
-/// Calibration test for embedding similarity thresholds used by the normalized
-/// description registry feature. Generates embeddings for known-equivalent clusters
+/// Measures how the embedding model separates grocery descriptions. No production code reads
+/// a similarity threshold any more (RECEIPTS-1099 retired the settings-page matcher); the
+/// suggested cut-offs in the report are for evaluating a model change. Generates embeddings for known-equivalent clusters
 /// of grocery descriptions and records the cosine-similarity distribution both
 /// within clusters (should be high) and across clusters (should be low). The output
 /// is written to calibration-results.md at the repo root for offline review.

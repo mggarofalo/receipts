@@ -32,17 +32,6 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 		try
 		{
 			_target = await server.CreateIsolatedAsync();
-			// Migrations seed default settings; this test supplies its own row
-			// and expects the destination to begin without application data.
-			await using (ApplicationDbContext source = Source())
-			{
-				await source.NormalizedDescriptionSettings.ExecuteDeleteAsync();
-			}
-
-			await using (ApplicationDbContext target = Target())
-			{
-				await target.NormalizedDescriptionSettings.ExecuteDeleteAsync();
-			}
 		}
 		catch
 		{
@@ -197,7 +186,6 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 		Guid legacyCatMapId = Guid.NewGuid();
 		Guid legacySyncId = Guid.NewGuid();
 		Guid normId = Guid.NewGuid();
-		Guid settingsId = Guid.NewGuid();
 		DateTimeOffset ts = new(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
 		await using (ApplicationDbContext ctx = Source())
@@ -309,13 +297,6 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 				Status = NormalizedDescriptionStatus.PendingReview,
 				CreatedAt = ts,
 			});
-			ctx.NormalizedDescriptionSettings.Add(new NormalizedDescriptionSettingsEntity
-			{
-				Id = settingsId,
-				AutoAcceptThreshold = 0.87,
-				PendingReviewThreshold = 0.62,
-				UpdatedAt = ts,
-			});
 			await ctx.SaveChangesAsync();
 		}
 
@@ -326,7 +307,6 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 		result.YnabCategoryMappingsCreated.Should().Be(2);
 		result.YnabSyncRecordsCreated.Should().Be(2);
 		result.NormalizedDescriptionsCreated.Should().Be(1);
-		result.NormalizedDescriptionSettingsCreated.Should().Be(1);
 
 		await using ApplicationDbContext assert = Target();
 
@@ -377,11 +357,42 @@ public class BackupRoundTripFidelityTests(PostgresFixture server) : IClassFixtur
 		norm.Status.Should().Be(NormalizedDescriptionStatus.PendingReview);
 		norm.CreatedAt.Should().Be(ts);
 		norm.Embedding.Should().BeNull("embeddings are regenerated after restore, not carried in the backup");
+	}
 
-		NormalizedDescriptionSettingsEntity settings = (await assert.NormalizedDescriptionSettings.FindAsync(settingsId))!;
-		settings.AutoAcceptThreshold.Should().Be(0.87);
-		settings.PendingReviewThreshold.Should().Be(0.62);
-		settings.UpdatedAt.Should().Be(ts);
+	// RECEIPTS-1099: the retired matcher thresholds are no longer exported. The table stays, empty,
+	// because every v5+ importer requires it; a backup that still carries a row restores without it.
+	[Fact]
+	public async Task RetiredMatcherSettings_AreNotExportedAndBackupsThatCarryThemStillRestore()
+	{
+		string path = await new BackupService(new Factory(_source.CreateOptions()), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+		SqliteConnection.ClearAllPools();
+		try
+		{
+			await using (SqliteConnection sqlite = new($"Data Source={path};Pooling=False"))
+			{
+				await sqlite.OpenAsync();
+				await using SqliteCommand count = sqlite.CreateCommand();
+				count.CommandText = "SELECT COUNT(*) FROM normalized_description_settings";
+				((long)(await count.ExecuteScalarAsync())!).Should().Be(0);
+				await using SqliteCommand insert = sqlite.CreateCommand();
+				insert.CommandText = "INSERT INTO normalized_description_settings (id, auto_accept_threshold, pending_review_threshold, updated_at) VALUES ($id, '0.87', '0.62', $at)";
+				insert.Parameters.AddWithValue("$id", Guid.NewGuid().ToString());
+				insert.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O"));
+				await insert.ExecuteNonQueryAsync();
+			}
+
+			BackupImportService importer = new(new Factory(_target.CreateOptions()), NullLogger<BackupImportService>.Instance);
+			await using (FileStream stream = File.OpenRead(path))
+			{
+				(await importer.ImportFromSqliteAsync(stream, CancellationToken.None)).TotalCreated.Should().Be(0);
+			}
+
+			await using ApplicationDbContext target = Target();
+			(await target.Database.SqlQueryRaw<bool>(
+				"SELECT to_regclass('matching.\"NormalizedDescriptionSettings\"') IS NOT NULL AS \"Value\"").SingleAsync())
+				.Should().BeFalse("the migration drops the retired settings table");
+		}
+		finally { SqliteConnection.ClearAllPools(); File.Delete(path); }
 	}
 
 

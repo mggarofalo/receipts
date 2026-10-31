@@ -65,13 +65,6 @@ vi.mock("@/hooks/useItemTemplates", () => ({
   ),
 }));
 
-vi.mock("@/hooks/useNormalizedDescriptionSettings", () => ({
-  useSettings: vi.fn(),
-  useUpdateSettingsMutation: vi.fn(() => mockMutationResult()),
-  useTestMatchMutation: vi.fn(() => mockMutationResult()),
-  usePreviewImpactMutation: vi.fn(() => mockMutationResult()),
-}));
-
 vi.mock("@/hooks/useNormalizedDescriptionMaintenance", () => ({
   useRequeuePendingPreview: vi.fn(),
   useRequeuePendingMutation: vi.fn(() => mockMutationResult()),
@@ -102,12 +95,6 @@ import {
   useUpdateStatusMutation,
 } from "@/hooks/useNormalizedDescriptionActions";
 import { useItemTemplates } from "@/hooks/useItemTemplates";
-import {
-  useSettings,
-  useUpdateSettingsMutation,
-  useTestMatchMutation,
-  usePreviewImpactMutation,
-} from "@/hooks/useNormalizedDescriptionSettings";
 import {
   useRequeuePendingPreview,
   useRequeuePendingMutation,
@@ -252,33 +239,14 @@ const requeuePreview = {
   estimatedCatchUpSeconds: 90,
 };
 
-const liveSettings = {
-  id: "00000000-0000-0000-0000-000000000001",
-  autoAcceptThreshold: 0.9,
-  pendingReviewThreshold: 0.75,
-  updatedAt: "2025-01-01T00:00:00Z",
-};
-
 function wireDefaults() {
   vi.mocked(useNormalizedDescriptions).mockImplementation(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ((options?: ListOptions) => mockList(options)) as any,
   );
-  vi.mocked(useSettings).mockReturnValue(
-    mockQueryResult({
-      data: liveSettings,
-      isLoading: false,
-      isSuccess: true,
-      isPending: false,
-      status: "success",
-    }),
-  );
   vi.mocked(useMergeMutation).mockReturnValue(mockMutationResult());
   vi.mocked(useSplitMutation).mockReturnValue(mockMutationResult());
   vi.mocked(useUpdateStatusMutation).mockReturnValue(mockMutationResult());
-  vi.mocked(useUpdateSettingsMutation).mockReturnValue(mockMutationResult());
-  vi.mocked(useTestMatchMutation).mockReturnValue(mockMutationResult());
-  vi.mocked(usePreviewImpactMutation).mockReturnValue(mockMutationResult());
   vi.mocked(useRequeuePendingPreview).mockReturnValue(
     mockQueryResult({
       data: requeuePreview,
@@ -1562,186 +1530,24 @@ describe("NormalizedDescriptions template evidence and linking", () => {
   });
 });
 
-describe("NormalizedDescriptions settings tab", () => {
+describe("NormalizedDescriptions retired settings tab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wireDefaults();
   });
 
-  it("renders settings tab for admins and hydrates from live settings", async () => {
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    const autoInput = (await screen.findByLabelText(
-      "Auto-Accept Threshold",
-    )) as HTMLInputElement;
-    const pendingInput = screen.getByLabelText(
-      "Pending-Review Threshold",
-    ) as HTMLInputElement;
-    await waitFor(() => expect(autoInput.value).toBe("0.9"));
-    expect(pendingInput.value).toBe("0.75");
-    expect(
-      screen.getByText(/Simulations never change or verify purchases/),
-    ).toBeInTheDocument();
-    const help = screen.getByText("How thresholds work").closest("details")!;
-    expect(help).not.toHaveAttribute("open");
-    await user.click(screen.getByText("How thresholds work"));
-    expect(help).toHaveAttribute("open");
-    expect(help).toHaveTextContent(
-      /verification requires an explicit choice or an approved exact scoped mapping/i,
-    );
-  });
-
-  it("hides settings tab for non-admins", () => {
-    vi.mocked(usePermission).mockReturnValue({
-      roles: ["User"],
-      hasRole: (role: string) => role === "User",
-      isAdmin: () => false,
+  it("offers no Settings tab and falls back to the review queue for ?tab=settings", async () => {
+    renderWithQueryClient(<NormalizedDescriptions />, {
+      route: "/normalized-descriptions?tab=settings",
     });
-    renderWithQueryClient(<NormalizedDescriptions />);
     expect(
       screen.queryByRole("tab", { name: "Settings" }),
     ).not.toBeInTheDocument();
-  });
-
-  it("save triggers update mutation with parsed thresholds", async () => {
-    const mutate = vi.fn();
-    vi.mocked(useUpdateSettingsMutation).mockReturnValue(
-      mockMutationResult({ mutate }),
+    expect(screen.getByRole("tab", { name: "Review Queue" })).toHaveAttribute(
+      "aria-selected",
+      "true",
     );
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    const autoInput = (await screen.findByLabelText(
-      "Auto-Accept Threshold",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(autoInput.value).toBe("0.9"));
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(mutate).toHaveBeenCalledWith({
-      autoAcceptThreshold: 0.9,
-      pendingReviewThreshold: 0.75,
-    });
-  });
-
-  it("shows validation error when pending >= auto", async () => {
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    const autoInput = (await screen.findByLabelText(
-      "Auto-Accept Threshold",
-    )) as HTMLInputElement;
-    const pendingInput = (await screen.findByLabelText(
-      "Pending-Review Threshold",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(autoInput.value).toBe("0.9"));
-
-    await user.clear(autoInput);
-    await user.type(autoInput, "0.5");
-    await user.clear(pendingInput);
-    await user.type(pendingInput, "0.8");
-
-    expect(
-      await screen.findByTestId("threshold-validation-error"),
-    ).toHaveTextContent(/strictly less than the auto-accept threshold/i);
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-  });
-
-  it("shows validation error when a value is out of range", async () => {
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    const autoInput = (await screen.findByLabelText(
-      "Auto-Accept Threshold",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(autoInput.value).toBe("0.9"));
-
-    await user.clear(autoInput);
-    await user.type(autoInput, "2");
-
-    expect(
-      await screen.findByTestId("threshold-validation-error"),
-    ).toHaveTextContent(/between 0 and 1/i);
-  });
-
-  it("preview impact shows panel with deltas", async () => {
-    vi.mocked(usePreviewImpactMutation).mockReturnValue(
-      mockMutationResult({
-        data: {
-          current: { autoAccepted: 5, pendingReview: 2, unresolved: 1 },
-          proposed: { autoAccepted: 6, pendingReview: 1, unresolved: 1 },
-          deltas: {
-            autoToPending: 0,
-            pendingToAuto: 1,
-            unresolvedToAuto: 0,
-            unresolvedToPending: 0,
-          },
-        },
-        isSuccess: true,
-      }),
-    );
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    expect(
-      await screen.findByTestId("preview-impact-panel"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/pending-to-auto: 1/i)).toBeInTheDocument();
-  });
-
-  it("preview impact button calls mutation with current edited thresholds", async () => {
-    const mutate = vi.fn();
-    vi.mocked(usePreviewImpactMutation).mockReturnValue(
-      mockMutationResult({ mutate }),
-    );
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    const autoInput = (await screen.findByLabelText(
-      "Auto-Accept Threshold",
-    )) as HTMLInputElement;
-    await waitFor(() => expect(autoInput.value).toBe("0.9"));
-    await user.click(screen.getByRole("button", { name: /preview impact/i }));
-    expect(mutate).toHaveBeenCalledWith({
-      autoAcceptThreshold: 0.9,
-      pendingReviewThreshold: 0.75,
-    });
-  });
-
-  it("test description box renders candidates and outcome", async () => {
-    const mutate = vi.fn();
-    vi.mocked(useTestMatchMutation).mockReturnValue(
-      mockMutationResult({
-        mutate,
-        data: {
-          candidates: [
-            {
-              normalizedDescriptionId: "a-1",
-              canonicalName: "Apples",
-              cosineSimilarity: 0.87,
-              status: "Active",
-            },
-          ],
-          simulatedOutcome: "AutoAccept",
-        },
-        isSuccess: true,
-      }),
-    );
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-
-    const testInput = await screen.findByLabelText("Description");
-    await user.type(testInput, "apples");
-    await user.click(screen.getByRole("button", { name: "Test" }));
-
-    expect(mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ description: "apples", topN: 5 }),
-    );
-
-    const panel = await screen.findByTestId("test-match-panel");
-    expect(within(panel).getByText("AutoAccept")).toBeInTheDocument();
-    expect(within(panel).getByText("Apples")).toBeInTheDocument();
-    expect(within(panel).getByText("0.8700")).toBeInTheDocument();
+    expect(screen.queryByText(/threshold/i)).not.toBeInTheDocument();
   });
 });
 
@@ -1936,33 +1742,6 @@ describe("normalization operation evidence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     wireDefaults();
-  });
-
-  it("keeps simulation results labeled with their submitted thresholds after edits", async () => {
-    vi.mocked(usePreviewImpactMutation).mockReturnValue(
-      mockMutationResult({
-        data: {
-          current: { autoAccepted: 5, pendingReview: 2, unresolved: 1 },
-          proposed: { autoAccepted: 6, pendingReview: 1, unresolved: 1 },
-          deltas: {
-            autoToPending: 0,
-            pendingToAuto: 1,
-            unresolvedToAuto: 0,
-            unresolvedToPending: 0,
-          },
-        },
-        variables: { autoAcceptThreshold: 0.9, pendingReviewThreshold: 0.75 },
-      }),
-    );
-    const user = userEvent.setup();
-    renderWithQueryClient(<NormalizedDescriptions />);
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    const input = screen.getByLabelText("Auto-Accept Threshold");
-    await user.clear(input);
-    await user.type(input, "0.95");
-    expect(screen.getByTestId("preview-impact-panel")).toHaveTextContent(
-      "Submitted thresholds: auto-accept 0.9, pending-review 0.75",
-    );
   });
 
   it("reports merge read failures and retries without allowing a write", async () => {
@@ -2160,20 +1939,6 @@ describe("split verification and confirmation snapshots", () => {
       expect.any(Object),
     );
   });
-});
-
-it("does not silently replace invalid simulation overrides with live settings", async () => {
-  wireDefaults();
-  const user = userEvent.setup();
-  renderWithQueryClient(<NormalizedDescriptions />);
-  await user.click(screen.getByRole("tab", { name: "Settings" }));
-  await user.type(screen.getByLabelText("Description"), "Milk");
-  const auto = screen.getByLabelText("Auto-Accept Threshold");
-  await user.clear(auto);
-  await user.type(auto, "0.5");
-  expect(screen.getByRole("button", { name: "Test" })).toBeDisabled();
-  await user.clear(auto);
-  expect(screen.getByRole("button", { name: "Test" })).toBeEnabled();
 });
 
 it("does not revive a disproven split selection by navigating to another page", async () => {

@@ -168,7 +168,7 @@ public partial class NormalizedDescriptionStaleWriteTests
 	private DbContextOptions<ApplicationDbContext> Options(IInterceptor interceptor) => new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
 		.UseNpgsql(builder => { builder.MaxBatchSize(1); builder.UsePublicMigrationsHistory(); }).AddInterceptors(interceptor).Options;
 
-	private static NormalizedDescriptionService CanonicalService(DbContextOptions<ApplicationDbContext> options) => new(new OptionsFactory(options), Embedding(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+	private static NormalizedDescriptionService CanonicalService(DbContextOptions<ApplicationDbContext> options) => new(new OptionsFactory(options), Embedding(), new NormalizedDescriptionMapper());
 
 	private async Task WaitForPostgresLockAsync(int pid)
 	{

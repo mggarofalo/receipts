@@ -64,7 +64,7 @@ it("repairs current restored data once per active query, including overlapping Y
   );
   client.setQueryData(["api-keys", "Alice"], "private-key");
   client.setQueryData(["users"], "private-user");
-  client.setQueryData(["normalized-descriptions", "settings"], "old-settings");
+  client.setQueryData(["normalized-descriptions", "list"], "old-list");
   client.setQueryData(["receipts"], "old-receipts");
   const { result } = renderHook(
     () => ({
@@ -89,8 +89,7 @@ it("repairs current restored data once per active query, including overlapping Y
   );
   expect(reads).toHaveBeenCalledTimes(2);
   expect(
-    client.getQueryState(["normalized-descriptions", "settings"])
-      ?.isInvalidated,
+    client.getQueryState(["normalized-descriptions", "list"])?.isInvalidated,
   ).toBe(true);
   expect(client.getQueryState(["receipts"])?.isInvalidated).toBe(true);
   expect(client.getQueryState(["api-keys", "Alice"])?.isInvalidated).toBe(

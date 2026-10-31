@@ -61,8 +61,7 @@ public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture server) 
 	private NormalizedDescriptionService BuildService() => new(
 		new FixtureDbContextFactory(fixture),
 		new NoOpEmbeddingService(),
-		new NormalizedDescriptionMapper(),
-		new NormalizedDescriptionSettingsMapper());
+		new NormalizedDescriptionMapper());
 
 	private static NormalizedDescriptionEntity Row(
 		Guid id,

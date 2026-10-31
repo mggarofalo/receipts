@@ -7,7 +7,6 @@ using Application.Commands.NormalizedDescription.Merge;
 using Application.Commands.NormalizedDescription.Rename;
 using Application.Commands.NormalizedDescription.RequeuePending;
 using Application.Commands.NormalizedDescription.Split;
-using Application.Commands.NormalizedDescription.UpdateSettings;
 using Application.Commands.NormalizedDescription.UpdateStatus;
 using Application.Commands.Reports;
 using Application.Models.NormalizedDescriptions;
@@ -84,10 +83,6 @@ public class CurationProducerNotificationTests
 				_mediator.Setup(m => m.Send(It.IsAny<UpdateNormalizedDescriptionStatusCommand>(), It.IsAny<CancellationToken>()))
 					.Returns(() => CompleteCommand(true));
 				return async () => _response = await normalized.UpdateNormalizedDescriptionStatus(_id, new UpdateNormalizedDescriptionStatusRequest { Status = DtoStatus.Rejected }, CancellationToken.None);
-			case "settings":
-				_mediator.Setup(m => m.Send(It.IsAny<UpdateNormalizedDescriptionSettingsCommand>(), It.IsAny<CancellationToken>()))
-					.Returns(() => CompleteCommand(new NormalizedDescriptionSettings(_id, 0.9, 0.5, DateTimeOffset.UtcNow)));
-				return async () => _response = await normalized.UpdateSettings(new UpdateNormalizedDescriptionSettingsRequest { AutoAcceptThreshold = 0.9, PendingReviewThreshold = 0.5 }, CancellationToken.None);
 			case "requeue":
 				_mediator.Setup(m => m.Send(It.IsAny<RequeuePendingCommand>(), It.IsAny<CancellationToken>()))
 					.Returns(() => CompleteCommand<RequeuePendingResult?>(new(1, 1, 1)));
@@ -136,7 +131,6 @@ public class CurationProducerNotificationTests
 	[InlineData("rename")]
 	[InlineData("link")]
 	[InlineData("status")]
-	[InlineData("settings")]
 	[InlineData("requeue")]
 	public async Task SuccessfulNormalizedProducer_DoesNotDuplicateServiceOwnedPublication(string operation)
 	{

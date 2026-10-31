@@ -29,7 +29,7 @@ public sealed partial class NormalizationCatalogTests
 		embeddings.SetupGet(x => x.IsConfigured).Returns(true);
 		embeddings.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
 			.Returns(async (string _, CancellationToken ct) => { entered.TrySetResult(); await release.Task.WaitAsync(ct); return vector; });
-		var service = new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), embeddings.Object, new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+		var service = new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), embeddings.Object, new NormalizedDescriptionMapper());
 		using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 		var split = service.SplitAsync(ids, "Reviewed new identity", deadline.Token);
 		try
@@ -85,7 +85,7 @@ public sealed partial class NormalizationCatalogTests
 		embeddings.SetupGet(x => x.IsConfigured).Returns(true);
 		embeddings.Setup(x => x.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
 			.Returns(async (string _, CancellationToken ct) => { entered.TrySetResult(); await release.Task.WaitAsync(ct); return vector; });
-		var service = new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), embeddings.Object, new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+		var service = new NormalizedDescriptionService(new EntryActorFactory(fixture.CreateOptions(), Actor), embeddings.Object, new NormalizedDescriptionMapper());
 		using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 		var merge = service.MergeAsync(keep.Id, discard.Id, deadline.Token);
 		Guid lateId;
@@ -126,7 +126,7 @@ public sealed partial class NormalizationCatalogTests
 		var facts = await FactsAsync(ids);
 		var audits = await AuditCountAsync(ids);
 		var options = new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(new FailReceiptAssignmentWrite()).Options;
-		var service = new NormalizedDescriptionService(new EntryActorFactory(options, Actor), new UnavailableEmbeddingService(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+		var service = new NormalizedDescriptionService(new EntryActorFactory(options, Actor), new UnavailableEmbeddingService(), new NormalizedDescriptionMapper());
 
 		Func<Task> split = () => service.SplitAsync(ids, "New reviewed split identity", CancellationToken.None);
 

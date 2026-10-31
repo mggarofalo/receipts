@@ -1,12 +1,10 @@
 using Application.Interfaces.Services;
-using Application.Models.NormalizedDescriptions;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Mapping;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
-using Pgvector;
 using SampleData.Entities;
 using DomainStatus = Domain.NormalizedDescriptions.NormalizedDescriptionStatus;
 
@@ -141,21 +139,14 @@ public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 			"every trashed item must be repointed at the surviving row rather than SetNull'd");
 	}
 
-	// RECEIPTS-892. The score on a re-linked item was the similarity to the DISCARDED row, so a
-	// threshold-impact preview run after a merge was computed partly from comparisons against a
-	// row that no longer existed. Re-scoring has to keep those items inside the scored
-	// population — nulling the score instead would move them to Unresolved permanently, since
-	// the resolver only picks up rows WHERE "NormalizedDescriptionId" IS NULL.
-	//
-	// Postgres-only: the re-score runs the real pgvector `<=>` expression, which InMemory cannot.
+	// RECEIPTS-1099. The item's score was measured against the discarded row; a merge clears it
+	// instead of re-measuring against the survivor, and needs no embedding to do so.
 	[Fact]
-	public async Task MergeAsync_LeavesThresholdImpactCountsStable()
+	public async Task MergeAsync_RelinksItemsAndClearsTheirMeasuredScore()
 	{
 		Guid keepId = Guid.NewGuid();
 		Guid discardId = Guid.NewGuid();
 		Guid itemId = Guid.NewGuid();
-
-		float[] vector = UnitVector();
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 
 		{
@@ -164,46 +155,18 @@ public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 
 			// Names unique to this test: the fixture's Postgres is shared across the collection
 			// and NormalizedDescriptions has a unique index on lower(CanonicalName).
-			NormalizedDescriptionEntity keep = BuildNormalized(keepId, "Threshold Sourdough");
-			keep.Embedding = new Vector(vector);
-			keep.EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
-			setup.NormalizedDescriptions.AddRange(keep, BuildNormalized(discardId, "Thrshold Sourdogh"));
+			setup.NormalizedDescriptions.AddRange(BuildNormalized(keepId, "Cleared Sourdough"), BuildNormalized(discardId, "Clearde Sourdogh"));
 			await setup.SaveChangesAsync();
 
 			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
 			item.Id = itemId;
 			item.NormalizedDescriptionId = discardId;
-			// The similarity to "Thrshold Sourdogh" — high enough to be auto-accepted, and about
-			// to stop describing anything real.
 			item.NormalizedDescriptionMatchScore = 0.97;
 			setup.ReceiptItems.Add(item);
 			await setup.SaveChangesAsync();
 		}
 
-		NormalizedDescriptionService service = new(
-			new FixtureContextFactory(fixture),
-			new FixedVectorEmbeddingService(vector),
-			new NormalizedDescriptionMapper(),
-			new NormalizedDescriptionSettingsMapper());
-
-		ThresholdImpactPreview before = await service.PreviewThresholdImpactAsync(
-			NormalizedDescriptionService.InitialAutoAcceptThreshold,
-			NormalizedDescriptionService.InitialPendingReviewThreshold,
-			CancellationToken.None);
-
-		await service.MergeAsync(keepId, discardId, CancellationToken.None);
-
-		ThresholdImpactPreview after = await service.PreviewThresholdImpactAsync(
-			NormalizedDescriptionService.InitialAutoAcceptThreshold,
-			NormalizedDescriptionService.InitialPendingReviewThreshold,
-			CancellationToken.None);
-
-		after.Current.Unresolved.Should().Be(
-			before.Current.Unresolved,
-			"a merge must not push its items out of the scored population");
-		after.Current.AutoAccepted.Should().Be(
-			before.Current.AutoAccepted,
-			"the item is still a strong match — measured against the survivor this time");
+		await CreateService().MergeAsync(keepId, discardId, CancellationToken.None);
 
 		await using ApplicationDbContext verify = fixture.CreateDbContext();
 		ReceiptItemEntity itemAfter = await verify.ReceiptItems
@@ -211,24 +174,13 @@ public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 			.FirstAsync(r => r.Id == itemId);
 
 		itemAfter.NormalizedDescriptionId.Should().Be(keepId);
-		// Same vector on both sides, so the real cosine similarity is 1 — and crucially NOT the
-		// 0.97 that was measured against the row this merge deleted.
-		itemAfter.NormalizedDescriptionMatchScore.Should().NotBeNull();
-		itemAfter.NormalizedDescriptionMatchScore!.Value.Should().BeApproximately(1.0, 1e-6);
-	}
-
-	private static float[] UnitVector()
-	{
-		float[] vector = new float[OnnxEmbeddingService.EmbeddingDimension];
-		vector[0] = 1f;
-		return vector;
+		itemAfter.NormalizedDescriptionMatchScore.Should().BeNull();
 	}
 
 	private NormalizedDescriptionService CreateService() => new(
 		new FixtureContextFactory(fixture),
 		new UnconfiguredEmbeddingService(),
-		new NormalizedDescriptionMapper(),
-		new NormalizedDescriptionSettingsMapper());
+		new NormalizedDescriptionMapper());
 
 	private static NormalizedDescriptionEntity BuildNormalized(Guid id, string canonicalName) => new()
 	{
@@ -243,10 +195,7 @@ public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 		public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext();
 	}
 
-	// Merge re-scores re-linked items against the surviving row (RECEIPTS-892), so it *does*
-	// embed now. An unconfigured stub keeps the link-integrity tests above off the ONNX model:
-	// with no embedding service the re-score resolves to a null score, which is the documented
-	// fallback and does not affect what those tests assert (the link, not the number).
+	// Merge never embeds; the unconfigured stub only satisfies the constructor.
 	private sealed class UnconfiguredEmbeddingService : IEmbeddingService
 	{
 		public bool IsConfigured => false;
@@ -256,19 +205,5 @@ public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
 
 		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken) =>
 			Task.FromResult(new List<float[]>());
-	}
-
-	// Returns one fixed vector for any text, so a row seeded with the same vector scores an
-	// exact cosine similarity of 1. Deterministic, and still exercises the real pgvector
-	// `<=>` expression rather than stubbing the similarity out.
-	private sealed class FixedVectorEmbeddingService(float[] vector) : IEmbeddingService
-	{
-		public bool IsConfigured => true;
-
-		public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken) =>
-			Task.FromResult(vector);
-
-		public Task<List<float[]>> GenerateEmbeddingsAsync(List<string> texts, CancellationToken cancellationToken) =>
-			Task.FromResult(texts.Select(_ => vector).ToList());
 	}
 }

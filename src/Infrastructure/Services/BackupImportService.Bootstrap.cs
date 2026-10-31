@@ -65,6 +65,5 @@ public partial class BackupImportService
 		await db.ItemTemplates.IgnoreQueryFilters().ExecuteDeleteAsync(ct);
 		await db.Subcategories.IgnoreQueryFilters().ExecuteDeleteAsync(ct);
 		await db.Categories.IgnoreQueryFilters().ExecuteDeleteAsync(ct);
-		await db.NormalizedDescriptionSettings.ExecuteDeleteAsync(ct);
 	}
 }

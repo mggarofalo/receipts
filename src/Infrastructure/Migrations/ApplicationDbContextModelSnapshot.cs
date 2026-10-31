@@ -1381,34 +1381,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("NormalizedDescriptions", "matching");
                 });
 
-            modelBuilder.Entity("Infrastructure.Entities.Core.NormalizedDescriptionSettingsEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<double>("AutoAcceptThreshold")
-                        .HasColumnType("double precision");
-
-                    b.Property<double>("PendingReviewThreshold")
-                        .HasColumnType("double precision");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamptz");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("NormalizedDescriptionSettings", "matching");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("00000000-0000-0000-0000-000000000001"),
-                            AutoAcceptThreshold = 0.81000000000000005,
-                            PendingReviewThreshold = 0.68000000000000005,
-                            UpdatedAt = new DateTimeOffset(new DateTime(2026, 4, 19, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0))
-                        });
-                });
-
             modelBuilder.Entity("Infrastructure.Entities.Core.ReceiptEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1602,8 +1574,6 @@ namespace Infrastructure.Migrations
                     b.HasIndex("EnvelopeId");
 
                     b.HasIndex("NormalizedDescriptionId");
-
-                    b.HasIndex("NormalizedDescriptionMatchScore");
 
                     b.HasIndex("OccasionId");
 

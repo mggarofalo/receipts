@@ -180,5 +180,5 @@ public partial class TemplateNormalizationOwnershipTests
 		return id;
 	}
 	private static NormalizedDescription Canonical(Guid id, string name) => new(id, name, NormalizedDescriptionStatus.Active, DateTimeOffset.UtcNow);
-	private NormalizedDescriptionService RealRegistry() => new(new FixtureFactory(fixture), Mock.Of<IEmbeddingService>(), new NormalizedDescriptionMapper(), new NormalizedDescriptionSettingsMapper());
+	private NormalizedDescriptionService RealRegistry() => new(new FixtureFactory(fixture), Mock.Of<IEmbeddingService>(), new NormalizedDescriptionMapper());
 }

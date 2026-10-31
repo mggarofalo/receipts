@@ -18,38 +18,6 @@ namespace Infrastructure.IntegrationTests.Services;
 [Trait("Prerequisite", "Postgres")]
 public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
-	[Fact]
-	public async Task TestMatch_StaleSemanticMatchIsIgnoredButExactCanonicalRemainsDiscoverable()
-	{
-
-		Guid staleId = Guid.NewGuid();
-		await using (ApplicationDbContext seed = fixture.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = staleId,
-				CanonicalName = "Different canonical concept",
-				Status = NormalizedDescriptionStatus.Active,
-				Embedding = UnitVector(),
-				EmbeddingModelVersion = "obsolete-space",
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await seed.SaveChangesAsync();
-		}
-		NormalizedDescriptionService service = new(
-			new FixtureDbContextFactory(fixture),
-			new FixedEmbeddingService(),
-			new NormalizedDescriptionMapper(),
-			new NormalizedDescriptionSettingsMapper());
-
-		var semantic = await service.TestMatchAsync("Brand new concept", 5, null, null, CancellationToken.None);
-		var exact = await service.TestMatchAsync("different CANONICAL concept", 5, null, null, CancellationToken.None);
-		semantic.Candidates.Should().BeEmpty("obsolete vectors cannot participate in semantic suggestions");
-		exact.SimulatedTargetId.Should().Be(staleId, "exact lookup remains discoverable without implying purchase verification");
-		await using ApplicationDbContext verify = fixture.CreateDbContext();
-		(await verify.NormalizedDescriptions.CountAsync()).Should().Be(1, "advisory lookup cannot create identities");
-	}
-
 	[Theory]
 	[InlineData(false, 0.0)]
 	[InlineData(true, 1.0)]
@@ -142,8 +110,7 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : Isol
 		NormalizedDescriptionService service = new(
 			new OptionsDbContextFactory(options),
 			new FixedEmbeddingService(),
-			new NormalizedDescriptionMapper(),
-			new NormalizedDescriptionSettingsMapper());
+			new NormalizedDescriptionMapper());
 
 		Task<Application.Models.NormalizedDescriptions.EmbeddingCoverage> read =
 			service.GetEmbeddingCoverageAsync(CancellationToken.None);
@@ -180,7 +147,6 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : Isol
 		values[0] = 1;
 		return new Vector(values);
 	}
-
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

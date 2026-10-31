@@ -112,9 +112,6 @@ public class BackupCompressedRoundTripTests(PostgresFixture server) : IClassFixt
 	{
 		PostgresFixture database = await server.CreateIsolatedAsync();
 		_databases.Add(database);
-		// Migrations seed default settings; restores below must start without application data.
-		await using ApplicationDbContext context = database.CreateDbContext();
-		await context.NormalizedDescriptionSettings.ExecuteDeleteAsync();
 		return database;
 	}
 

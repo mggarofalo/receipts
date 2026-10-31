@@ -97,7 +97,6 @@ public class BackupService(
 			await ExportYnabAccountMappingsAsync(source, sqlite, cancellationToken);
 			await ExportYnabCategoryMappingsAsync(source, sqlite, cancellationToken);
 			await ExportYnabSyncRecordsAsync(source, sqlite, cancellationToken);
-			await ExportNormalizedDescriptionSettingsAsync(source, sqlite, cancellationToken);
 			await ExportAcceptedDuplicatePairsAsync(source, sqlite, cancellationToken);
 			await PortableCatalogArchive.ExportAsync(source, sqlite, cancellationToken);
 			await PortableTaxonomyArchive.ExportAsync(source, sqlite, cancellationToken, candidate);
@@ -317,6 +316,8 @@ public class BackupService(
 				FOREIGN KEY (receipt_id_b) REFERENCES receipts(id)
 			)
 			""",
+			// Retired matcher thresholds (RECEIPTS-1099). The table stays, empty, because every
+			// v5+ importer — including the previous release, for rollback — requires it.
 			"""
 			CREATE TABLE normalized_description_settings (
 				id TEXT NOT NULL PRIMARY KEY,
@@ -696,29 +697,6 @@ public class BackupService(
 			cmd.Parameters.AddWithValue("$displayLabel", (object?)description.DisplayLabel ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$neighbourId", (object?)description.NearestNeighbourId?.ToString() ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$neighbourScore", (object?)description.NearestNeighbourSimilarity?.ToString("R", CultureInfo.InvariantCulture) ?? DBNull.Value);
-			await cmd.ExecuteNonQueryAsync(cancellationToken);
-		}
-	}
-
-	// Singleton settings row holding non-regenerable user thresholds. Doubles are written with
-	// InvariantCulture for the same reason decimals are (RECEIPTS-771) — a comma-decimal host
-	// must not corrupt the values.
-	private static async Task ExportNormalizedDescriptionSettingsAsync(ApplicationDbContext source, SqliteConnection sqlite, CancellationToken cancellationToken)
-	{
-		List<NormalizedDescriptionSettingsEntity> settings = await source.NormalizedDescriptionSettings.AsNoTracking().ToListAsync(cancellationToken);
-
-		const string sql = """
-			INSERT INTO normalized_description_settings (id, auto_accept_threshold, pending_review_threshold, updated_at)
-			VALUES ($id, $autoAccept, $pendingReview, $updatedAt)
-			""";
-		foreach (NormalizedDescriptionSettingsEntity setting in settings)
-		{
-			await using SqliteCommand cmd = sqlite.CreateCommand();
-			cmd.CommandText = sql;
-			cmd.Parameters.AddWithValue("$id", setting.Id.ToString());
-			cmd.Parameters.AddWithValue("$autoAccept", setting.AutoAcceptThreshold.ToString(CultureInfo.InvariantCulture));
-			cmd.Parameters.AddWithValue("$pendingReview", setting.PendingReviewThreshold.ToString(CultureInfo.InvariantCulture));
-			cmd.Parameters.AddWithValue("$updatedAt", setting.UpdatedAt.ToString("O"));
 			await cmd.ExecuteNonQueryAsync(cancellationToken);
 		}
 	}

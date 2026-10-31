@@ -23,7 +23,6 @@ public class NormalizedDescriptionServiceTests
 	private readonly Mock<IEmbeddingService> _embeddingServiceMock;
 	private readonly Mock<ICommittedChangePublisher> _committedChangePublisherMock;
 	private readonly NormalizedDescriptionMapper _mapper;
-	private readonly NormalizedDescriptionSettingsMapper _settingsMapper;
 
 	public NormalizedDescriptionServiceTests()
 	{
@@ -40,7 +39,6 @@ public class NormalizedDescriptionServiceTests
 			.Setup(p => p.PublishAsync(It.IsAny<CommittedEntityChange>()))
 			.Returns(Task.CompletedTask);
 		_mapper = new NormalizedDescriptionMapper();
-		_settingsMapper = new NormalizedDescriptionSettingsMapper();
 	}
 
 	// RECEIPTS-879 made the list paged. The tests that predate paging assert on row content, not on
@@ -102,7 +100,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+			_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		EmbeddingCoverage coverage = await service.GetEmbeddingCoverageAsync(CancellationToken.None);
 
@@ -171,7 +169,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		// Act
 		int moved = await service.MergeAsync(keepId, discardId, CancellationToken.None);
@@ -194,208 +192,82 @@ public class NormalizedDescriptionServiceTests
 				&& change.EntityId == null)), Times.Once);
 	}
 
-	// RECEIPTS-892. A merge repoints items at the surviving row but used to leave
-	// NormalizedDescriptionMatchScore alone, so the score described a comparison against a row
-	// that had just been deleted. PreviewThresholdImpactAsync buckets items by exactly that
-	// column, which made every threshold preview run after a merge partly fictional.
-	public sealed class MergeRescoring : NormalizedDescriptionServiceTests
+	// RECEIPTS-1099. A merge repoints items at the surviving row. Their match score was measured
+	// against the discarded row, and nothing re-measures it any more, so the merge clears it.
+	public sealed class MergeScoreClearing : NormalizedDescriptionServiceTests
 	{
-		private (Guid KeepId, Guid DiscardId, Guid ReceiptId) SeedMergePair(
-			string keepName,
-			string discardName,
-			bool keepHasEmbedding = true)
+		private (Guid KeepId, Guid DiscardId, Guid ReceiptId) SeedMergePair()
 		{
 			Guid keepId = Guid.NewGuid();
 			Guid discardId = Guid.NewGuid();
-			Guid receiptId = Guid.NewGuid();
 
 			using ApplicationDbContext seed = _contextFactory.CreateDbContext();
 			seed.NormalizedDescriptions.AddRange(
 				new NormalizedDescriptionEntity
 				{
 					Id = keepId,
-					CanonicalName = keepName,
+					CanonicalName = "Milk",
 					Status = NormalizedDescriptionStatus.Active,
 					CreatedAt = DateTimeOffset.UtcNow,
-					Embedding = keepHasEmbedding ? new Vector(CreateFakeEmbedding()) : null,
+					Embedding = new Vector(CreateFakeEmbedding()),
 				},
 				new NormalizedDescriptionEntity
 				{
 					Id = discardId,
-					CanonicalName = discardName,
+					CanonicalName = "Mlik",
 					Status = NormalizedDescriptionStatus.Active,
 					CreatedAt = DateTimeOffset.UtcNow,
 				});
 			seed.SaveChanges();
 
-			return (keepId, discardId, receiptId);
+			return (keepId, discardId, Guid.NewGuid());
 		}
 
 		[Fact]
-		public async Task MergeAsync_ReplacesTheDiscardedRowsScoreWithOneMeasuredAgainstTheSurvivor()
+		public async Task MergeAsync_ClearsScoresOnLiveAndTrashedItemsWithoutEmbedding()
 		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair();
 
 			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 			{
-				// 0.91 was the similarity to "Mlik", which is about to stop existing.
-				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId));
-				await SaveSeedAsync(seed);
-			}
-
-			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-			_embeddingServiceMock
-				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-				.ReturnsAsync(CreateFakeEmbedding());
-
-			RescoringNormalizedDescriptionService service = new(
-				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.77);
-
-			await service.MergeAsync(keepId, discardId, CancellationToken.None);
-
-			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-			ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
-			item.NormalizedDescriptionId.Should().Be(keepId);
-			item.NormalizedDescriptionMatchScore.Should().Be(0.77);
-		}
-
-		[Fact]
-		public async Task MergeAsync_ScoresAnExactNameMatchAsOneWithoutAnEmbedding()
-		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
-
-			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-			{
-				// Casing and surrounding space must not matter — GetOrCreateAsync trims and
-				// compares case-insensitively before it will pay for an embedding.
-				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "  milk  ", 0.42, discardId));
-				await SaveSeedAsync(seed);
-			}
-
-			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-
-			NormalizedDescriptionService service = new(
-				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-			await service.MergeAsync(keepId, discardId, CancellationToken.None);
-
-			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-			ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
-			item.NormalizedDescriptionMatchScore.Should().Be(1.0);
-			_embeddingServiceMock.Verify(
-				e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-				Times.Never);
-		}
-
-		[Fact]
-		public async Task MergeAsync_RescoresSoftDeletedItemsToo()
-		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
-
-			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-			{
-				ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId);
+				ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.64, discardId);
 				trashed.DeletedAt = DateTimeOffset.UtcNow;
-				seed.ReceiptItems.Add(trashed);
+				seed.ReceiptItems.AddRange(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId), trashed);
 				await SaveSeedAsync(seed);
 			}
 
 			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-			_embeddingServiceMock
-				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-				.ReturnsAsync(CreateFakeEmbedding());
-
-			RescoringNormalizedDescriptionService service = new(
-				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.64);
+			NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 			await service.MergeAsync(keepId, discardId, CancellationToken.None);
 
 			// A trashed item restored from the recycle bin must not bring a stale score back
 			// with it — the same stranding class as RECEIPTS-801.
 			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-			ReceiptItemEntity item = await verify.ReceiptItems
-				.IgnoreQueryFilters()
-				.IgnoreAutoIncludes()
-				.SingleAsync();
-			item.NormalizedDescriptionId.Should().Be(keepId);
-			item.NormalizedDescriptionMatchScore.Should().Be(0.64);
-		}
-
-		[Fact]
-		public async Task MergeAsync_NullsTheScoreWhenNoHonestSimilarityCanBeComputed()
-		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik", keepHasEmbedding: false);
-
-			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-			{
-				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId));
-				await SaveSeedAsync(seed);
-			}
-
-			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-
-			NormalizedDescriptionService service = new(
-				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-			await service.MergeAsync(keepId, discardId, CancellationToken.None);
-
-			// Null reads as "unresolved", which is honest. Keeping 0.91 would assert a
-			// similarity to a row that no longer exists.
-			using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-			ReceiptItemEntity item = await verify.ReceiptItems.IgnoreAutoIncludes().SingleAsync();
-			item.NormalizedDescriptionId.Should().Be(keepId);
-			item.NormalizedDescriptionMatchScore.Should().BeNull();
-		}
-
-		[Fact]
-		public async Task MergeAsync_EmbedsEachDistinctDescriptionOnlyOnce()
-		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
-
-			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-			{
-				seed.ReceiptItems.AddRange(
-					BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId),
-					BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId),
-					BuildReceiptItemWithScore(receiptId, "Mlik whole", 0.88, discardId));
-				await SaveSeedAsync(seed);
-			}
-
-			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-			_embeddingServiceMock
-				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-				.ReturnsAsync(CreateFakeEmbedding());
-
-			RescoringNormalizedDescriptionService service = new(
-				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.5);
-
-			await service.MergeAsync(keepId, discardId, CancellationToken.None);
-
-			// Three items, two distinct descriptions — grouping keeps this proportional to
-			// vocabulary rather than row count.
+			List<ReceiptItemEntity> items = await verify.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().ToListAsync();
+			items.Should().HaveCount(2).And.OnlyContain(item => item.NormalizedDescriptionId == keepId && item.NormalizedDescriptionMatchScore == null);
 			_embeddingServiceMock.Verify(
 				e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
-				Times.Exactly(2));
+				Times.Never);
 		}
 
 		[Fact]
-		public async Task MergeAsync_RecordsTheRescoredCountOnBothAuditEntries()
+		public async Task MergeAsync_RecordsTheLiveClearedCountOnBothAuditEntries()
 		{
-			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair("Milk", "Mlik");
+			(Guid keepId, Guid discardId, Guid receiptId) = SeedMergePair();
 
 			using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
 			{
-				seed.ReceiptItems.Add(BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId));
+				ReceiptItemEntity trashed = BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.5, discardId);
+				trashed.DeletedAt = DateTimeOffset.UtcNow;
+				seed.ReceiptItems.AddRange(
+					BuildReceiptItemWithScore(receiptId, "Mlik 2%", 0.91, discardId),
+					BuildReceiptItemWithScore(receiptId, "Mlik whole", null, discardId),
+					trashed);
 				await SaveSeedAsync(seed);
 			}
 
-			_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-			_embeddingServiceMock
-				.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-				.ReturnsAsync(CreateFakeEmbedding());
-
-			RescoringNormalizedDescriptionService service = new(
-				_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, similarity: 0.77);
+			NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 			await service.MergeAsync(keepId, discardId, CancellationToken.None);
 
@@ -409,24 +281,9 @@ public class NormalizedDescriptionServiceTests
 			{
 				Dictionary<string, string?> fields = entry.GetChanges()
 					.ToDictionary(c => c.FieldName, c => c.NewValue);
-				fields["rescoredItemCount"].Should().Be("1");
+				fields["clearedMatchScoreCount"].Should().Be("1");
+				fields.Should().NotContainKey("rescoredItemCount");
 			}
-		}
-
-		// Overrides only the per-row similarity lookup, which needs pgvector's `<=>`. Everything
-		// above it — grouping, the exact-name short circuit, the null fallbacks — is the real code.
-		private sealed class RescoringNormalizedDescriptionService(
-			IDbContextFactory<ApplicationDbContext> contextFactory,
-			IEmbeddingService embeddingService,
-			NormalizedDescriptionMapper mapper,
-			NormalizedDescriptionSettingsMapper settingsMapper,
-			double similarity) : NormalizedDescriptionService(contextFactory, embeddingService, mapper, settingsMapper)
-		{
-			private readonly double _similarity = similarity;
-
-			protected override Task<double?> SimilarityToAsync(
-				ApplicationDbContext context, Vector queryVector, Guid targetId, CancellationToken cancellationToken)
-				=> Task.FromResult<double?>(_similarity);
 		}
 	}
 
@@ -452,7 +309,7 @@ public class NormalizedDescriptionServiceTests
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
 		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		// Act — the name is the caller's now, so pass the raw text the old signature derived.
 		NormalizedDescriptionDetail created = await service.SplitAsync([itemId], "Specific Raw Text", CancellationToken.None);
@@ -488,16 +345,13 @@ public class NormalizedDescriptionServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
 		_embeddingServiceMock
 			.Setup(e => e.GenerateEmbeddingAsync("New Canonical", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(CreateFakeEmbedding());
-		_embeddingServiceMock
-			.Setup(e => e.GenerateEmbeddingAsync("raw item", It.IsAny<CancellationToken>()))
-			.ThrowsAsync(new InvalidOperationException("rescore failed"));
+			.ThrowsAsync(new InvalidOperationException("embedding failed"));
 		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		await service.Invoking(s => s.SplitAsync([itemId], "New Canonical", CancellationToken.None))
 			.Should().ThrowAsync<InvalidOperationException>()
-			.WithMessage("rescore failed");
+			.WithMessage("embedding failed");
 
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		(await verify.NormalizedDescriptions.AnyAsync(row => row.CanonicalName == "New Canonical")).Should().BeFalse();
@@ -522,7 +376,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		// Act
 		bool changed = await service.UpdateStatusAsync(id, NormalizedDescriptionStatus.Active, CancellationToken.None);
@@ -555,7 +409,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		// Act
 		bool changed = await service.UpdateStatusAsync(id, NormalizedDescriptionStatus.Active, CancellationToken.None);
@@ -584,7 +438,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		NormalizedDescriptionDetail? result = await service.GetByIdAsync(id, CancellationToken.None);
@@ -607,7 +461,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		List<NormalizedDescriptionDetail> pending = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
@@ -643,7 +497,7 @@ public class NormalizedDescriptionServiceTests
 	{
 		await SeedRowsAsync("Apples", "Bananas", "Cherries", "Dates", "Elderberries");
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		PagedResult<NormalizedDescriptionDetail> first = await service.GetAllAsync(null, null, 0, 2, CancellationToken.None);
 		PagedResult<NormalizedDescriptionDetail> second = await service.GetAllAsync(null, null, 2, 2, CancellationToken.None);
@@ -670,7 +524,7 @@ public class NormalizedDescriptionServiceTests
 	{
 		await SeedRowsAsync("Apples", "Bananas");
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(null, null, 500, 50, CancellationToken.None);
 
@@ -705,7 +559,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// A renamed row has to stay findable by both names. The admin who renamed it searches for
 		// what they typed; the admin looking at a receipt searches for the text on the receipt.
@@ -724,7 +578,7 @@ public class NormalizedDescriptionServiceTests
 	{
 		await SeedRowsAsync("Coffee Beans", "COFFEE FILTERS", "Sourdough Loaf");
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(null, "  CoFfEe  ", 0, 1, CancellationToken.None);
 
@@ -745,7 +599,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		PagedResult<NormalizedDescriptionDetail> page =
 			await service.GetAllAsync([NormalizedDescriptionStatus.PendingReview], "coffee", 0, 50, CancellationToken.None);
@@ -760,7 +614,7 @@ public class NormalizedDescriptionServiceTests
 	public async Task GetOrCreateForTemplateAsync_CreatesAnActiveEntry()
 	{
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		NormalizedDescription created = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
 
@@ -787,7 +641,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("GALLON OF MILK", CancellationToken.None);
 
@@ -815,7 +669,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		NormalizedDescription created = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
 
@@ -843,7 +697,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
 
@@ -881,7 +735,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+			_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		NormalizedDescription result = await service.GetOrCreateForTemplateAsync("Gallon of Milk", CancellationToken.None);
 
@@ -900,7 +754,7 @@ public class NormalizedDescriptionServiceTests
 	[InlineData("   ")]
 	public async Task GetOrCreateForTemplateAsync_BlankName_Throws(string name)
 	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		Func<Task> act = async () => await service.GetOrCreateForTemplateAsync(name, CancellationToken.None);
 
@@ -923,7 +777,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.MergeAsync(keepId, discardId, CancellationToken.None);
 
@@ -958,7 +812,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.UpdateStatusAsync(rejectedId, NormalizedDescriptionStatus.Rejected, CancellationToken.None);
 
@@ -987,7 +841,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
 
@@ -1013,7 +867,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
 
@@ -1034,7 +888,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
 
@@ -1059,7 +913,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
 
@@ -1089,7 +943,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		LinkTemplateResult result = await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
 
@@ -1118,7 +972,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		LinkTemplateResult result = await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
 
@@ -1159,7 +1013,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		LinkTemplateResult result = await service.LinkTemplateAsync(rowId, templateId, CancellationToken.None);
 
@@ -1198,7 +1052,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		LinkTemplateResult result = await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
 
@@ -1232,7 +1086,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.Invoking(s => s.LinkTemplateAsync(pendingId, templateId, CancellationToken.None))
 			.Should().ThrowAsync<InvalidOperationException>()
@@ -1262,7 +1116,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.Invoking(s => s.LinkTemplateAsync(pendingId, templateId, CancellationToken.None))
 			.Should().ThrowAsync<InvalidOperationException>()
@@ -1290,7 +1144,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		ThrowingMergeNormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+			_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.Invoking(s => s.LinkTemplateAsync(pendingId, templateId, CancellationToken.None))
 			.Should().ThrowAsync<InvalidOperationException>()
@@ -1315,9 +1169,8 @@ public class NormalizedDescriptionServiceTests
 	private sealed class ThrowingMergeNormalizedDescriptionService(
 		IDbContextFactory<ApplicationDbContext> contextFactory,
 		IEmbeddingService embeddingService,
-		NormalizedDescriptionMapper mapper,
-		NormalizedDescriptionSettingsMapper settingsMapper)
-		: NormalizedDescriptionService(contextFactory, embeddingService, mapper, settingsMapper)
+		NormalizedDescriptionMapper mapper)
+		: NormalizedDescriptionService(contextFactory, embeddingService, mapper)
 	{
 		public override Task<int> MergeAsync(Guid keepId, Guid discardId, CancellationToken cancellationToken) =>
 			throw new InvalidOperationException("merge exploded");
@@ -1335,7 +1188,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Consolidating it away would delete the only record that a reviewer decided this text was
 		// not worth an entry, and the resolver would be free to recreate it on the next receipt.
@@ -1358,7 +1211,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.Invoking(s => s.LinkTemplateAsync(rowId, Guid.NewGuid(), CancellationToken.None))
 			.Should().ThrowAsync<KeyNotFoundException>()
@@ -1377,7 +1230,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Linking to something in the recycle bin would produce a link that evaporates when it is
 		// purged, and the picker never offers one.
@@ -1396,7 +1249,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.Invoking(s => s.LinkTemplateAsync(Guid.NewGuid(), templateId, CancellationToken.None))
 			.Should().ThrowAsync<KeyNotFoundException>()
@@ -1418,7 +1271,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.LinkTemplateAsync(pendingId, templateId, CancellationToken.None);
 
@@ -1457,7 +1310,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// The merge dialog's exact query: every legitimate target, and nothing else. A rejected
 		// row appearing here would let a reviewer merge items into a tombstone, resurrecting text
@@ -1478,7 +1331,7 @@ public class NormalizedDescriptionServiceTests
 	{
 		await SeedRowsAsync("Apples", "Bananas");
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// An empty set reads as "I did not filter", not "match nothing" — the alternative is a
 		// caller that builds a filter from an empty list and silently gets zero rows back.
@@ -1501,7 +1354,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(
 			[NormalizedDescriptionStatus.Active, NormalizedDescriptionStatus.PendingReview],
@@ -1527,388 +1380,13 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		PagedResult<NormalizedDescriptionDetail> page = await service.GetAllAsync(null, null, 0, 50, CancellationToken.None);
 
 		// The list is sorted by what the admin reads on screen. Sorting by CanonicalName would put
 		// a renamed row somewhere alphabetically unrelated to its own label.
 		page.Data.Select(d => d.Description.DisplayName).Should().Equal("Apples", "Bananas");
-	}
-
-	// ── RECEIPTS-580: settings / test-match / threshold-impact ─────────────────
-
-	[Fact]
-	public async Task GetSettingsAsync_NoRow_BootstrapsSingletonWithInitialDefaults()
-	{
-		// Arrange — no seed row. On InMemory we hit the self-heal path.
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
-
-		// Act
-		NormalizedDescriptionSettings result = await service.GetSettingsAsync(CancellationToken.None);
-
-		// Assert — initial values are the same as the migration seed defaults.
-		result.AutoAcceptThreshold.Should().Be(NormalizedDescriptionService.InitialAutoAcceptThreshold);
-		result.PendingReviewThreshold.Should().Be(NormalizedDescriptionService.InitialPendingReviewThreshold);
-		result.Id.Should().Be(new Guid("00000000-0000-0000-0000-000000000001"));
-		_committedChangePublisherMock.Verify(p => p.PublishAsync(
-			It.Is<CommittedEntityChange>(change =>
-				change.EntityType == CommittedEntityType.NormalizedDescriptionSettings
-				&& change.ChangeType == CommittedChangeType.Created
-				&& change.EntityId == result.Id)), Times.Once);
-	}
-
-	[Fact]
-	public async Task GetSettingsAsync_WithSeededRow_ReturnsStoredValues()
-	{
-		// Arrange
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptionSettings.Add(new NormalizedDescriptionSettingsEntity
-			{
-				Id = new Guid("00000000-0000-0000-0000-000000000001"),
-				AutoAcceptThreshold = 0.9,
-				PendingReviewThreshold = 0.5,
-				UpdatedAt = new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.Zero),
-			});
-			await SaveSeedAsync(seed);
-		}
-
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		// Act
-		NormalizedDescriptionSettings result = await service.GetSettingsAsync(CancellationToken.None);
-
-		// Assert
-		result.AutoAcceptThreshold.Should().Be(0.9);
-		result.PendingReviewThreshold.Should().Be(0.5);
-	}
-
-	[Fact]
-	public async Task UpdateSettingsAsync_ValidBounds_PersistsAndReturnsNewValues()
-	{
-		// Arrange
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
-		DateTimeOffset before = DateTimeOffset.UtcNow.AddSeconds(-1);
-
-		// Act
-		NormalizedDescriptionSettings updated = await service.UpdateSettingsAsync(0.95, 0.5, CancellationToken.None);
-
-		// Assert — returned values match input, UpdatedAt advanced, row was persisted.
-		updated.AutoAcceptThreshold.Should().Be(0.95);
-		updated.PendingReviewThreshold.Should().Be(0.5);
-		updated.UpdatedAt.Should().BeAfter(before);
-
-		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
-		NormalizedDescriptionSettingsEntity stored = await verify.NormalizedDescriptionSettings.SingleAsync();
-		stored.AutoAcceptThreshold.Should().Be(0.95);
-		stored.PendingReviewThreshold.Should().Be(0.5);
-		_committedChangePublisherMock.Verify(p => p.PublishAsync(
-			It.Is<CommittedEntityChange>(change =>
-				change.EntityType == CommittedEntityType.NormalizedDescriptionSettings
-				&& change.ChangeType == CommittedChangeType.Created)), Times.Once);
-		_committedChangePublisherMock.Verify(p => p.PublishAsync(
-			It.Is<CommittedEntityChange>(change =>
-				change.EntityType == CommittedEntityType.NormalizedDescriptionSettings
-				&& change.ChangeType == CommittedChangeType.Updated
-				&& change.EntityId == updated.Id)), Times.Once);
-	}
-
-	[Theory]
-	[InlineData(-0.01, 0.5)]
-	[InlineData(1.01, 0.5)]
-	[InlineData(0.8, -0.01)]
-	[InlineData(0.8, 1.01)]
-	[InlineData(0.5, 0.8)] // pending >= auto
-	[InlineData(0.8, 0.8)] // pending == auto (must be strictly less)
-	public async Task UpdateSettingsAsync_InvalidBounds_Throws(double autoAccept, double pendingReview)
-	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
-
-		await service.Invoking(s => s.UpdateSettingsAsync(autoAccept, pendingReview, CancellationToken.None))
-			.Should().ThrowAsync<ArgumentException>();
-		_committedChangePublisherMock.Verify(
-			p => p.PublishAsync(It.IsAny<CommittedEntityChange>()),
-			Times.Never);
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_ExactCaseInsensitiveMatch_ReturnsAutoAcceptWithTarget()
-	{
-		// Arrange
-		Guid existingId = Guid.NewGuid();
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = existingId,
-				CanonicalName = "Whole Milk",
-				Status = NormalizedDescriptionStatus.Active,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await SaveSeedAsync(seed);
-		}
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		// Act — lowercase variant should short-circuit via exact-match path.
-		MatchTestResult result = await service.TestMatchAsync("whole milk", topN: 5, null, null, CancellationToken.None);
-
-		// Assert — exact match collapses to a single synthetic candidate with similarity = 1.
-		result.SimulatedOutcome.Should().Be(MatchTestOutcomes.AutoAccept);
-		result.SimulatedTargetId.Should().Be(existingId);
-		result.Candidates.Should().ContainSingle();
-		result.Candidates[0].CosineSimilarity.Should().Be(1.0);
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_EmbeddingUnavailable_ReturnsEmbeddingUnavailableOutcome()
-	{
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		MatchTestResult result = await service.TestMatchAsync("Brand New Item", topN: 5, null, null, CancellationToken.None);
-
-		result.SimulatedOutcome.Should().Be(MatchTestOutcomes.EmbeddingUnavailable);
-		result.SimulatedTargetId.Should().BeNull();
-		result.Candidates.Should().BeEmpty();
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_EmbeddingQueueFull_ReturnsEmbeddingUnavailableOutcome()
-	{
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_embeddingServiceMock
-			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-			.ThrowsAsync(new EmbeddingQueueFullException("request"));
-		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		MatchTestResult result = await service.TestMatchAsync(
-			"Brand New Item", topN: 5, null, null, CancellationToken.None);
-
-		result.SimulatedOutcome.Should().Be(MatchTestOutcomes.EmbeddingUnavailable);
-		result.SimulatedTargetId.Should().BeNull();
-		result.Candidates.Should().BeEmpty();
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_EmbeddingCancellation_IsNotSwallowedAsBackpressure()
-	{
-		using CancellationTokenSource cancellation = new();
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_embeddingServiceMock
-			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), cancellation.Token))
-			.ThrowsAsync(new OperationCanceledException(cancellation.Token));
-		NormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		Func<Task> act = () => service.TestMatchAsync(
-			"Brand New Item", topN: 5, null, null, cancellation.Token);
-
-		await act.Should().ThrowAsync<OperationCanceledException>();
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_UsesInteractiveRequestLane()
-	{
-		LaneRecordingEmbeddingService embeddingService = new()
-		{
-			ForegroundResult = CreateFakeEmbedding(),
-		};
-		NormalizedDescriptionService service = new(
-			_contextFactory, embeddingService, _mapper, _settingsMapper);
-
-		await service.TestMatchAsync(
-			"Interactive Item", topN: 5, null, null, CancellationToken.None);
-
-		embeddingService.ForegroundCalls.Should().Be(1);
-		embeddingService.BackgroundCalls.Should().Be(0);
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_AutoAcceptBranch_WithOverride()
-	{
-		// Arrange — seed a candidate the fake ANN returns at similarity = 0.9.
-		Guid topId = Guid.NewGuid();
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = topId,
-				CanonicalName = "Similar Thing",
-				Status = NormalizedDescriptionStatus.Active,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await SaveSeedAsync(seed);
-		}
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_embeddingServiceMock
-			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(CreateFakeEmbedding());
-
-		TestableNormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, topId, similarity: 0.9);
-
-		// Override auto-accept to 0.85 → 0.9 is above, so auto-accept wins.
-		MatchTestResult result = await service.TestMatchAsync(
-			"Fresh Input",
-			topN: 5,
-			autoAcceptThresholdOverride: 0.85,
-			pendingReviewThresholdOverride: 0.5,
-			CancellationToken.None);
-
-		result.SimulatedOutcome.Should().Be(MatchTestOutcomes.AutoAccept);
-		result.SimulatedTargetId.Should().Be(topId);
-		result.Candidates.Should().ContainSingle();
-		result.Candidates[0].CosineSimilarity.Should().Be(0.9);
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_PendingReviewBranch_ReturnsPendingWithNullTarget()
-	{
-		Guid topId = Guid.NewGuid();
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = topId,
-				CanonicalName = "Near Match",
-				Status = NormalizedDescriptionStatus.Active,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await SaveSeedAsync(seed);
-		}
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_embeddingServiceMock
-			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(CreateFakeEmbedding());
-
-		TestableNormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, topId, similarity: 0.75);
-
-		// Default DB settings (0.81 / 0.68) → 0.75 lands between the thresholds.
-		MatchTestResult result = await service.TestMatchAsync(
-			"Something Close",
-			topN: 5,
-			autoAcceptThresholdOverride: null,
-			pendingReviewThresholdOverride: null,
-			CancellationToken.None);
-
-		result.SimulatedOutcome.Should().Be(MatchTestOutcomes.PendingReview);
-		result.SimulatedTargetId.Should().BeNull();
-		result.Candidates.Should().ContainSingle();
-	}
-
-	[Fact]
-	public async Task TestMatchAsync_BelowPendingFloor_ReturnsCreateNewOutcome()
-	{
-		Guid topId = Guid.NewGuid();
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = topId,
-				CanonicalName = "Distant Thing",
-				Status = NormalizedDescriptionStatus.Active,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			await SaveSeedAsync(seed);
-		}
-
-		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
-		_embeddingServiceMock
-			.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(CreateFakeEmbedding());
-
-		TestableNormalizedDescriptionService service = new(
-			_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, topId, similarity: 0.3);
-
-		MatchTestResult result = await service.TestMatchAsync("Very Different", topN: 5, null, null, CancellationToken.None);
-
-		result.SimulatedOutcome.Should().Be(MatchTestOutcomes.CreateNew);
-		result.SimulatedTargetId.Should().BeNull();
-	}
-
-	[Theory]
-	[InlineData("")]
-	[InlineData("   ")]
-	public async Task TestMatchAsync_EmptyInput_Throws(string input)
-	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		await service.Invoking(s => s.TestMatchAsync(input, topN: 5, null, null, CancellationToken.None))
-			.Should().ThrowAsync<ArgumentException>();
-	}
-
-	[Theory]
-	[InlineData(0)]
-	[InlineData(21)]
-	[InlineData(-1)]
-	public async Task TestMatchAsync_TopNOutOfRange_Throws(int topN)
-	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		await service.Invoking(s => s.TestMatchAsync("desc", topN, null, null, CancellationToken.None))
-			.Should().ThrowAsync<ArgumentException>();
-	}
-
-	[Fact]
-	public async Task PreviewThresholdImpactAsync_CountsItemsByScore()
-	{
-		// Arrange — seed receipt items across all threshold bands plus a below-floor scored
-		// row AND a structurally-unresolved row. Default settings: auto = 0.81, pending = 0.68.
-		Guid receiptId = Guid.NewGuid();
-		Guid linkedId = Guid.NewGuid();
-		using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
-		{
-			seed.ReceiptItems.AddRange(
-				BuildReceiptItemWithScore(receiptId, "A", score: 0.95, normalizedId: Guid.NewGuid()), // auto-accepted (current)
-				BuildReceiptItemWithScore(receiptId, "B", score: 0.82, normalizedId: Guid.NewGuid()), // auto-accepted (current)
-				BuildReceiptItemWithScore(receiptId, "C", score: 0.70, normalizedId: Guid.NewGuid()), // pending-review (current)
-				BuildReceiptItemWithScore(receiptId, "D", score: 0.50, normalizedId: linkedId),        // below-floor scored → "unresolved-by-threshold" (current)
-				BuildReceiptItemWithScore(receiptId, "E", score: null, normalizedId: null));           // structurally unresolved
-			await SaveSeedAsync(seed);
-		}
-
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		// Act — propose lowering both thresholds so some items shift bucket.
-		ThresholdImpactPreview preview = await service.PreviewThresholdImpactAsync(
-			autoAcceptThreshold: 0.6,
-			pendingReviewThreshold: 0.4,
-			CancellationToken.None);
-
-		// Assert current classification: A(0.95) + B(0.82) auto; C(0.70) pending; D below
-		// floor + E null FK → both unresolved.
-		preview.Current.AutoAccepted.Should().Be(2);
-		preview.Current.PendingReview.Should().Be(1);
-		preview.Current.Unresolved.Should().Be(2);
-
-		// Under proposed (0.6 / 0.4): A(0.95) B(0.82) C(0.70) all auto; D(0.50) pending-review
-		// (scored and ≥ 0.4); E still structurally unresolved.
-		preview.Proposed.AutoAccepted.Should().Be(3);
-		preview.Proposed.PendingReview.Should().Be(1);
-		preview.Proposed.Unresolved.Should().Be(1);
-
-		// Deltas: C moves pending → auto; D moves unresolved-by-threshold → pending. A/B stay
-		// auto, E stays structurally unresolved.
-		preview.Deltas.PendingToAuto.Should().Be(1);
-		preview.Deltas.UnresolvedToPending.Should().Be(1);
-		preview.Deltas.AutoToPending.Should().Be(0);
-		preview.Deltas.UnresolvedToAuto.Should().Be(0);
-	}
-
-	[Fact]
-	public async Task PreviewThresholdImpactAsync_InvalidBounds_Throws()
-	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
-
-		await service.Invoking(s => s.PreviewThresholdImpactAsync(0.5, 0.5, CancellationToken.None))
-			.Should().ThrowAsync<ArgumentException>();
 	}
 
 	// ── RECEIPTS-873: review-queue evidence ───────────────────────────────────
@@ -1944,7 +1422,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
 
@@ -1959,7 +1437,7 @@ public class NormalizedDescriptionServiceTests
 	{
 		await SeedRowsAsync("Orphaned Entry");
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
 
@@ -1994,7 +1472,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.Active);
 
@@ -2029,7 +1507,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
@@ -2068,7 +1546,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
@@ -2106,7 +1584,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
@@ -2134,7 +1612,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		List<NormalizedDescriptionDetail> rows = await GetAllRowsAsync(service, NormalizedDescriptionStatus.PendingReview);
 
@@ -2166,7 +1644,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
 
@@ -2190,7 +1668,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		RequeuePendingPreview preview = await service.PreviewRequeuePendingAsync(CancellationToken.None);
 
@@ -2221,7 +1699,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(pendingId), CancellationToken.None);
 
@@ -2267,7 +1745,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(pendingId), CancellationToken.None);
 
@@ -2298,7 +1776,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// The caller previewed a different set. Acting anyway would destroy a row nobody reviewed,
 		// so the guard refuses and reports nothing happened.
@@ -2322,7 +1800,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper, _committedChangePublisherMock.Object);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _committedChangePublisherMock.Object);
 
 		// Re-runnable by design — running it twice must not be an error the second time.
 		RequeuePendingResult? result = await service.RequeuePendingAsync(FingerprintOf(), CancellationToken.None);
@@ -2359,7 +1837,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.MergeAsync(keepId, discardId, CancellationToken.None);
 
@@ -2403,7 +1881,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		Func<Task> act = () => service.MergeAsync(keepId, missingId, CancellationToken.None);
 
@@ -2428,7 +1906,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		Func<Task> act = () => service.MergeAsync(missingKeepId, discardId, CancellationToken.None);
 
@@ -2450,7 +1928,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		Func<Task> act = () => service.MergeAsync(id, id, CancellationToken.None);
 
@@ -2472,7 +1950,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		NormalizedDescriptionDetail created = await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
@@ -2507,7 +1985,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
@@ -2541,7 +2019,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// The chosen name resolves to the row the item is already on, so nothing moves.
 		NormalizedDescriptionDetail result = await service.SplitAsync([itemId], rawDescription, CancellationToken.None);
@@ -2572,7 +2050,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
@@ -2601,7 +2079,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.SplitAsync([itemId], "Strawberry Preserves", CancellationToken.None);
 
@@ -2628,7 +2106,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.RequeuePendingAsync(FingerprintOf(pendingId), CancellationToken.None);
 
@@ -2658,7 +2136,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		await service.RequeuePendingAsync(FingerprintOf(Guid.NewGuid()), CancellationToken.None);
 
@@ -2756,7 +2234,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		NormalizedDescriptionDetail created = await service.SplitAsync([firstId, secondId], "Milk", CancellationToken.None);
@@ -2790,7 +2268,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		Func<Task> act = async () => await service.SplitAsync([goodId, Guid.NewGuid()], "Milk", CancellationToken.None);
@@ -2807,7 +2285,7 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
-	public async Task SplitAsync_RescoresMovedItemsAgainstTheirNewRow()
+	public async Task SplitAsync_ClearsTheScoreOfMovedItems()
 	{
 		// Arrange — the item carries a score measured against the row it is leaving.
 		Guid originId = Guid.NewGuid();
@@ -2824,23 +2302,21 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act — the new row's name equals the item's raw text, which is a perfect logical match.
 		await service.SplitAsync([itemId], "Milk", CancellationToken.None);
 
-		// Assert — 1.0, not the stale 0.62 measured against "Dairy". PreviewThresholdImpactAsync
-		// buckets items by exactly this column, so a stale score skews every later preview
-		// (same reasoning as RECEIPTS-892 for merges).
+		// Assert — the stale 0.62 measured against "Dairy" is cleared, not re-measured (RECEIPTS-1099).
 		using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		verify.ReceiptItems.IgnoreAutoIncludes().Single(r => r.Id == itemId)
-			.NormalizedDescriptionMatchScore.Should().Be(1.0);
+			.NormalizedDescriptionMatchScore.Should().BeNull();
 	}
 
 	[Fact]
 	public async Task SplitAsync_EmptySelection_Throws()
 	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		Func<Task> act = async () => await service.SplitAsync([], "Milk", CancellationToken.None);
 
@@ -2870,7 +2346,7 @@ public class NormalizedDescriptionServiceTests
 		}
 
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(false);
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		NormalizedDescriptionDetail created = await service.SplitAsync([fromFirstId, fromSecondId], "Milk", CancellationToken.None);
@@ -2926,7 +2402,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		bool changed = await service.UpdateStatusAsync(descriptionId, NormalizedDescriptionStatus.Rejected, CancellationToken.None);
@@ -2974,7 +2450,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		NormalizedDescriptionDetail result = await service.RenameAsync(id, "  Milk  ", CancellationToken.None);
@@ -3016,7 +2492,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act — "renaming" a row to what it already displays.
 		await service.RenameAsync(id, "bananas", CancellationToken.None);
@@ -3044,7 +2520,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		NormalizedDescriptionDetail result = await service.RenameAsync(id, null, CancellationToken.None);
@@ -3080,7 +2556,7 @@ public class NormalizedDescriptionServiceTests
 			await SaveSeedAsync(seed);
 		}
 
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// Act
 		Func<Task> act = async () => await service.RenameAsync(targetId, "milk", CancellationToken.None);
@@ -3093,7 +2569,7 @@ public class NormalizedDescriptionServiceTests
 	[Fact]
 	public async Task RenameAsync_WhitespaceOnlyLabel_Throws()
 	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		// A blank text box is far more often a slip than an intent to clear, so it is an error
 		// rather than a silent fallback to the matched text.
@@ -3105,7 +2581,7 @@ public class NormalizedDescriptionServiceTests
 	[Fact]
 	public async Task RenameAsync_UnknownId_Throws()
 	{
-		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper, _settingsMapper);
+		NormalizedDescriptionService service = new(_contextFactory, _embeddingServiceMock.Object, _mapper);
 
 		Func<Task> act = async () => await service.RenameAsync(Guid.NewGuid(), "Milk", CancellationToken.None);
 
@@ -3150,41 +2626,5 @@ public class NormalizedDescriptionServiceTests
 		public Task<List<float[]>> GenerateEmbeddingsAsync(
 			List<string> texts,
 			CancellationToken cancellationToken) => throw new NotSupportedException();
-	}
-
-	// Test subclass that overrides the ANN search to deterministically return a seeded match.
-	// This lets us exercise the threshold-band logic against InMemory, which cannot run the
-	// pgvector `<=>` operator.
-	private sealed class TestableNormalizedDescriptionService(
-		IDbContextFactory<ApplicationDbContext> contextFactory,
-		IEmbeddingService embeddingService,
-		NormalizedDescriptionMapper mapper,
-		NormalizedDescriptionSettingsMapper settingsMapper,
-		Guid matchId,
-		double similarity) : NormalizedDescriptionService(contextFactory, embeddingService, mapper, settingsMapper)
-	{
-		private readonly Guid _matchId = matchId;
-		private readonly double _similarity = similarity;
-
-		protected override async Task<(NormalizedDescriptionEntity? Match, double? Similarity)> AnnSearchTopOneAsync(
-			ApplicationDbContext context, Vector queryVector, CancellationToken cancellationToken)
-		{
-			NormalizedDescriptionEntity? match = await context.NormalizedDescriptions
-				.FirstOrDefaultAsync(e => e.Id == _matchId, cancellationToken);
-			return (match, _similarity);
-		}
-
-		protected override async Task<List<MatchCandidate>> AnnSearchTopNAsync(
-			ApplicationDbContext context, Vector queryVector, int topN, CancellationToken cancellationToken)
-		{
-			NormalizedDescriptionEntity? match = await context.NormalizedDescriptions
-				.FirstOrDefaultAsync(e => e.Id == _matchId, cancellationToken);
-			if (match is null)
-			{
-				return [];
-			}
-
-			return [new MatchCandidate(match.Id, match.CanonicalName, _similarity, match.Status.ToString())];
-		}
 	}
 }

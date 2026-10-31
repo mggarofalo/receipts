@@ -76,7 +76,6 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	public virtual DbSet<ItemTemplateEntity> ItemTemplates { get; set; } = null!;
 	public virtual DbSet<ItemEmbeddingEntity> ItemEmbeddings { get; set; } = null!;
 	public virtual DbSet<NormalizedDescriptionEntity> NormalizedDescriptions { get; set; } = null!;
-	public virtual DbSet<NormalizedDescriptionSettingsEntity> NormalizedDescriptionSettings { get; set; } = null!;
 	public virtual DbSet<DistinctDescriptionEntity> DistinctDescriptions { get; set; } = null!;
 	public virtual DbSet<AcceptedDuplicatePairEntity> AcceptedDuplicatePairs { get; set; } = null!;
 	public virtual DbSet<AuditLogEntity> AuditLogs { get; set; } = null!;

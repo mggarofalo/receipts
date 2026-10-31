@@ -54,7 +54,6 @@ const displayNameMap: Record<string, string> = {
   "item-template": "item template",
   "item-embedding": "item embedding",
   "normalized-description": "normalized description",
-  "normalized-description-settings": "normalization settings",
   "duplicate-acceptance": "duplicate acceptance",
   "ynab-budget": "YNAB budget",
   "ynab-mapping": "YNAB mapping",

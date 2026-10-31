@@ -24,7 +24,6 @@ public sealed class BackupBootstrapRestoreTests : IClassFixture<PostgresFixture>
 			await db.ItemTemplates.ExecuteDeleteAsync();
 			await db.Subcategories.ExecuteDeleteAsync();
 			await db.Categories.ExecuteDeleteAsync();
-			await db.NormalizedDescriptionSettings.ExecuteDeleteAsync();
 		}
 		string path = await new BackupService(new Factory(source), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
 		var target = new PostgresFixture();
@@ -64,7 +63,6 @@ public sealed class BackupBootstrapRestoreTests : IClassFixture<PostgresFixture>
 				(await db.Categories.IgnoreQueryFilters().CountAsync()).Should().Be(0);
 				(await db.Subcategories.IgnoreQueryFilters().CountAsync()).Should().Be(0);
 				(await db.ItemTemplates.IgnoreQueryFilters().CountAsync()).Should().Be(0);
-				(await db.NormalizedDescriptionSettings.CountAsync()).Should().Be(0);
 				db.Categories.Add(new() { Id = Guid.NewGuid(), Name = "User category" });
 				await db.SaveChangesAsync();
 			}

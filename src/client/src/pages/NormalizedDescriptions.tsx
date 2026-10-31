@@ -7,16 +7,9 @@ import { usePermission } from "@/hooks/usePermission";
 import { MaintenanceTab } from "./normalized-descriptions/MaintenanceTab";
 import { RegistryTab } from "./normalized-descriptions/RegistryTab";
 import { ReviewQueueTab } from "./normalized-descriptions/ReviewQueueTab";
-import { SettingsTab } from "./normalized-descriptions/SettingsTab";
 import { CatalogTab } from "./normalized-descriptions/CatalogTab";
 
-type TabKey =
-  | "review"
-  | "registry"
-  | "settings"
-  | "maintenance"
-  | "chatgpt"
-  | "catalog";
+type TabKey = "review" | "registry" | "maintenance" | "chatgpt" | "catalog";
 
 export default function NormalizedDescriptions() {
   usePageTitle("Normalized Descriptions");
@@ -26,7 +19,6 @@ export default function NormalizedDescriptions() {
   const knownTabs: TabKey[] = [
     "review",
     "registry",
-    "settings",
     "maintenance",
     "chatgpt",
     "catalog",
@@ -59,7 +51,6 @@ export default function NormalizedDescriptions() {
           <TabsTrigger value="review">Review Queue</TabsTrigger>
           <TabsTrigger value="registry">Registry</TabsTrigger>
           {isAdmin() && <TabsTrigger value="chatgpt">ChatGPT</TabsTrigger>}
-          {isAdmin() && <TabsTrigger value="settings">Settings</TabsTrigger>}
           {isAdmin() && (
             <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
           )}
@@ -80,11 +71,6 @@ export default function NormalizedDescriptions() {
         <TabsContent value="registry">
           <RegistryTab />
         </TabsContent>
-        {isAdmin() && (
-          <TabsContent value="settings">
-            <SettingsTab />
-          </TabsContent>
-        )}
         {isAdmin() && (
           <TabsContent value="maintenance">
             <MaintenanceTab />

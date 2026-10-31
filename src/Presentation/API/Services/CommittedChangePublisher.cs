@@ -13,7 +13,6 @@ public sealed class CommittedChangePublisher(IEntityChangeNotifier notifier) : I
 			CommittedEntityType.ReceiptItem => "receipt-item",
 			CommittedEntityType.ItemEmbedding => "item-embedding",
 			CommittedEntityType.NormalizedDescription => "normalized-description",
-			CommittedEntityType.NormalizedDescriptionSettings => "normalized-description-settings",
 			CommittedEntityType.YnabBudget => "ynab-budget",
 			CommittedEntityType.YnabMapping => "ynab-mapping",
 			CommittedEntityType.YnabSyncRecord => "ynab-sync-record",
