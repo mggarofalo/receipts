@@ -1012,26 +1012,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/normalization-ai/candidates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List unresolved items for explicit selection
-         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
-         */
-        get: operations["ListNormalizationAiCandidates"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/normalization-ai/runs": {
         parameters: {
             query?: never;
@@ -1045,11 +1025,7 @@ export interface paths {
          */
         get: operations["ListNormalizationAiRuns"];
         put?: never;
-        /**
-         * Request suggestions for selected items
-         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
-         */
-        post: operations["StartNormalizationAiRun"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1106,8 +1082,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Explicitly retry a normalization run
-         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         * Explicitly retry a catalog normalization run
+         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied. Runs from the retired per-purchase workflow cannot be retried and answer 409 with `code` `workflow_retired`.
          */
         post: operations["RetryNormalizationAiRun"];
         delete?: never;
@@ -1126,8 +1102,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Atomically apply reviewed suggestions
-         * @description Admin-only personal ChatGPT normalization. Only the configured credential owner can use this connection. Suggestions never change receipts until explicitly applied.
+         * Apply suggestions from a retired per-purchase run (always rejected)
+         * @deprecated
+         * @description Retired. Per-purchase ChatGPT runs can no longer be applied; this endpoint always answers 409 with a problem document whose `code` is `workflow_retired` (or `catalog_review_required` for a catalog run). Review catalog source suggestions through the catalog preview and approval endpoints instead.
          */
         post: operations["ApplyNormalizationAiRun"];
         delete?: never;
@@ -4800,21 +4777,6 @@ export interface components {
             models: string[];
             busy: boolean;
         };
-        NormalizationAiCandidateResponse: {
-            /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            receiptId: string;
-            description: string;
-            location: string;
-            /** Format: date */
-            date: string;
-        };
-        NormalizationAiCandidatePageResponse: {
-            items: components["schemas"]["NormalizationAiCandidateResponse"][];
-            /** Format: int32 */
-            total: number;
-        };
         NormalizationAiUsageResponse: {
             /** Format: int64 */
             input: number;
@@ -4862,12 +4824,6 @@ export interface components {
             errorDetail?: string | null;
             proposals: components["schemas"]["NormalizationAiProposalResponse"][];
             usage?: components["schemas"]["NormalizationAiUsageResponse"] | null;
-        };
-        StartNormalizationAiRunRequest: {
-            /** Format: uuid */
-            clientRequestId: string;
-            itemIds: string[];
-            model: string;
         };
         RetryNormalizationAiRunRequest: {
             /** Format: uuid */
@@ -10525,75 +10481,6 @@ export interface operations {
             };
         };
     };
-    ListNormalizationAiCandidates: {
-        parameters: {
-            query?: {
-                q?: string | null;
-                offset?: number;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NormalizationAiCandidatePageResponse"];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Operation or source state conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description ChatGPT is unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
     ListNormalizationAiRuns: {
         parameters: {
             query?: never;
@@ -10610,75 +10497,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NormalizationAiRunResponse"][];
-                };
-            };
-            /** @description Invalid request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description Operation or source state conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-            /** @description ChatGPT is unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
-                };
-            };
-        };
-    };
-    StartNormalizationAiRun: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StartNormalizationAiRunRequest"];
-            };
-        };
-        responses: {
-            /** @description Success */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NormalizationAiRunResponse"];
                 };
             };
             /** @description Invalid request */

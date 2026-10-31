@@ -27,7 +27,7 @@ public sealed class ChatGptConnectionRecoveryTests : IDisposable
 		Directory.CreateDirectory(home);
 		factory = new(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).AddInterceptors(failure).Options);
 	}
-	private NormalizationAiService Service(string owner = "owner") => new(factory, runner.Object, Mock.Of<INormalizedDescriptionService>(),
+	private NormalizationAiService Service(string owner = "owner") => new(factory, runner.Object,
 		Options.Create(new NormalizationAiOptions { Enabled = true, OwnerUserId = owner }), TimeProvider.System,
 		Mock.Of<ICommittedChangePublisher>(), runnerOptions: Options.Create(RunnerOptions));
 

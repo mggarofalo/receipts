@@ -61,7 +61,12 @@ public sealed partial class NormalizationAiService
 				.Where(run => run.State == "queued" && (run.LeaseExpiresAt == null || run.LeaseExpiresAt <= now))
 				.OrderBy(run => run.CreatedAt).FirstOrDefaultAsync(cancellationToken);
 			if (claimed is null) { return false; }
-			if (claimed.PromptVersion is not ("receipts-normalization-v1" or NormalizationCatalogAiPolicy.Version))
+			if (IsPerPurchase(claimed))
+			{
+				Finish(claimed, "failed", "workflow_retired", WorkflowRetired().Message);
+				await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true;
+			}
+			if (claimed.PromptVersion != NormalizationCatalogAiPolicy.Version)
 			{
 				Finish(claimed, "failed", "unsupported_protocol", "This saved request uses an unsupported protocol. Create a new request.");
 				await context.SaveChangesAsync(cancellationToken); await lease.CommitAsync(cancellationToken); return true;
@@ -102,10 +107,8 @@ public sealed partial class NormalizationAiService
 		try
 		{
 			IReadOnlyList<NormalizationAiInput> inputs = Inputs(claimed);
-			bool catalog = claimed.PromptVersion == NormalizationCatalogAiPolicy.Version;
-			inference = runner.InferAsync(new(claimed.Model, catalog ? NormalizationCatalogAiPolicy.Instructions : NormalizationAiPolicy.Instructions,
-				catalog ? NormalizationCatalogAiPolicy.BuildPrompt(inputs) : NormalizationAiPolicy.BuildPrompt(inputs),
-				catalog ? NormalizationCatalogAiPolicy.Schema : NormalizationAiPolicy.Schema), inferenceCancellation.Token);
+			inference = runner.InferAsync(new(claimed.Model, NormalizationCatalogAiPolicy.Instructions,
+				NormalizationCatalogAiPolicy.BuildPrompt(inputs), NormalizationCatalogAiPolicy.Schema), inferenceCancellation.Token);
 			while (!inference.IsCompleted)
 			{
 				await Task.WhenAny(inference, Task.Delay(TimeSpan.FromMilliseconds(250), inferenceCancellation.Token));
@@ -116,7 +119,7 @@ public sealed partial class NormalizationAiService
 			}
 			ChatGptInferenceResult response = await inference;
 			usage = response.Usage;
-			decisions = catalog ? NormalizationCatalogAiPolicy.Validate(response.Text, inputs) : NormalizationAiPolicy.Validate(response.Text, inputs);
+			decisions = NormalizationCatalogAiPolicy.Validate(response.Text, inputs);
 		}
 		catch (NormalizationAiException exception) { outcome = "failed"; code = exception.Code; detail = exception.Message; }
 		catch (ChatGptRunnerException exception)

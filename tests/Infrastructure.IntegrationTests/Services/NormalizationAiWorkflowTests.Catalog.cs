@@ -89,7 +89,7 @@ public sealed partial class NormalizationAiWorkflowTests
 					}).ToArray(),
 				}), new(10, 5, 0, 0));
 			});
-		var service = new Infrastructure.NormalizationAi.NormalizationAiService(new Factory(fixture), runner.Object, matching.Object, Microsoft.Extensions.Options.Options.Create(new Infrastructure.NormalizationAi.NormalizationAiOptions { Enabled = true, OwnerUserId = Owner, PendingRunLimit = 1 }), TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
+		var service = new Infrastructure.NormalizationAi.NormalizationAiService(new Factory(fixture), runner.Object, Microsoft.Extensions.Options.Options.Create(new Infrastructure.NormalizationAi.NormalizationAiOptions { Enabled = true, OwnerUserId = Owner, PendingRunLimit = 1 }), TimeProvider.System, publisher.Object, runnerOptions: bindingOptions);
 		var queued = await service.StartSourcesAsync(Owner, Guid.NewGuid(),
 			[new(new("Synthetic store", "Milk", null), false)], "test-model", CancellationToken.None);
 		await service.ProcessNextAsync(CancellationToken.None);

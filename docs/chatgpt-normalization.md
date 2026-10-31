@@ -179,44 +179,39 @@ compares Jev, Clef, and Luna Decisions. No additional provider is enabled by thi
 change. A specialist model should be selected only after a receipt-specific
 comparison, with its account, privacy, and deployment requirements understood.
 
-## Original selected-purchase workflow
+## Retired per-purchase workflow
 
-The current PR provides a reviewed suggestion workflow under
-**Normalized Descriptions → ChatGPT**:
+Before RECEIPTS-1104, **Normalized Descriptions → ChatGPT** also let you select up
+to 50 individual receipt items and ask for suggestions for them. That workflow is
+retired. Catalog is the one supported way to ask ChatGPT for suggestions: it works
+on source groups, retrieves lexical, semantic and approved-example candidates, and
+saves reusable source mappings that apply across history.
 
-1. Select up to 50 eligible receipt items and a model.
-2. Ask for suggestions. Each suggestion reuses a supplied existing identity,
-   proposes a new readable name, or leaves the item unresolved.
-3. Review the results and explicitly apply the selected suggestions.
-4. The selected receipt items receive their normalized links. Their original
-   purchase facts remain unchanged.
+What remains for runs saved by the old workflow:
 
-Purchase search already matches active normalized names and display labels as
-well as raw receipt descriptions. This makes an accepted name useful immediately
-for the purchases linked to it. See [Purchase search](purchase-search.md) for
-the current search and price-history contract.
+- **Readable.** The ChatGPT tab still lists recent runs and opens any of them,
+  so past suggestions and outcomes stay visible.
+- **Cancel and discard.** A queued, failed or uncertain run can be cancelled. A
+  ready run's suggestions can be discarded, which frees its items for Catalog
+  requests and releases its share of the pending-run limit.
+- **Not applied, retried or dispatched.** The apply and retry endpoints answer
+  `409` with the problem `code` `workflow_retired`. The worker fails a still-queued
+  per-purchase run with the same code instead of sending it to the provider.
 
-Normalized spending reports also use linked normalized names. Item-cost history
-can filter by a canonical name and aggregate prices by period; its ordinary
-description filter still matches raw text exactly. The purchase-search table is
-the current way to inspect matching individual purchases across descriptions.
+Purchase search matches active normalized names and display labels as well as raw
+receipt descriptions, so an approved name is useful immediately for the purchases
+linked to it. See [Purchase search](purchase-search.md) for the current search and
+price-history contract. Neither workflow automatically sends new unfamiliar receipt
+text to the provider; requesting model suggestions remains an explicit action.
 
-This older workflow remains available for existing per-purchase runs. It does
-not save reusable source mappings or propagate a decision across history. Use
-Catalog for the maintained-catalog workflow. Neither workflow automatically
-sends new unfamiliar receipt text to the provider; requesting model suggestions
-remains an explicit action.
+The suggestion instructions ask the model to preserve product distinctions such as
+brand, package size and dietary variant. Review must verify those distinctions;
+structural validation cannot prove that two names mean the same product. A search
+for "hot dogs" can find several normalized products while their individual price
+histories remain distinct.
 
-The current suggestion instructions ask the model to preserve product
-distinctions such as brand, package size and dietary variant. Review must verify
-those distinctions; structural validation cannot prove that two names mean the
-same product. The intended grouping does not merge all hot dogs into one product.
-A search for "hot dogs" can find several normalized products while their
-individual price histories remain distinct.
-
-The remainder of this guide describes connection setup and the original
-suggestion workflow. Connection status is not evidence of model quality or
-catalog completeness.
+The remainder of this guide describes connection setup and how Catalog requests
+behave. Connection status is not evidence of model quality or catalog completeness.
 
 ## Connection and deployment
 
@@ -332,30 +327,19 @@ separately billed API key.
 
 ## Review, failure and recovery
 
-Select the intended unresolved item descriptions and review the payload disclosure
-before requesting suggestions. The request sends only the disclosed text and
-candidate context. Model output remains untrusted: unknown IDs, invalid fields,
-incomplete responses and tool calls cannot become accepted suggestions. Applying
-a suggestion rechecks current item/canonical state and commits changes with audit.
+Choose the source groups in **Catalog** and review the payload disclosure before
+requesting suggestions. The request sends only the disclosed text and candidate
+context. Model output remains untrusted: unknown IDs, invalid fields, incomplete
+responses and tool calls cannot become accepted suggestions. Approving a suggestion
+goes through catalog preview, which rechecks current source and identity state and
+commits changes with audit. The run URL and recent-run list let you leave and return
+while a request is running.
 
-In **Normalized Descriptions → ChatGPT**, choose up to 50 unresolved or pending-review
-items and a model from the provider's catalog. Receipt date and store help you select
-items locally; the provider receives only item identifiers, original descriptions,
-and candidate names/identifiers. Separate price, quantity, date and store fields are
-excluded; the selected descriptions themselves are sent as displayed.
-The run URL and recent-run list let you leave and return while a request is running.
-
-Select the suggestions you accept, confirm that you reviewed them, and apply once.
-All selected changes commit together or none do. Unselected suggestions are discarded;
-their receipt items remain unchanged and can be selected in another run. Creating a
-reviewed name creates a canonical name, like the existing manual split workflow.
-Reusing a name only links to a supplied active candidate. Neither action renames an
-existing canonical or activates a rejected/pending name as a side effect.
-
-Changing an item or target after inference invalidates the affected proposal, even
-if its visible values were subsequently changed back. Cancel the stale run and select
-the current items. An uncertain run can also be cancelled without requesting another
-inference. Changing the connection or importing a backup invalidates outstanding work.
+Changing a source after inference invalidates the affected suggestion, even if its
+visible values were subsequently changed back. Cancel the stale run and select the
+current source group. An uncertain run can also be cancelled without requesting
+another inference. Changing the connection or importing a backup invalidates
+outstanding work.
 
 ### Responsibility boundaries
 

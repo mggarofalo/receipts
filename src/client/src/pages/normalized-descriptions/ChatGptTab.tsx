@@ -7,7 +7,6 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { RequestFailure } from "@/components/RequestFailure";
-import { AiCandidateSelection } from "./AiCandidateSelection";
 import { AiRunReview } from "./AiRunReview";
 import { ChatGptSignIn } from "./ChatGptSignIn";
 
@@ -19,6 +18,13 @@ export function ChatGptTab() {
   const owner = connection.data?.configured === true && connection.data.isOwner;
   const runs = useAiRuns(owner);
   const run = useAiRun(runId, owner);
+  const openCatalog = () =>
+    setParams((previous) => {
+      const next = new URLSearchParams(previous);
+      next.set("tab", "catalog");
+      next.delete("aiRun");
+      return next;
+    });
   const selectRun = (id: string | null) =>
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -44,8 +50,8 @@ export function ChatGptTab() {
       >
         <h2 className="card-title">ChatGPT normalization</h2>
         <p>
-          Use your personal ChatGPT connection to suggest item names, then
-          review before applying.
+          Connect your personal ChatGPT account here. Request and review name
+          suggestions for source groups in Catalog.
         </p>
         {!connection.data?.configured ? (
           <>
@@ -128,24 +134,16 @@ export function ChatGptTab() {
                     Review these source suggestions in Catalog
                   </Button>
                 ) : (
-                  <AiRunReview
-                    key={`${run.data.id}:${run.data.revision}`}
-                    run={run.data}
-                    onRetried={selectRun}
-                  />
+                  <AiRunReview run={run.data} />
                 ))
               )}
             </>
           )}
-          {!runId &&
-            (connection.data?.credentialsPresent || connection.data?.busy) && (
-              <AiCandidateSelection
-                key={connection.data.generation}
-                models={connection.data.models}
-                busy={connection.data.busy}
-                onStarted={selectRun}
-              />
-            )}
+          {!runId && (
+            <Button onClick={openCatalog}>
+              Request suggestions in Catalog
+            </Button>
+          )}
           <section className="space-y-2" aria-label="Recent ChatGPT runs">
             <h2 className="card-title">Recent runs</h2>
             {runs.isError ? (

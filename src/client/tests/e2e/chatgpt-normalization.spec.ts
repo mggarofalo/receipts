@@ -9,7 +9,7 @@ import {
 // Synthetic HTTP contracts exercise the real browser/router/forms/query lifecycle.
 // This does not establish provider entitlement or actual database persistence.
 for (const width of [1280, 375]) {
-  test(`ChatGPT selection and review survive reload at ${width}px`, async ({
+  test(`Saved per-purchase run stays read-only through reload at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -17,70 +17,48 @@ for (const width of [1280, 375]) {
     const revision = "20000000-0000-0000-0000-000000000001";
     const itemId = "30000000-0000-0000-0000-000000000001";
     const proposalId = "40000000-0000-0000-0000-000000000001";
-    let run: components["schemas"]["NormalizationAiRunResponse"] | undefined;
-    const writes: { path: string; body: unknown }[] = [];
-    let rejectApply = true;
+    let run: components["schemas"]["NormalizationAiRunResponse"] = {
+      id: runId,
+      revision,
+      clientRequestId: runId,
+      state: "ready",
+      model: "test-model",
+      createdAt: "2026-01-01T00:00:00Z",
+      completedAt: "2026-01-01T00:00:01Z",
+      errorCode: null,
+      errorDetail: null,
+      usage: { input: 30, output: 12, cacheRead: 0, cacheWrite: 0 },
+      proposals: [
+        {
+          id: proposalId,
+          receiptItemId: itemId,
+          description: "SYNTHETIC MLK",
+          action: "create",
+          targetId: null,
+          canonicalName: "Whole milk",
+          displayLabel: null,
+          reason: "Explicit product identity",
+          state: "pending",
+        },
+      ],
+    };
+    const writes: string[] = [];
     await installApiMocks(page, {
       freezeClock: false,
       user: ADMIN_FIXTURE_USER,
       overrides: {
         "**/api/normalization-ai/**": async (route) => {
           const path = new URL(route.request().url()).pathname;
-          const respond = (data: unknown, status = 200) =>
+          const respond = (data: unknown) =>
             route.fulfill({
-              status,
-              contentType:
-                status >= 400 ? "application/problem+json" : "application/json",
+              contentType: "application/json",
               body: JSON.stringify(data),
             });
           if (route.request().method() === "POST") {
-            const body = route.request().postDataJSON();
-            writes.push({ path, body });
-            if (path.endsWith("/apply")) {
-              if (rejectApply)
-                return respond(
-                  {
-                    status: 409,
-                    detail: "A source changed. Nothing was applied.",
-                    code: "source_changed",
-                  },
-                  409,
-                );
-              run = {
-                ...run!,
-                state: "applied",
-                proposals: run!.proposals.map((p) => ({
-                  ...p,
-                  state: "applied",
-                })),
-              };
-              return respond(run);
-            }
-            run = {
-              id: runId,
-              revision,
-              clientRequestId: body.clientRequestId,
-              state: "ready",
-              model: "test-model",
-              createdAt: "2026-01-01T00:00:00Z",
-              completedAt: "2026-01-01T00:00:01Z",
-              errorCode: null,
-              errorDetail: null,
-              usage: { input: 30, output: 12, cacheRead: 0, cacheWrite: 0 },
-              proposals: [
-                {
-                  id: proposalId,
-                  receiptItemId: itemId,
-                  description: "SYNTHETIC MLK",
-                  action: "create",
-                  targetId: null,
-                  canonicalName: "Whole milk",
-                  displayLabel: null,
-                  reason: "Explicit product identity",
-                  state: "pending",
-                },
-              ],
-            };
+            writes.push(path);
+            if (!path.endsWith(`/runs/${runId}/cancel`))
+              throw new Error(`Unexpected normalization write ${path}`);
+            run = { ...run, state: "cancelled", revision: itemId };
             return respond(run);
           }
           if (path.endsWith("/connection"))
@@ -92,20 +70,7 @@ for (const width of [1280, 375]) {
               generation: revision,
               models: ["test-model"],
             });
-          if (path.endsWith("/candidates"))
-            return respond({
-              total: 1,
-              items: [
-                {
-                  id: itemId,
-                  receiptId: runId,
-                  description: "SYNTHETIC MLK",
-                  location: "Synthetic store",
-                  date: "2026-01-01",
-                },
-              ],
-            });
-          if (path.endsWith("/runs")) return respond(run ? [run] : []);
+          if (path.endsWith("/runs")) return respond([run]);
           if (path.endsWith(`/runs/${runId}`)) return respond(run);
           throw new Error(`Unexpected normalization route ${path}`);
         },
@@ -117,22 +82,14 @@ for (const width of [1280, 375]) {
     await expect(
       page.getByRole("heading", { name: "ChatGPT normalization" }),
     ).toBeVisible();
-    await page.getByRole("checkbox", { name: "Select SYNTHETIC MLK" }).check();
-    await expect(
-      page.getByRole("combobox", { name: "ChatGPT model" }),
-    ).toHaveValue("");
+    await expect(page.getByRole("checkbox", { name: /^Select / })).toHaveCount(
+      0,
+    );
     await page
-      .getByRole("combobox", { name: "ChatGPT model" })
-      .selectOption("test-model");
-    await page
-      .getByRole("button", { name: "Request suggestions for 1 items" })
+      .getByRole("region", { name: "Recent ChatGPT runs" })
+      .getByRole("button")
       .click();
     await expect(page).toHaveURL(new RegExp(`aiRun=${runId}`));
-    expect(writes).toHaveLength(1);
-    expect(writes[0].body).toMatchObject({
-      model: "test-model",
-      itemIds: [itemId],
-    });
     await page.reload();
     const review = page.getByRole("region", {
       name: "Review ChatGPT suggestions",
@@ -143,34 +100,12 @@ for (const width of [1280, 375]) {
         exact: true,
       }),
     ).toBeVisible();
-    const apply = review.getByRole("button", {
-      name: "Apply reviewed suggestions",
-    });
-    await expect(apply).toBeDisabled();
-    await review
-      .getByRole("checkbox", { name: "Accept suggestion for SYNTHETIC MLK" })
-      .check();
-    await expect(apply).toBeDisabled();
-    await review
-      .getByRole("checkbox", { name: "I reviewed these 1 suggestions" })
-      .check();
-    await apply.click();
-    await expect(review.getByRole("alert")).toHaveText(
-      "A source changed. Nothing was applied.",
-    );
-    await expect(
-      review.getByRole("checkbox", {
-        name: "Accept suggestion for SYNTHETIC MLK",
-      }),
-    ).toBeChecked();
-    expect(writes[1].body).toEqual({
-      proposalIds: [proposalId],
-      expectedRevision: revision,
-    });
-    rejectApply = false;
-    await apply.click();
-    await expect(review.getByRole("status")).toContainText("Applied");
-    expect(writes).toHaveLength(3);
+    await expect(review.getByRole("checkbox")).toHaveCount(0);
+    await expect(review.getByRole("button", { name: /apply/i })).toHaveCount(0);
+    await expect(review.getByText(/can no longer be applied/)).toBeVisible();
+    await review.getByRole("button", { name: "Discard suggestions" }).click();
+    await expect(review.getByRole("status")).toContainText("Cancelled");
+    expect(writes).toEqual([`/api/normalization-ai/runs/${runId}/cancel`]);
     const overflow = await page.evaluate(
       () =>
         document.documentElement.scrollWidth >
@@ -181,7 +116,7 @@ for (const width of [1280, 375]) {
 }
 
 for (const width of [1280, 375]) {
-  test(`Unknown busy run stays concise and closes to new selection at ${width}px`, async ({
+  test(`Unknown busy run stays concise and closes to the Catalog pointer at ${width}px`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -226,22 +161,9 @@ for (const width of [1280, 375]) {
                 generation: id,
                 models: ["test-model"],
               }
-            : path.endsWith("/candidates")
-              ? {
-                  items: [
-                    {
-                      id,
-                      receiptId: id,
-                      description: "SYNTHETIC ITEM",
-                      location: "Test store",
-                      date: "2026-01-01",
-                    },
-                  ],
-                  total: 1,
-                }
-              : path.endsWith("/runs")
-                ? [run]
-                : run;
+            : path.endsWith("/runs")
+              ? [run]
+              : run;
           await route.fulfill({
             contentType: "application/json",
             body: JSON.stringify(data),
@@ -261,8 +183,9 @@ for (const width of [1280, 375]) {
     await expect(
       page.getByRole("region", { name: "Select items for ChatGPT" }),
     ).toHaveCount(0);
+    await expect(review.getByRole("button", { name: /retry/i })).toHaveCount(0);
     await expect(
-      review.getByRole("button", { name: "Retry as a new request" }),
+      review.getByRole("button", { name: "Cancel request" }),
     ).toBeEnabled();
     await expect(
       page.locator("#chatgpt-connection-settings"),
@@ -272,20 +195,12 @@ for (const width of [1280, 375]) {
       fullPage: true,
     });
     await page.getByRole("button", { name: "Close run" }).click();
-    const selection = page.getByRole("region", {
-      name: "Select items for ChatGPT",
-    });
-    await expect(selection).toBeVisible();
-    const model = selection.getByRole("combobox", { name: "ChatGPT model" });
-    const request = selection.getByRole("button", {
-      name: "Request suggestions for 0 items",
-    });
-    await expect(request).toBeDisabled();
-    const modelBox = await model.boundingBox();
-    const itemBox = await selection
-      .getByRole("checkbox", { name: "Select SYNTHETIC ITEM" })
-      .boundingBox();
-    expect(modelBox!.y).toBeLessThan(itemBox!.y);
+    await expect(
+      page.getByRole("button", { name: "Request suggestions in Catalog" }),
+    ).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: /^Select / })).toHaveCount(
+      0,
+    );
     expect(writes).toBe(0);
     expect(
       await page.evaluate(
