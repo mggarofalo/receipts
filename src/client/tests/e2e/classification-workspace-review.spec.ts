@@ -59,7 +59,17 @@ for (const width of [1280, 375]) {
                       proposedPath: [taxonomyFixture.nodes[0].id],
                       abstentionReason: null,
                       confidence: 0.9,
+                      fitProbability: null,
+                      categoryProbability: null,
+                      selectedPathSupport: null,
                       probabilityScope: "local_choice",
+                      rootCandidates: [
+                        {
+                          categoryId: taxonomyFixture.nodes[0].id,
+                          probability: 0.9,
+                        },
+                      ],
+                      leafCandidates: [],
                       state: "suggested",
                       reviewState,
                       reviewRevision,
