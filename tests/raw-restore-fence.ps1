@@ -5,7 +5,7 @@ $container = 'receipts-restore-proof-' + [guid]::NewGuid().ToString('N').Substri
 $ledger = [System.IO.Path]::GetTempFileName()
 try {
     Set-Content -LiteralPath $ledger -Value "2026-10-25,7`n2026-10-26,3`n" -NoNewline
-    docker run --name $container -e POSTGRES_PASSWORD=test -d pgvector/pgvector:pg17 | Out-Null
+    docker run --name $container -e POSTGRES_PASSWORD=test -d pgvector/pgvector:0.8.7-pg17 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Could not start disposable PostgreSQL' }
     $ready = $false
     for ($i = 0; $i -lt 40; $i++) {

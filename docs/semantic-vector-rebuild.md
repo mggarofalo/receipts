@@ -24,6 +24,36 @@ ANN and hybrid-search queries use only the current fingerprint. During a rollout
 remain stored until the worker reaches them, but they cannot be compared with queries from the new
 embedding space.
 
+## Nearest-neighbour queries stay complete during a rebuild
+
+An HNSW index scan probes `hnsw.ef_search` neighbours (40 by default) and applies the `WHERE` clause
+afterwards. While most rows still carry an obsolete fingerprint, the nearest 40 can all be stale, so a
+`LIMIT 20` query returns few rows or none even though current rows exist. The planner picks the index
+on its own once the catalog is large enough. On the production schema with 60% of rows stale, it chose
+HNSW at about 6,600 and 11,600 rows and returned 18 and 14 of 20. A `, "Id"` tie-break does not prevent
+this: the planner keeps the index and adds an incremental sort (RECEIPTS-1097).
+
+**The rule.** Every kNN query over the HNSW index runs through `NearestNeighbourSearch.ToListAsync`.
+That runs `SET LOCAL hnsw.iterative_scan = strict_order` in a transaction (the caller's, or one it
+opens), so the scan keeps probing until the limit is met and still returns rows in exact distance
+order. `strict_order` rather than `relaxed_order` keeps the order exact for the `, "Id"` tie-break
+and for callers that trust the first row. The scan stops at `hnsw.max_scan_tuples` (20,000 by
+default), so a catalog with more stale rows than that near one query can still come back short.
+
+This needs pgvector 0.8 or later. Every image reference in the repository pins
+`pgvector/pgvector:0.8.7-pg17` (AppHost, `docker-compose.yml`, the test fixtures, and the scripts).
+Bump them together.
+
+A deployed database can run another image. On a library older than 0.8 the setting is an error, not a
+no-op, so `IterativeScanGate` reads `pg_extension.extversion` once per process and skips the setting
+below 0.8. It logs one warning that kNN results can be incomplete while embeddings are stale. The
+installed extension version can only lag the loaded library, so the gate never sends the setting to a
+library that lacks it. After an image upgrade, `ALTER EXTENSION vector UPDATE` lets the gate see the
+new version.
+
+`NormalizationCatalogTests.ReceiptSuggestions_FindTheFreshNeighbourWhileMostOfTheCatalogIsStale`
+forces the index plan with 60% of rows stale, and fails without the rule.
+
 ## Rebuild behavior
 
 `EmbeddingGenerationService` processes at most 50 rows per cycle. It prioritizes searchable

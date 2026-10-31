@@ -2,6 +2,7 @@ using Application.Normalization;
 using Domain.NormalizedDescriptions;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Pgvector;
 
 namespace Infrastructure.IntegrationTests.CatalogRecall;
@@ -144,11 +145,12 @@ internal sealed class CatalogRecallHarness(Func<ApplicationDbContext> createCont
 		if (recorded is not { Length: > 0 }) { return (null, null, null); }
 		Vector query = new(recorded);
 		string fingerprint = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
-		List<SemanticNeighbour> nearest = await context.Database.SqlQuery<SemanticNeighbour>($"""
+		// The same kNN rule production follows, so partial coverage does not under-measure recall.
+		List<SemanticNeighbour> nearest = await NearestNeighbourSearch.ToListAsync(context.Database, context.Database.SqlQuery<SemanticNeighbour>($"""
 			SELECT "Id", 1 - ("Embedding" <=> {query}::vector) AS "Similarity" FROM matching."NormalizedDescriptions"
 			WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {fingerprint}
 			ORDER BY "Embedding" <=> {query}::vector, "Id" LIMIT 21
-			""").ToListAsync(cancellationToken);
+			"""), NullLogger.Instance, cancellationToken);
 		List<double> target = await context.Database.SqlQuery<double>($"""
 			SELECT 1 - ("Embedding" <=> {query}::vector) AS "Value" FROM matching."NormalizedDescriptions"
 			WHERE "Id" = {item.TargetId} AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {fingerprint}

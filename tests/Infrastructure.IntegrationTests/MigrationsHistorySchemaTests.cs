@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Infrastructure.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -30,7 +31,7 @@ public class MigrationsHistorySchemaTests : IAsyncLifetime
 	private const string HistoryTable = "__EFMigrationsHistory";
 
 	// Deliberately no SearchPath override — the default "$user", public is the whole point of the test.
-	private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("pgvector/pgvector:pg17")
+	private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(PostgresFixture.Image)
 		.WithUsername(CollidingName)
 		.WithDatabase(CollidingName)
 		.Build();
