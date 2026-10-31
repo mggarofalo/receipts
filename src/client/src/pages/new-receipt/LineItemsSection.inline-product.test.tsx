@@ -260,3 +260,25 @@ it("keeps the optional advanced chooser available and changes a one-purchase sel
 });
 
 
+
+it("offers at most two semantic-only products inline, after products with specific evidence", async () => {
+  const near = (index: number) => ({
+    ...product,
+    id: `33333333-3333-4333-8333-33333333333${index}`,
+    canonicalName: `Similar product ${index}`,
+    channels: ["semantic"],
+  });
+  server.use(http.get("*/api/receipt-items/normalization-candidates", () =>
+    HttpResponse.json([product, near(1), near(2), near(3)])));
+  const user = userEvent.setup();
+  renderWithQueryClient(<LineItemsSection items={[]} onChange={vi.fn()} location="Fixture market" />);
+  await user.type(screen.getByPlaceholderText("Item description"), rawDescription);
+
+  await screen.findByRole("option", { name: /Whole milk 1 gallon/ });
+  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+    expect.stringContaining("Whole milk 1 gallon"),
+    expect.stringContaining("Similar product 1"),
+    expect.stringContaining("Similar product 2"),
+  ]);
+  expect(screen.queryByRole("option", { name: /Similar product 3/ })).not.toBeInTheDocument();
+});

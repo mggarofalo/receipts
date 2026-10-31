@@ -10,6 +10,7 @@ using Infrastructure.Entities.Core;
 using Infrastructure.NormalizationAi;
 using Infrastructure.Utilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Services;
 
@@ -17,7 +18,8 @@ public sealed partial class NormalizationCatalogService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	TimeProvider timeProvider,
 	ICommittedChangePublisher publisher,
-	IEmbeddingService? embeddingService = null) : INormalizationCatalogService
+	IEmbeddingService? embeddingService = null,
+	ILogger<NormalizationCatalogService>? logger = null) : INormalizationCatalogService
 {
 	private static NormalizationCatalogException Error(int status, string code, string detail) => new(status, code, detail);
 	private async Task AuthorizeAsync(ApplicationDbContext context, string actor, CancellationToken ct)

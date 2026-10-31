@@ -12,6 +12,24 @@ export type ReceiptNormalizationChoice = {
 
 // This key binds UI evidence to its input. The authoritative fingerprint is
 // supplied by the server; this never manufactures verification evidence.
+/** The inline description list offers at most this many products backed only by similar meaning. */
+export const maxInlineSemanticOnlyProducts = 2;
+
+/**
+ * The server's top five products for the inline list. It already ranks semantic-only rows last;
+ * this keeps at most two of them so they cannot fill the list.
+ */
+export function inlineProductSuggestions<T extends { channels: string[] }>(candidates: T[]): T[] {
+  let semanticOnly = 0;
+  return candidates
+    .filter((candidate) => {
+      if (candidate.channels.some((channel) => channel !== "semantic")) return true;
+      semanticOnly += 1;
+      return semanticOnly <= maxInlineSemanticOnlyProducts;
+    })
+    .slice(0, 5);
+}
+
 export function normalizationSourceKey(source: ReceiptNormalizationSource) {
   const trim = (text: string) => text.replace(/^ +| +$/g, "");
   return JSON.stringify([

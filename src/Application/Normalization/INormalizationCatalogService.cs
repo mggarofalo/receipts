@@ -32,8 +32,12 @@ public sealed record NormalizationCatalogPreview(Guid ClientRequestId, Normaliza
 	Guid? SuggestionRunId = null, Guid? SuggestionProposalId = null, Guid? SuggestionRunRevision = null);
 public sealed record NormalizationSourceMapping(Guid Id, Guid Revision, NormalizationSourceKey Source,
 	Guid? TargetId, string? TargetName, string State, DateTimeOffset ApprovedAt);
+/// <param name="SemanticSimilarity">
+/// Cosine similarity to the source when the target is among its nearest semantic neighbours. Retrieval
+/// evidence only: never exposed by the API, and not a confidence (docs/receipt-suggestion-flows.md).
+/// </param>
 public sealed record NormalizationCatalogCandidate(Guid Id, Guid Revision, string CanonicalName, string? DisplayLabel,
-	IReadOnlyList<string> Channels, IReadOnlyList<string> ApprovedExamples);
+	IReadOnlyList<string> Channels, IReadOnlyList<string> ApprovedExamples, double? SemanticSimilarity = null);
 public sealed record NormalizationCatalogOperation(Guid Id, Guid Revision, string State,
 	NormalizationSourceKey Source, Guid? MappingId, Guid? TargetId, string? NewCanonicalName,
 	bool IncludeLegacyUnknown, int Total, int Eligible, int Protected, int Applied, int Conflicted,

@@ -343,3 +343,18 @@ Target beats the nearest wrong name for 86.4%; 0 targets had no current vector.
   0.80, and the margin over the nearest wrong name is small (median 0.074). A floor near
   0.80 keeps wrong admissions low on real catalog text. The synthetic numbers show it will
   still miss many true abbreviations. Choosing the floor belongs to RECEIPTS-1095.
+
+## Recall history
+
+Each retrieval change records its before and after numbers here and in its PR. The rows give
+recall@20, with recall@1 in brackets where it moved, for the catalog source-run and the
+receipt chooser. Fingerprint and coverage are unchanged unless stated.
+
+| Change | Proxy catalog | Proxy chooser | Proxy chooser, abbreviated | Synthetic catalog | Synthetic chooser | Synthetic chooser, abbreviated |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline, main 99f5bfac | 100% | 79.2% | 46.7% | 100% (83.3%) | 50.0% | 33.3% |
+| RECEIPTS-1095 semantic floor 0.80 | 100% | 100% | 100% | 100% (83.3%) | 70.8% (62.5%) | 50.0% |
+
+RECEIPTS-1095: the proxy chooser's jump is circular, because every proxy target sits at a
+similarity of at least ~0.82 by construction. The synthetic fixture is the honest signal for
+that change.

@@ -22,4 +22,40 @@ public sealed class ReceiptSuggestionEvidenceTests
 
 		actual.Should().Be(expected);
 	}
+
+	[Theory]
+	[InlineData(0.93, true)]
+	[InlineData(ReceiptSuggestionEvidence.SemanticFloor, true)]
+	[InlineData(0.79, false)]
+	public void IsUseful_AdmitsASemanticNeighbourAtOrAboveTheFloor(double similarity, bool expected)
+	{
+		var candidate = new NormalizationCatalogCandidate(Guid.NewGuid(), Guid.NewGuid(), "Chicken breast",
+			null, ["semantic"], [], similarity);
+
+		bool actual = ReceiptSuggestionEvidence.IsUseful(new("Synthetic market", "KS ORG CHKN BRST", null), candidate);
+
+		actual.Should().Be(expected);
+	}
+
+	[Fact]
+	public void IsUseful_RejectsASemanticOnlyCandidateWithoutSimilarity()
+	{
+		var candidate = new NormalizationCatalogCandidate(Guid.NewGuid(), Guid.NewGuid(), "Chicken breast",
+			null, ["semantic"], []);
+
+		bool actual = ReceiptSuggestionEvidence.IsUseful(new("Synthetic market", "KS ORG CHKN BRST", null), candidate);
+
+		actual.Should().BeFalse();
+	}
+
+	[Fact]
+	public void IsUseful_AdmitsSimilarityAboveTheFloorWhenLexicalOverlapFails()
+	{
+		var candidate = new NormalizationCatalogCandidate(Guid.NewGuid(), Guid.NewGuid(), "Acme mallet",
+			null, ["lexical", "semantic"], [], 0.91);
+
+		bool actual = ReceiptSuggestionEvidence.IsUseful(new("Synthetic market", "Acme beans", null), candidate);
+
+		actual.Should().BeTrue("similarity at or above the floor is evidence on its own");
+	}
 }
