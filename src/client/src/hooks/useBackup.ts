@@ -42,7 +42,7 @@ export function useBackupExport(): UseMutationResult<void, Error, void, unknown>
       if (!blob) throw new Error("Export returned no backup file.");
 
       const disposition = response.headers.get("Content-Disposition");
-      let filename = `receipts-backup-${new Date().toISOString().slice(0, 10)}.sqlite`;
+      let filename = `receipts-backup-${new Date().toISOString().slice(0, 10)}.db.gz`;
       if (disposition) {
         const match = disposition.match(/filename="?([^";\n]+)"?/);
         if (match) filename = match[1];

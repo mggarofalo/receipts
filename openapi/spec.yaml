@@ -6959,8 +6959,8 @@ paths:
       tags: [Backup]
       summary: Import data from a SQLite backup file
       description: >
-        Accepts a SQLite database file exported by the backup endpoint, reads all
-        entity tables, and upserts each row into the current database (insert if
+        Accepts a SQLite database file exported by the backup endpoint, raw or
+        gzip-compressed (.db.gz), reads all entity tables, and upserts each row into the current database (insert if
         new, update if existing by ID). Requires the Admin role. The import is
         atomic â€” if any entity fails validation, the entire import is rolled back.
       security:
@@ -8450,7 +8450,8 @@ paths:
       tags: [Backup]
       summary: Export database to a portable SQLite file
       description: >
-        Generates a SQLite database containing all domain data (accounts,
+        Generates a gzip-compressed SQLite database (.db.gz) containing all
+        domain data (accounts,
         categories, receipts, items, transactions, adjustments, item templates),
         YNAB configuration and current sync records, and normalized descriptions.
         Inert legacy receipt image-path metadata is retained for archival compatibility.
@@ -8465,7 +8466,7 @@ paths:
         - ApiKey: []
       responses:
         "200":
-          description: SQLite database file
+          description: Gzip-compressed SQLite database file
           content:
             application/octet-stream:
               schema:

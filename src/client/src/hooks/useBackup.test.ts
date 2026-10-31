@@ -79,6 +79,26 @@ describe("useBackupExport", () => {
     expect(globalThis.URL.revokeObjectURL).toHaveBeenCalledWith("blob:mock");
   });
 
+  it("names a download without Content-Disposition as a compressed backup", async () => {
+    const fakeBlob = { size: 12, type: "application/octet-stream" } as Blob;
+    globalThis.fetch = vi.fn(async () => Object.assign(new Response("backup"), { blob: async () => fakeBlob }));
+    const appendChild = vi.spyOn(document.body, "appendChild");
+
+    const { result } = renderHook(() => useBackupExport(), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+
+    const anchors = appendChild.mock.calls
+      .map(([node]) => node)
+      .filter((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement);
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0].download).toMatch(/^receipts-backup-\d{4}-\d{2}-\d{2}\.db\.gz$/);
+  });
+
   it("toasts a permission error on 403", async () => {
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ status: 403 }), { status: 403, headers: { "Content-Type": "application/json" } }));
 

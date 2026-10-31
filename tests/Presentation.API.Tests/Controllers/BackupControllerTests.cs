@@ -41,7 +41,7 @@ public class BackupControllerTests : IDisposable
 		_tempFiles.Add(tempFile);
 		await File.WriteAllTextAsync(tempFile, "test-sqlite-content");
 
-		_backupServiceMock.Setup(s => s.ExportToSqliteAsync(It.IsAny<CancellationToken>()))
+		_backupServiceMock.Setup(s => s.ExportCompressedAsync(It.IsAny<CancellationToken>()))
 			.ReturnsAsync(tempFile);
 
 		// Act
@@ -51,14 +51,15 @@ public class BackupControllerTests : IDisposable
 		FileStreamHttpResult fileResult = result.Result.Should().BeOfType<FileStreamHttpResult>().Subject;
 		fileResult.ContentType.Should().Be("application/octet-stream");
 		fileResult.FileDownloadName.Should().StartWith("receipts-backup-");
-		fileResult.FileDownloadName.Should().EndWith(".db");
+		fileResult.FileDownloadName.Should().EndWith(".db.gz");
+		_backupServiceMock.Verify(s => s.ExportToSqliteAsync(It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	[Fact]
 	public async Task Export_ServiceThrows_Returns500()
 	{
 		// Arrange
-		_backupServiceMock.Setup(s => s.ExportToSqliteAsync(It.IsAny<CancellationToken>()))
+		_backupServiceMock.Setup(s => s.ExportCompressedAsync(It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new InvalidOperationException("Database error"));
 
 		// Act
@@ -73,7 +74,7 @@ public class BackupControllerTests : IDisposable
 	public async Task Export_CancellationRequested_PropagatesException()
 	{
 		// Arrange
-		_backupServiceMock.Setup(s => s.ExportToSqliteAsync(It.IsAny<CancellationToken>()))
+		_backupServiceMock.Setup(s => s.ExportCompressedAsync(It.IsAny<CancellationToken>()))
 			.ThrowsAsync(new OperationCanceledException());
 
 		// Act
@@ -145,6 +146,8 @@ public class BackupControllerTests : IDisposable
 	[InlineData(".sqlite")]
 	[InlineData(".sqlite3")]
 	[InlineData(".db")]
+	[InlineData(".gz")]
+	[InlineData(".db.gz")]
 	public async Task ImportBackup_ValidExtensions_CallsImportService(string extension)
 	{
 		// Arrange

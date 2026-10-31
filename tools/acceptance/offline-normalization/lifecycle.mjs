@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -229,7 +230,7 @@ async function main() {
   async function exported(name) {
     await pause(Math.max(0,lastRequest+850-Date.now()));lastRequest=Date.now();
     const response = await fetch(new URL('/api/backup/export',ready.Api),{method:'POST',headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(300000)});
-    assert(response.ok); const dest = path.join(out,name); fs.writeFileSync(dest,Buffer.from(await response.arrayBuffer()),{flag:'wx'}); return snapshot(dest);
+    assert(response.ok); const dest = path.join(out,name); fs.writeFileSync(dest,zlib.gunzipSync(Buffer.from(await response.arrayBuffer())),{flag:'wx'}); return snapshot(dest);
   }
   function postgres() {
     const name = ready.RunId + '-postgres';

@@ -491,12 +491,12 @@ describe("BackupRestore", () => {
     });
   });
 
-  it("accepts .sqlite files in the file input", () => {
+  it("accepts compressed and raw SQLite backups in the file input", () => {
     renderWithQueryClient(<BackupRestore />);
     const fileInput = document.getElementById(
       "backup-file",
     ) as HTMLInputElement;
-    expect(fileInput.accept).toBe(".sqlite,.db");
+    expect(fileInput.accept).toBe(".gz,.sqlite,.sqlite3,.db");
   });
 
   it("does not close confirmation dialog via Escape while import is pending", async () => {

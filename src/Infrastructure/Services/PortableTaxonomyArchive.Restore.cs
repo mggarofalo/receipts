@@ -27,11 +27,17 @@ internal static partial class PortableTaxonomyArchive
 
 	internal static async Task RestoreAsync(ApplicationDbContext db, State incoming, List<DeletionState> deletion, CancellationToken ct)
 	{
-		async Task Append<T>(IEnumerable<T> rows) where T : class
+		async Task<HashSet<string>> StoredKeys<T>() where T : class
+			=> (await db.Set<T>().AsNoTracking().ToListAsync(ct)).Select(ArchiveKey).ToHashSet(StringComparer.Ordinal);
+		async Task Append<T>(IEnumerable<T> rows, HashSet<string>? stored = null) where T : class
 		{
-			var keys = (await db.Set<T>().AsNoTracking().ToListAsync(ct)).Select(ArchiveKey).ToHashSet(StringComparer.Ordinal);
-			db.Set<T>().AddRange(rows.Where(row => !keys.Contains(ArchiveKey(row))));
+			stored ??= await StoredKeys<T>();
+			List<T> added = rows.Where(row => !stored.Contains(ArchiveKey(row))).ToList();
+			db.Set<T>().AddRange(added);
 			await db.SaveChangesAsync(ct);
+			// Appended history is immutable. Untracking it keeps change-tracker memory and
+			// DetectChanges cost flat for the rest of a large restore's transaction.
+			foreach (T row in added) { db.Entry(row).State = EntityState.Detached; }
 		}
 		await Append(incoming.Identities);
 		var storedRevisions = (await db.TaxonomyRevisions.AsNoTracking().Select(r => r.Id).ToListAsync(ct)).ToHashSet();
@@ -55,8 +61,9 @@ internal static partial class PortableTaxonomyArchive
 		await RestoreMappingsAsync(db, incoming, ct);
 		await Append(incoming.Operations);
 		// Explicit sequence ordering also satisfies immediate previous-assignment FKs.
+		var storedAssignments = await StoredKeys<PurchaseClassificationEntity>();
 		foreach (var group in incoming.Assignments.GroupBy(a => a.Sequence).OrderBy(g => g.Key))
-		{ await Append(group); }
+		{ await Append(group, storedAssignments); }
 		await Append(incoming.ClassificationOperations);
 		await Append(incoming.Migrations);
 		await Append(incoming.Crosswalks);

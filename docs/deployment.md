@@ -183,8 +183,8 @@ add_header X-Content-Type-Options "nosniff" always;
 add_header X-Frame-Options "SAMEORIGIN" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-# Increase body size for receipt uploads
-client_max_body_size 10M;
+# Allow backup restores (the app caps uploads at 100 MB; compressed backups are far smaller)
+client_max_body_size 100M;
 ```
 
 ### Network Configuration
@@ -401,4 +401,4 @@ Target for Raspberry Pi 4 (4GB RAM):
 | PostgreSQL | uncapped | ~100-200 MB |
 | **Total** | — | ~300-600 MB |
 
-Disk: Docker images ~660 MB, plus ~1.4 GB in the `app-data` volume for the embedding model (downloaded once on first start, not re-pulled on upgrades). Database grows with usage.
+Disk: Docker images ~660 MB, plus ~1.4 GB in the `app-data` volume for the embedding model (downloaded once on first start, not re-pulled on upgrades). Database grows with usage. A backup restore temporarily needs up to about 600 MB more there (`/data/tmp`: the upload plus its decompressed SQLite file); see [backup and restore](backup-restore.md#compressed-transfer).

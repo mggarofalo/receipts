@@ -17,7 +17,9 @@ public partial class BackupImportService(
 	IDbContextFactory<ApplicationDbContext> contextFactory,
 	ILogger<BackupImportService> logger) : IBackupImportService
 {
-	private const long MaxFileSizeBytes = 100 * 1024 * 1024; // 100 MB
+	// Bounds the restored SQLite file, after decompression; uploads are capped separately at the HTTP edge.
+	// About 5x the owner's current backup; also bounds temporary disk use and decompression bombs.
+	internal const long MaxSqliteBytes = 512L * 1024 * 1024; // 512 MiB
 
 	public Task<BackupImportResult> ImportFromSqliteAsync(Stream sqliteStream, CancellationToken cancellationToken)
 		=> ImportFromSqliteCoreAsync(sqliteStream, cancellationToken, requireCandidate: false);
@@ -33,17 +35,13 @@ public partial class BackupImportService(
 		{
 			await using (FileStream fs = File.Create(tempPath))
 			{
-				long totalCopied = 0;
-				byte[] buffer = new byte[81920];
-				int bytesRead;
-				while ((bytesRead = await sqliteStream.ReadAsync(buffer, cancellationToken)) > 0)
+				try
 				{
-					totalCopied += bytesRead;
-					if (totalCopied > MaxFileSizeBytes)
-					{
-						throw new InvalidOperationException($"SQLite file exceeds maximum allowed size of {MaxFileSizeBytes / (1024 * 1024)} MB.");
-					}
-					await fs.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+					await PortableBackupCompression.CopyAsSqliteAsync(sqliteStream, fs, MaxSqliteBytes, cancellationToken);
+				}
+				catch (InvalidDataException exception)
+				{
+					throw new InvalidOperationException("The uploaded file is not a valid gzip-compressed backup.", exception);
 				}
 			}
 

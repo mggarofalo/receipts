@@ -20,6 +20,7 @@ public class BackupController(
 	ILogger<BackupController> logger,
 	IEntityChangeNotifier notifier) : ControllerBase
 {
+	// Upload cap. Exports are gzip-compressed, so this admits backups several times larger as SQLite.
 	private const long MaxFileSizeBytes = 100 * 1024 * 1024; // 100 MB
 
 	private static readonly HashSet<string> AllowedExtensions =
@@ -27,17 +28,18 @@ public class BackupController(
 		".sqlite",
 		".sqlite3",
 		".db",
+		".gz",
 	];
 
 	[HttpPost("export")]
 	[EndpointSummary("Export database to a portable SQLite file")]
-	[EndpointDescription("Generates a SQLite database containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration (budget selection and account/category mappings and current sync records), and normalized descriptions. Inert legacy receipt image-path metadata is retained for archival compatibility; photo support is retired and image binaries are not included. User accounts and authentication settings are excluded. Audit logs (AuditLogs/AuthAuditLogs), the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.")]
+	[EndpointDescription("Generates a gzip-compressed SQLite database (.db.gz) containing all domain data (accounts, categories, receipts, items, transactions, adjustments, item templates), YNAB configuration (budget selection and account/category mappings and current sync records), and normalized descriptions. Inert legacy receipt image-path metadata is retained for archival compatibility; photo support is retired and image binaries are not included. User accounts and authentication settings are excluded. Audit logs (AuditLogs/AuthAuditLogs), the YNAB sync history (YnabSyncEvents), and the re-fetchable YNAB delta cursor (YnabServerKnowledge) are deliberately excluded as activity history or regenerable data rather than restorable state. Admin-only. Soft-deleted records are excluded.")]
 	public async Task<Results<FileStreamHttpResult, StatusCodeHttpResult>> Export(CancellationToken cancellationToken)
 	{
 		string? filePath = null;
 		try
 		{
-			filePath = await backupService.ExportToSqliteAsync(cancellationToken);
+			filePath = await backupService.ExportCompressedAsync(cancellationToken);
 
 			FileStream stream;
 			try
@@ -55,7 +57,7 @@ public class BackupController(
 				throw;
 			}
 
-			string fileName = $"receipts-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db";
+			string fileName = $"receipts-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}.db.gz";
 			return TypedResults.Stream(stream, "application/octet-stream", fileName);
 		}
 		catch (Exception ex) when (ex is not OperationCanceledException)
@@ -68,7 +70,7 @@ public class BackupController(
 	[HttpPost("import")]
 	[RequestSizeLimit(100 * 1024 * 1024)]
 	[EndpointSummary("Import data from a SQLite backup file")]
-	[EndpointDescription("Accepts a SQLite database file exported by the backup endpoint, reads all entity tables, and upserts each row into the current database. Backups from older export versions are accepted; tables and columns they lack are treated as absent. Requires the Admin role.")]
+	[EndpointDescription("Accepts a SQLite database file exported by the backup endpoint, raw or gzip-compressed, reads all entity tables, and upserts each row into the current database. Backups from older export versions are accepted; tables and columns they lack are treated as absent. Requires the Admin role.")]
 	public async Task<Results<Ok<BackupImportResponse>, BadRequestProblem, ConflictProblem>> ImportBackup(
 		IFormFile? file)
 	{

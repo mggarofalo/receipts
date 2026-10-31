@@ -99,11 +99,14 @@ internal static partial class PortableTaxonomyArchive
 		}
 		// Existing per-item history must also be a prefix. The archive's rebuilt projection
 		// can advance it, but no later destination assignment may be overwritten by old labels.
+		// Both states passed validation, so each current row names exactly one existing assignment.
+		var existingAssignments = existing.Assignments.ToDictionary(a => a.Id);
+		var latestIncoming = incoming.Assignments.GroupBy(a => a.ReceiptItemId).ToDictionary(g => g.Key, g => g.Max(a => a.Sequence));
 		foreach (var current in existing.Current)
 		{
-			var old = existing.Assignments.Single(a => a.Id == current.AssignmentId);
-			var latest = incoming.Assignments.Where(a => a.ReceiptItemId == current.ReceiptItemId).MaxBy(a => a.Sequence);
-			Require(latest != null && latest.Sequence >= old.Sequence, "Restore would overwrite a later classification.");
+			var old = existingAssignments[current.AssignmentId];
+			Require(latestIncoming.TryGetValue(current.ReceiptItemId, out long latest) && latest >= old.Sequence,
+				"Restore would overwrite a later classification.");
 		}
 	}
 
