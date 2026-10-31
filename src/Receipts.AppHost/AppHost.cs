@@ -1,7 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
 IResourceBuilder<PostgresServerResource> postgres = builder.AddPostgres("postgres")
-	.WithImage("pgvector/pgvector", "pg17")
+	.WithImage("pgvector/pgvector", "0.8.7-pg17")
 	.WithDataVolume()
 	.WithPgAdmin(pgAdmin => pgAdmin.WithImageTag("9.13"));
 

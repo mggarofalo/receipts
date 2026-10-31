@@ -15,7 +15,7 @@
 //   scripts/data/transaction-card-backfill.csv
 //   scripts/data/transaction-card-backfill.generated.sql   <- inline VALUES block for the migration
 //
-// Requires: Docker Desktop running (or any local docker). Image pgvector/pgvector:pg17.
+// Requires: Docker Desktop running (or any local docker). Image pgvector/pgvector:0.8.7-pg17.
 
 using System.Diagnostics;
 using System.Text;
@@ -100,7 +100,7 @@ try
         "run", "--rm", "-d",
         "--name", containerName,
         "-v", $"{mountPath}:/var/lib/postgresql/data",
-        "pgvector/pgvector:pg17",
+        "pgvector/pgvector:0.8.7-pg17",
     ], captureStdout: false);
 
     Console.WriteLine("Waiting for pg_isready…");

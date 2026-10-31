@@ -15,12 +15,15 @@ public class PostgresFixture : IAsyncLifetime
 
 	private readonly string? _migration;
 
+	/// <summary>Pinned: the kNN completeness rule needs pgvector 0.8 (RECEIPTS-1097).</summary>
+	internal const string Image = "pgvector/pgvector:0.8.7-pg17";
+
 	public PostgresFixture() : this(null) { }
 
 	internal PostgresFixture(string? migration)
 	{
 		_migration = migration;
-		_container = new PostgreSqlBuilder("pgvector/pgvector:pg17").Build();
+		_container = new PostgreSqlBuilder(Image).Build();
 	}
 
 	private PostgresFixture(string adminConnectionString, string databaseName, string? migration)
