@@ -36,11 +36,12 @@ public sealed class ReceiptNormalizationPreviewService(IDbContextFactory<Applica
 		else
 		{
 			// The chooser's own lexical relevance (RECEIPTS-1094, RECEIPTS-1100): a name holding more of the
-			// typed words outranks one that only contains the phrase, with name then Id as a stable tie-break.
+			// typed words outranks one that only contains the phrase, with the shown name then Id as a stable
+			// tie-break, as in the unfiltered list.
 			var matches = Matches(context, query.Trim());
 			total = await matches.CountAsync(cancellationToken);
 			Guid[] ids = await matches.OrderByDescending(match => match.Score).ThenByDescending(match => match.Similarity)
-				.ThenBy(match => match.CanonicalName).ThenBy(match => match.Id).Skip(offset).Take(limit)
+				.ThenBy(match => match.Name).ThenBy(match => match.Id).Skip(offset).Take(limit)
 				.Select(match => match.Id).ToArrayAsync(cancellationToken);
 			var rows = await active.Where(value => ids.Contains(value.Id))
 				.Select(value => new ReceiptNormalizationCandidate(value.Id, value.NormalizationRevision, value.DisplayLabel ?? value.CanonicalName))
@@ -54,7 +55,10 @@ public sealed class ReceiptNormalizationPreviewService(IDbContextFactory<Applica
 		return new(hash, mapping?.Id, mapping?.Revision, target?.Id, target?.Revision, target?.Name, mapping?.Exclude == true, page, total, offset, limit, sourceTargets.Length > 1);
 	}
 
-	/// <summary>Active names containing the phrase, literally and in any case, with their relevance to it.</summary>
+	/// <summary>
+	/// Active names containing the phrase literally, in any case, with their relevance to it. The filter is
+	/// LIKE on the two trigram-indexed lower-case expressions, as in the lexical channel.
+	/// </summary>
 	private static IQueryable<PreviewMatch> Matches(ApplicationDbContext context, string phrase)
 	{
 		List<NpgsqlParameter> parameters = [];
@@ -65,12 +69,13 @@ public sealed class ReceiptNormalizationPreviewService(IDbContextFactory<Applica
 		}
 		(string score, string similarity) = NormalizationCandidateRetrieval.Relevance(
 			DescriptionText.LexicalTokens(phrase, DescriptionTokenMode.Catalog), phrase, Parameter);
-		string pattern = Parameter("%" + Regex.Replace(phrase, @"[\\%_]", @"\$0") + "%");
+		string pattern = Parameter("%" + Regex.Replace(DescriptionText.Lower(phrase), @"[\\%_]", @"\$0") + "%");
 		// Only parameter placeholders are interpolated; every value is bound.
 		string sql = $"""
-			SELECT "Id", "CanonicalName", {score} AS "Score", {similarity} AS "Similarity"
+			SELECT "Id", COALESCE("DisplayLabel", "CanonicalName") AS "Name", {score} AS "Score", {similarity} AS "Similarity"
 			FROM matching."NormalizedDescriptions"
-			WHERE "Status" = 'Active' AND ("CanonicalName" ILIKE {pattern} ESCAPE '\' OR "DisplayLabel" ILIKE {pattern} ESCAPE '\')
+			WHERE "Status" = 'Active' AND (lower("CanonicalName") LIKE {pattern} ESCAPE '\'
+				OR lower(COALESCE("DisplayLabel", "CanonicalName")) LIKE {pattern} ESCAPE '\')
 			""";
 		return context.Database.SqlQueryRaw<PreviewMatch>(sql, [.. parameters]);
 	}
@@ -78,7 +83,7 @@ public sealed class ReceiptNormalizationPreviewService(IDbContextFactory<Applica
 	private sealed class PreviewMatch
 	{
 		public Guid Id { get; set; }
-		public string CanonicalName { get; set; } = string.Empty;
+		public string Name { get; set; } = string.Empty;
 		public int Score { get; set; }
 		public double Similarity { get; set; }
 	}
