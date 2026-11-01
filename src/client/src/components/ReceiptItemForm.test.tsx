@@ -23,6 +23,8 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReceiptItemForm } from "./ReceiptItemForm";
 import { useReceipt } from "@/hooks/useReceipts";
+import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
+import type { components } from "@/generated/api";
 import { Combobox } from "@/components/ui/combobox";
 import type { ComponentProps } from "react";
 import type { ReceiptPicker } from "./ReceiptPicker";
@@ -954,4 +956,217 @@ describe("classification submissions", () => {
       );
     },
   );
+});
+
+describe("item-code suggestion category", () => {
+  type Suggestion = components["schemas"]["ReceiptItemSuggestionResponse"];
+  const suggestion = (categoryId?: string | null): Suggestion => ({
+    itemCode: "MILK-GAL",
+    description: "Whole milk",
+    category: "Food",
+    subcategory: "Produce",
+    categoryId,
+    unitPrice: 3.5,
+    matchType: "location",
+  });
+  const originalSuggestions = vi
+    .mocked(useReceiptItemSuggestions)
+    .getMockImplementation()!;
+  const originalTaxonomy = vi
+    .mocked(useCategoryTaxonomy)
+    .getMockImplementation()!;
+  const suggest = (item: Suggestion) =>
+    vi.mocked(useReceiptItemSuggestions).mockImplementation(
+      () =>
+        ({
+          data: [item],
+          isFetching: false,
+          isSuccess: true,
+          isLoading: false,
+          isError: false,
+          isDebouncing: false,
+          refetch: vi.fn(),
+        }) as unknown as ReturnType<typeof useReceiptItemSuggestions>,
+    );
+  const categoryPicker = () => screen.getByRole("combobox", { name: /Category/ });
+  async function pickSuggestion(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByPlaceholderText("Enter item code..."), "MI");
+    await user.click(await screen.findByRole("option", { name: /MILK-GAL/ }));
+    expect(screen.getByPlaceholderText("Enter item code...")).toHaveValue(
+      "MILK-GAL",
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+  afterEach(() => {
+    vi.mocked(useReceiptItemSuggestions).mockImplementation(originalSuggestions);
+    vi.mocked(useCategoryTaxonomy).mockImplementation(originalTaxonomy);
+  });
+
+  it("fills an empty category with the suggested item type and submits its classification", async () => {
+    suggest(suggestion("fruit"));
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    render(
+      <ReceiptItemForm
+        mode="create"
+        defaultValues={{ receiptId: "r-1", quantity: 1 }}
+        onSubmit={submit}
+        onCancel={vi.fn()}
+      />,
+    );
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Food / Produce / Fruit");
+    await user.click(screen.getByRole("button", { name: /create item/i }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit.mock.calls[0][0]).toMatchObject({
+      receiptItemCode: "MILK-GAL",
+      description: "Whole milk",
+      unitPrice: 3.5,
+      category: "Food",
+      subcategory: "Produce",
+      classification: {
+        categoryId: "fruit",
+        taxonomyRevisionId: "revision-1",
+        expectedAssignmentId: null,
+        operationId: expect.any(String),
+      },
+    });
+  });
+
+  it("fills an edited item that has no category recorded", async () => {
+    suggest(suggestion("produce"));
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={classificationDefaults}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.clear(screen.getByPlaceholderText("Enter item code..."));
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Food / Produce");
+    expect(
+      screen.queryByText(/No category recorded yet/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("fills an edited item saved as Unclassified and submits its classification", async () => {
+    suggest(suggestion("fruit"));
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={classificationDefaults}
+        currentClassification={{
+          assignmentId: "assignment-1",
+          categoryId: null,
+          taxonomyRevisionId: "revision-1",
+          recordedPath: [],
+        }}
+        onSubmit={submit}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.clear(screen.getByPlaceholderText("Enter item code..."));
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Food / Produce / Fruit");
+    await user.click(screen.getByRole("button", { name: "Update Item" }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit.mock.calls[0][0]).toMatchObject({
+      category: "Food",
+      subcategory: "Produce",
+      classification: {
+        categoryId: "fruit",
+        taxonomyRevisionId: "revision-1",
+        expectedAssignmentId: "assignment-1",
+        operationId: expect.any(String),
+      },
+    });
+  });
+
+  it("keeps a recorded category and sends no classification", async () => {
+    suggest(suggestion("fruit"));
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={classificationDefaults}
+        currentClassification={{
+          assignmentId: "assignment-1",
+          categoryId: "produce",
+          taxonomyRevisionId: "revision-1",
+          recordedPath: [
+            { id: "root", name: "Food", archived: false },
+            { id: "produce", name: "Produce", parentId: "root", archived: false },
+          ],
+        }}
+        onSubmit={submit}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.clear(screen.getByPlaceholderText("Enter item code..."));
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Food / Produce");
+    await user.click(screen.getByRole("button", { name: "Update Item" }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit.mock.calls[0][0].classification).toBeUndefined();
+  });
+
+  it("keeps a category picked before the suggestion", async () => {
+    suggest(suggestion("fruit"));
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        mode="create"
+        defaultValues={{ receiptId: "r-1", quantity: 1 }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.click(categoryPicker());
+    await chooseCategoryOption(user, "Food");
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Food");
+  });
+
+  it.each([
+    ["has no item type", undefined],
+    ["has a null item type", null],
+    ["names an item type the current tree does not hold", "retired"],
+    ["names an archived item type", "archived"],
+  ])("leaves the category empty when the suggestion %s", async (_, id) => {
+    vi.mocked(useCategoryTaxonomy).mockImplementation(() => {
+      const base = originalTaxonomy();
+      return {
+        ...base,
+        data: base.data && {
+          ...base.data,
+          nodes: [
+            ...base.data.nodes,
+            { id: "archived", name: "Old", archived: true },
+          ],
+        },
+      } as ReturnType<typeof useCategoryTaxonomy>;
+    });
+    suggest(suggestion(id));
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        mode="create"
+        defaultValues={{ receiptId: "r-1", quantity: 1 }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Choose category");
+  });
 });

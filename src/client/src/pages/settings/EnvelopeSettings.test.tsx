@@ -26,7 +26,11 @@ vi.mock("@/hooks/useEnvelopes", () => ({
   useDeleteOccasion: vi.fn(),
 }));
 
+vi.mock("@/hooks/useYnab", () => ({ useYnabEnvelopeMappings: vi.fn() }));
+
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useYnabEnvelopeMappings } from "@/hooks/useYnab";
+import type { components } from "@/generated/api";
 import {
   useCreateEnvelope,
   useCreateOccasion,
@@ -49,6 +53,37 @@ const occasions: Occasion[] = [
 ];
 
 type ReadState = { isLoading?: boolean; isError?: boolean };
+type YnabLink = components["schemas"]["YnabEnvelopeMappingResponse"];
+
+const groceriesLink: YnabLink = {
+  id: "map-groceries",
+  envelopeId: "env-groceries",
+  envelopeName: "Groceries",
+  ynabCategoryId: "ynab-cat-groceries",
+  ynabCategoryName: "Groceries",
+  ynabCategoryGroupName: "Everyday",
+  ynabBudgetId: "ynab-budget",
+  createdAt: "2026-10-01T00:00:00Z",
+  updatedAt: "2026-10-01T00:00:00Z",
+};
+
+function ynabLinksResult(
+  links: YnabLink[],
+  state: { isLoading?: boolean; isError?: boolean } = {},
+) {
+  const settled = !state.isLoading && !state.isError;
+  return {
+    ...mockQueryResult({
+      data: settled ? { data: links } : undefined,
+      isLoading: state.isLoading ?? false,
+      isPending: !settled && !state.isError,
+      isError: state.isError ?? false,
+      isSuccess: settled,
+      status: state.isError ? "error" : settled ? "success" : "pending",
+    }),
+    mappings: settled ? links : [],
+  } as ReturnType<typeof useYnabEnvelopeMappings>;
+}
 
 function envelopesResult(rows: Envelope[], state: ReadState = {}) {
   return {
@@ -87,6 +122,9 @@ function mutation(mutateAsync: ReturnType<typeof vi.fn>, isPending = false) {
 }
 
 beforeEach(() => {
+  vi.mocked(useYnabEnvelopeMappings).mockReturnValue(
+    ynabLinksResult([groceriesLink]),
+  );
   for (const fn of Object.values(mutations))
     fn.mockReset().mockResolvedValue(undefined);
   vi.mocked(useEnvelopes).mockReturnValue(envelopesResult(envelopes));
@@ -191,6 +229,11 @@ describe("EnvelopeSettings", () => {
       within(card("Groceries")).getByRole("button", { name: "Archive" }),
     );
     await user.click(screen.getByRole("button", { name: "Delete Birthday" }));
+    await user.click(
+      within(
+        await screen.findByRole("alertdialog", { name: "Delete occasion?" }),
+      ).getByRole("button", { name: "Delete" }),
+    );
 
     expect(mutations.updateEnvelope).toHaveBeenCalledWith({
       id: "env-groceries",
@@ -213,5 +256,37 @@ describe("EnvelopeSettings", () => {
     expect(
       within(card("Occasions")).getByRole("button", { name: "Add" }),
     ).toBeEnabled();
+  });
+
+  it("shows each envelope's YNAB category with its group, or that it is not linked", () => {
+    renderWithProviders(<EnvelopeSettings />);
+
+    const envelopeCard = card("Groceries");
+    const row = (name: string) =>
+      within(envelopeCard).getByText(name).closest("li") as HTMLElement;
+    expect(
+      within(row("Groceries")).getByText("YNAB: Everyday: Groceries"),
+    ).toBeInTheDocument();
+    expect(
+      within(row("Travel")).getByText("Not linked to YNAB"),
+    ).toBeInTheDocument();
+    // Occasions are not budget envelopes and have no YNAB link.
+    expect(
+      within(card("Occasions")).queryByText(/YNAB/),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["loading", { isLoading: true }],
+    ["unavailable", { isError: true }],
+  ])("shows no YNAB line while the links are %s", (_, state) => {
+    vi.mocked(useYnabEnvelopeMappings).mockReturnValue(
+      ynabLinksResult([groceriesLink], state),
+    );
+    renderWithProviders(<EnvelopeSettings />);
+
+    expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(screen.queryByText(/YNAB:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Not linked to YNAB")).not.toBeInTheDocument();
   });
 });

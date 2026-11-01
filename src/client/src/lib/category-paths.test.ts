@@ -3,7 +3,9 @@ import {
   categoryLegacyLabels,
   classificationChange,
   categoryPaths,
+  currentCategoryChoice,
   type CategoryNode,
+  type CategoryRevision,
 } from "./category-paths";
 
 describe("categoryPaths", () => {
@@ -71,4 +73,64 @@ it("preserves an existing explicit Unclassified assignment when nullable categor
       "op1",
     ),
   ).toBeUndefined();
+});
+
+describe("currentCategoryChoice", () => {
+  const revision = (
+    id: string,
+    nodes: CategoryNode[],
+  ): CategoryRevision => ({
+    id,
+    sequence: 1,
+    recordedAt: "2026-10-23T00:00:00Z",
+    actor: "fixture",
+    reason: "fixture",
+    operationId: "op",
+    affectedCount: 0,
+    nodes,
+  });
+  const tree = (): CategoryNode[] => [
+    { id: "food", name: "Food", parentId: null, archived: false },
+    { id: "fruit", name: "Fruit", parentId: "food", archived: false },
+    { id: "old", name: "Old", parentId: null, archived: true },
+    { id: "old-child", name: "Old child", parentId: "old", archived: false },
+  ];
+
+  it("pins a live category to the given revision with its full path", () => {
+    const current = revision("revision-2", tree());
+    expect(currentCategoryChoice(current, "fruit")).toEqual({
+      categoryId: "fruit",
+      taxonomyRevisionId: "revision-2",
+      path: [current.nodes[0], current.nodes[1]],
+    });
+  });
+
+  it.each([
+    ["an archived category", "old"],
+    ["a category under an archived parent", "old-child"],
+    ["an id the tree does not hold", "missing"],
+    ["a null id", null],
+    ["an undefined id", undefined],
+  ])("returns undefined for %s", (_, categoryId) => {
+    expect(
+      currentCategoryChoice(revision("revision-1", tree()), categoryId),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined while no revision is loaded", () => {
+    expect(currentCategoryChoice(undefined, "fruit")).toBeUndefined();
+  });
+
+  it("indexes each nodes array once and re-indexes a new one", () => {
+    const nodes = tree();
+    const first = revision("revision-1", nodes);
+    expect(currentCategoryChoice(first, "fruit")).toBeDefined();
+    // The index is keyed by the nodes array, so a node added to the same
+    // array afterwards is not seen: revisions are immutable snapshots.
+    nodes.push({ id: "late", name: "Late", parentId: null, archived: false });
+    expect(currentCategoryChoice(first, "late")).toBeUndefined();
+    expect(
+      currentCategoryChoice(revision("revision-2", [...nodes]), "late"),
+    ).toMatchObject({ categoryId: "late", taxonomyRevisionId: "revision-2" });
+  });
 });

@@ -16,6 +16,8 @@ public class BudgetChoiceService(IDbContextFactory<ApplicationDbContext> context
 		await using ApplicationDbContext db = await contextFactory.CreateDbContextAsync(cancellationToken);
 		await using IDbContextTransaction? transaction = db.Database.IsRelational()
 			? await db.Database.BeginTransactionAsync(cancellationToken) : null;
+		// Gate before row locks, as every receipt writer does; saving item changes takes the gate too.
+		await Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(db, cancellationToken);
 		await ReceiptFactLock.AcquireAsync(db, [receiptId], cancellationToken);
 		ReceiptEntity? receipt = await db.Receipts.SingleOrDefaultAsync(row => row.Id == receiptId, cancellationToken);
 		if (receipt is null)
@@ -42,6 +44,7 @@ public class BudgetChoiceService(IDbContextFactory<ApplicationDbContext> context
 		{
 			return false;
 		}
+		await Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(db, cancellationToken);
 		await ReceiptFactLock.AcquireAsync(db, [lockedReceipt], cancellationToken);
 		ReceiptItemEntity? item = await db.ReceiptItems.IgnoreAutoIncludes()
 			.SingleOrDefaultAsync(row => row.Id == itemId && row.ReceiptId == lockedReceipt, cancellationToken);

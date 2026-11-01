@@ -117,4 +117,14 @@ public static class EnvelopeParityReader
 		return EnvelopeParity.Check(items.Select(item => new EnvelopeParityItem(item.Id, item.CurrentClassification, item.EnvelopeId)).ToList(),
 			mappings, envelopes, links);
 	}
+
+	/// <summary>Every item's YNAB category through its envelope, for <see cref="EnvelopeBaseline"/>.</summary>
+	public static async Task<IReadOnlyList<EnvelopeYnabRoute>> RoutesAsync(ApplicationDbContext db, CancellationToken ct)
+	{
+		var items = await db.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AsNoTracking()
+			.Select(item => new { item.Id, item.EnvelopeId }).ToListAsync(ct);
+		Dictionary<(Guid, string), string> links = await db.YnabEnvelopeMappings.AsNoTracking()
+			.ToDictionaryAsync(row => (row.EnvelopeId, row.YnabBudgetId), row => row.YnabCategoryId, ct);
+		return EnvelopeBaseline.Routes(items.Select(item => (item.Id, item.EnvelopeId)), links);
+	}
 }

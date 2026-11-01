@@ -49,6 +49,7 @@ describe("useReceiptItemSuggestions", () => {
         description: "Whole Milk",
         category: "Groceries",
         subcategory: "Dairy",
+        categoryId: "95000000-0000-4000-8000-000000000011",
         unitPrice: 3.99,
         matchType: "location",
       },

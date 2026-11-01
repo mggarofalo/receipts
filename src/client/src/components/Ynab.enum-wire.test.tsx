@@ -34,6 +34,7 @@ import {
 } from "@/pages/new-receipt/LineItemsSection";
 import Receipts from "@/pages/Receipts";
 import "@/test/setup-combobox-polyfills";
+import { taxonomyFixture } from "@/test/taxonomy-fixture";
 
 type WireStatus = components["schemas"]["ReceiptYnabSyncStatusValue"];
 type WireOutcome = components["schemas"]["YnabMemoSyncOutcome"];
@@ -82,6 +83,8 @@ const server = setupServer(
           itemCode: "MILK",
           description: "Location milk",
           category: "Food",
+          subcategory: "Dairy",
+          categoryId: taxonomyFixture.nodes[1].id,
           unitPrice: 3.459,
           matchType: "location",
         },
@@ -89,12 +92,15 @@ const server = setupServer(
           itemCode: "MILK",
           description: "Global milk",
           category: "Food",
+          subcategory: null,
+          categoryId: null,
           unitPrice: 2.25,
           matchType: "global",
         },
       ];
     return HttpResponse.json(suggestions);
   }),
+  http.get("*/api/taxonomy", () => HttpResponse.json(taxonomyFixture)),
   http.get("*/api/categories", () =>
     HttpResponse.json({ data: [], total: 0, offset: 0, limit: 500 }),
   ),
@@ -419,6 +425,11 @@ it.each(["item form", "line entry"] as const)(
       ),
     );
     const user = userEvent.setup();
+    const categoryPicker = screen.getByRole("combobox", {
+      name: /^Category/,
+    });
+    // The suggestion's item type can only be shown once the tree is loaded.
+    await waitFor(() => expect(categoryPicker).toBeEnabled());
     const codeInput = screen.getByPlaceholderText(
       kind === "line entry" ? "e.g. MILK-GAL" : "Enter item code...",
     );
@@ -444,6 +455,7 @@ it.each(["item form", "line entry"] as const)(
         : screen.getByLabelText(/^Description/),
     ).toHaveValue("Location milk");
     expect(screen.getByLabelText(/^Unit Price/)).toHaveValue("3.4590");
+    expect(categoryPicker).toHaveAttribute("title", "Food / Dairy");
   },
 );
 

@@ -20,6 +20,8 @@ import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult, mockMutationResult } from "@/test/mock-hooks";
 import "@/test/setup-combobox-polyfills";
 import { useSimilarItems } from "@/hooks/useSimilarItems";
+import { useReceiptItemSuggestions } from "@/hooks/useReceiptItemSuggestions";
+import type { components } from "@/generated/api";
 import { LineItemsSection, type ReceiptLineItem } from "./LineItemsSection";
 import { chooseCategoryOption } from "@/test/category-picker";
 
@@ -808,5 +810,105 @@ describe("envelope display", () => {
       current: ReceiptLineItem[],
     ) => ReceiptLineItem[];
     expect(update(items)[3]).toEqual({ ...items[3], envelopeId: null });
+  });
+});
+
+describe("item-code suggestion category", () => {
+  type Suggestion = components["schemas"]["ReceiptItemSuggestionResponse"];
+  const suggestion = (categoryId?: string | null): Suggestion => ({
+    itemCode: "MILK-GAL",
+    description: "Whole milk",
+    category: "Food",
+    subcategory: "Fruit",
+    categoryId,
+    unitPrice: 3.5,
+    matchType: "location",
+  });
+  const suggest = (item: Suggestion) =>
+    vi.mocked(useReceiptItemSuggestions).mockReturnValue(
+      mockQueryResult({ data: [item], isFetching: false, isSuccess: true }),
+    );
+  const categoryPicker = () =>
+    screen.getByRole("combobox", { name: /^Category/ });
+  async function pickSuggestion(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByPlaceholderText("e.g. MILK-GAL"), "MI");
+    await user.click(await screen.findByRole("option", { name: /MILK-GAL/ }));
+    expect(screen.getByPlaceholderText("Item description")).toHaveValue(
+      "Whole milk",
+    );
+  }
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("fills an empty category with the suggested item type and saves its classification", async () => {
+    suggest(suggestion("fruit"));
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderWithProviders(<LineItemsSection items={[]} onChange={onChange} />);
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Food / Fruit");
+    await user.click(screen.getByRole("button", { name: /add item/i }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      receiptItemCode: "MILK-GAL",
+      category: "Food",
+      subcategory: "Fruit",
+      categoryChoice: {
+        categoryId: "fruit",
+        taxonomyRevisionId: "revision-1",
+        path: [
+          expect.objectContaining({ id: "food" }),
+          expect.objectContaining({ id: "fruit" }),
+        ],
+      },
+      categoryOperationId: expect.any(String),
+    });
+  });
+
+  it("keeps a category already chosen", async () => {
+    suggest(suggestion("fruit"));
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderWithProviders(<LineItemsSection items={[]} onChange={onChange} />);
+    await user.click(categoryPicker());
+    await chooseCategoryOption(user, "Household");
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Household");
+    await user.click(screen.getByRole("button", { name: /add item/i }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      category: "Household",
+      categoryChoice: { categoryId: "house" },
+    });
+  });
+
+  it("fills a category explicitly set to Unclassified", async () => {
+    suggest(suggestion("fruit"));
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderWithProviders(<LineItemsSection items={[]} onChange={onChange} />);
+    await user.click(categoryPicker());
+    await chooseCategoryOption(user, "Unclassified");
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Food / Fruit");
+    await user.click(screen.getByRole("button", { name: /add item/i }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    expect(onChange.mock.calls[0][0][0]).toMatchObject({
+      category: "Food",
+      subcategory: "Fruit",
+      categoryChoice: { categoryId: "fruit" },
+    });
+  });
+
+  it.each([
+    ["has no item type", undefined],
+    ["has a null item type", null],
+    ["names an item type the current tree does not hold", "retired"],
+  ])("leaves the category empty when the suggestion %s", async (_, id) => {
+    suggest(suggestion(id));
+    const user = userEvent.setup();
+    renderWithProviders(<LineItemsSection items={[]} onChange={vi.fn()} />);
+    await pickSuggestion(user);
+    expect(categoryPicker()).toHaveAttribute("title", "Choose category");
   });
 });

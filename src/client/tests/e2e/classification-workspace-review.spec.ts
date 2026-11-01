@@ -8,10 +8,9 @@ import { taxonomyFixture } from "../../src/test/taxonomy-fixture";
 
 const attemptId = "11111111-1111-4111-8111-111111111111";
 const itemId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const output = "C:/Users/mggar/Source/receipts-017-artifacts/1058";
 
 for (const width of [1280, 375]) {
-  test(`classification review browser ${width}`, async ({ page }) => {
+  test(`classification review browser ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     const accepted: unknown[] = [];
     const reviewWrites: Array<{
@@ -214,7 +213,7 @@ for (const width of [1280, 375]) {
     await page.getByRole("button", { name: "Review details" }).click();
     await expect(page.getByText(/Current choice: active/)).toBeVisible();
     await page.screenshot({
-      path: `${output}/workspace-browser-${width}.png`,
+      path: testInfo.outputPath(`workspace-browser-${width}.png`),
       fullPage: true,
     });
     expect(
@@ -252,7 +251,7 @@ for (const width of [1280, 375]) {
 
 test("unknown capability keeps manual browsing and admin settings reachable", async ({
   page,
-}) => {
+}, testInfo) => {
   let suggestionReads = 0;
   await installApiMocks(page, {
     user: ADMIN_FIXTURE_USER,
@@ -331,7 +330,7 @@ test("unknown capability keeps manual browsing and admin settings reachable", as
     page.getByText("Category setup could not be used for this request."),
   ).toBeVisible();
   await page.screenshot({
-    path: `${output}/workspace-admin-unknown.png`,
+    path: testInfo.outputPath("workspace-admin-unknown.png"),
     fullPage: true,
   });
 });

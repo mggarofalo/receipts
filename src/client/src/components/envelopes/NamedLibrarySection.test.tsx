@@ -176,13 +176,49 @@ describe("NamedLibrarySection", () => {
     });
   });
 
-  it("deletes by id", async () => {
+  it("deletes by id once the deletion is confirmed", async () => {
     const user = userEvent.setup();
     const { onDelete } = renderSection();
 
     await user.click(screen.getByRole("button", { name: "Delete Groceries" }));
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Delete envelope?",
+    });
+    expect(dialog).toHaveTextContent("Groceries");
+    expect(onDelete).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
-    expect(onDelete).toHaveBeenCalledWith("env-groceries");
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith("env-groceries");
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("deletes nothing when the confirmation is cancelled", async () => {
+    const user = userEvent.setup();
+    const { onDelete } = renderSection();
+
+    await user.click(screen.getByRole("button", { name: "Delete Travel" }));
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Delete envelope?",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it("shows a detail line under each name when given one", () => {
+    renderSection({ detail: (item) => `Detail for ${item.id}` });
+
+    expect(
+      within(row("Groceries")).getByText("Detail for env-groceries"),
+    ).toBeInTheDocument();
+    expect(
+      within(row("Travel")).getByText("Detail for env-travel"),
+    ).toBeInTheDocument();
   });
 
   it("disables every action while a write is pending", () => {

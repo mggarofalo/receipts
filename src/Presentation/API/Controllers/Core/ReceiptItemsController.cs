@@ -369,6 +369,7 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 			Description = r.Description,
 			Category = r.Category,
 			Subcategory = r.Subcategory,
+			CategoryId = r.CategoryId,
 			UnitPrice = (double)r.UnitPrice,
 			MatchType = r.MatchType == "location" ? ReceiptItemSuggestionResponseMatchType.Location : ReceiptItemSuggestionResponseMatchType.Global,
 		})];

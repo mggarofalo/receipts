@@ -525,6 +525,42 @@ public class ReportsControllerTests
 	}
 
 	[Fact]
+	public async Task GetCategoryTrends_ReturnsBadRequestProblem_WhenTheRangeHasTooManyPeriods()
+	{
+		// Arrange
+		const string message = "The date range spans more than 5000 daily periods. Choose a shorter range or a coarser granularity.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetCategoryTrendsReportQuery>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new Application.Exceptions.ReportRangeTooLargeException(message));
+
+		// Act
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result =
+			await _controller.GetCategoryTrends(new DateOnly(2000, 1, 1), new DateOnly(2020, 1, 1), "daily", null, CancellationToken.None);
+
+		// Assert
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
+		badResult.Value!.Status.Should().Be(400);
+		badResult.Value.Detail.Should().Be(message);
+	}
+
+	[Fact]
+	public async Task GetBudgetTrends_ReturnsBadRequestProblem_WhenTheRangeHasTooManyPeriods()
+	{
+		// Arrange
+		const string message = "The date range spans more than 5000 monthly periods. Choose a shorter range or a coarser granularity.";
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetBudgetTrendsReportQuery>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new Application.Exceptions.ReportRangeTooLargeException(message));
+
+		// Act
+		Results<Ok<BudgetTrendsResponse>, BadRequestProblem> result =
+			await _controller.GetBudgetTrends(new DateOnly(2020, 1, 1), DateOnly.MaxValue, "monthly", null, null, null, null, CancellationToken.None);
+
+		// Assert
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
+		badResult.Value!.Status.Should().Be(400);
+		badResult.Value.Detail.Should().Be(message);
+	}
+
+	[Fact]
 	public async Task GetCategoryTrends_ReturnsBadRequest_WhenInvalidGranularity()
 	{
 		// Act

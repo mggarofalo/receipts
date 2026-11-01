@@ -366,7 +366,12 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 			if (currency.Count() > topN) { series.Add(new(currency.Key, true, null)); }
 		}
 		var selected = series.Where(entry => !entry.IsOther).Select(entry => Key(entry.Bucket!)).ToHashSet();
-		List<CategoryTrendsBucketResult> buckets = GeneratePeriods(startDate, endDate, granularity).Select(period =>
+		// An open start date begins at the first period with reported buckets rather than the year 1. The reader keeps a
+		// key for every period with a purchase, even when the category filter leaves it empty.
+		string? firstPeriod = snapshot.Periods.Where(period => period.Value.Count > 0).Select(period => period.Key)
+			.Min(StringComparer.Ordinal);
+		DateOnly first = startDate != DateOnly.MinValue || firstPeriod is null ? startDate : PeriodStart(firstPeriod, granularity);
+		List<CategoryTrendsBucketResult> buckets = GeneratePeriods(first, endDate, granularity).Select(period =>
 		{
 			var facts = snapshot.Periods.TryGetValue(period, out var periodBuckets) ? periodBuckets : [];
 			return new CategoryTrendsBucketResult(period, series.Select(entry => facts
@@ -468,6 +473,22 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		};
 	}
 
+	/// <summary>The first day of a period produced by <see cref="FormatPeriod"/>.</summary>
+	private static DateOnly PeriodStart(string period, string granularity)
+	{
+		int year = int.Parse(period[..4], System.Globalization.CultureInfo.InvariantCulture);
+		return granularity.ToLowerInvariant() switch
+		{
+			"daily" => DateOnly.ParseExact(period, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+			"quarterly" => new DateOnly(year, (period[^1] - '1') * 3 + 1, 1),
+			"yearly" => new DateOnly(year, 1, 1),
+			_ => new DateOnly(year, int.Parse(period[5..7], System.Globalization.CultureInfo.InvariantCulture), 1) // monthly
+		};
+	}
+
+	/// <summary>Most buckets a trend report returns: about 13 years of days, or every month and quarter of any real range.</summary>
+	internal const int MaxTrendPeriods = 5000;
+
 	private static List<string> GeneratePeriods(DateOnly start, DateOnly end, string granularity)
 	{
 		List<string> periods = [];
@@ -481,14 +502,26 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 
 		while (current <= end)
 		{
-			periods.Add(FormatPeriod(current, granularity));
-			current = granularity.ToLowerInvariant() switch
+			if (periods.Count == MaxTrendPeriods)
 			{
-				"daily" => current.AddDays(1),
-				"quarterly" => current.AddMonths(3),
-				"yearly" => current.AddYears(1),
-				_ => current.AddMonths(1) // monthly
-			};
+				throw new Application.Exceptions.ReportRangeTooLargeException(
+					$"The date range spans more than {MaxTrendPeriods} {granularity} periods. Choose a shorter range or a coarser granularity.");
+			}
+			periods.Add(FormatPeriod(current, granularity));
+			try
+			{
+				current = granularity.ToLowerInvariant() switch
+				{
+					"daily" => current.AddDays(1),
+					"quarterly" => current.AddMonths(3),
+					"yearly" => current.AddYears(1),
+					_ => current.AddMonths(1) // monthly
+				};
+			}
+			catch (ArgumentOutOfRangeException)
+			{
+				break; // The last representable period.
+			}
 		}
 
 		return periods;

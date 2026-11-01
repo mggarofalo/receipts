@@ -811,4 +811,37 @@ public class ReceiptItemsControllerTests
 		await act.Should().ThrowAsync<EnvelopeException>();
 		_notifierMock.VerifyNoOtherCalls();
 	}
+
+	[Fact]
+	public async Task GetSuggestions_MapsTheItemTypeIdAndNamesOfEachSuggestion()
+	{
+		// Arrange
+		Guid sprays = Guid.NewGuid();
+		Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions.ReceiptItemSuggestion[] suggestions =
+		[
+			new() { ItemCode = "SKU-1", Description = "Spray", Category = "Household", Subcategory = "Cleaning", CategoryId = sprays, UnitPrice = 3.5m, MatchType = "location" },
+			new() { ItemCode = "SKU-2", Description = "Mystery", Category = "", Subcategory = null, CategoryId = null, UnitPrice = 1m, MatchType = "global" },
+		];
+		_mediatorMock.Setup(m => m.Send(
+			It.Is<Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions.GetReceiptItemSuggestionsQuery>(q =>
+				q.ItemCode == "sku" && q.Location == "Market" && q.Limit == 5),
+			It.IsAny<CancellationToken>()))
+			.ReturnsAsync(suggestions);
+
+		// Act
+		Ok<List<ReceiptItemSuggestionResponse>> result = await _controller.GetSuggestions("sku", "Market", 5);
+
+		// Assert
+		result.Value.Should().HaveCount(2);
+		ReceiptItemSuggestionResponse typed = result.Value![0];
+		typed.CategoryId.Should().Be(sprays);
+		typed.Category.Should().Be("Household");
+		typed.Subcategory.Should().Be("Cleaning");
+		typed.UnitPrice.Should().Be(3.5);
+		typed.MatchType.Should().Be(ReceiptItemSuggestionResponseMatchType.Location);
+		ReceiptItemSuggestionResponse untyped = result.Value[1];
+		untyped.CategoryId.Should().BeNull();
+		untyped.Category.Should().BeEmpty();
+		untyped.MatchType.Should().Be(ReceiptItemSuggestionResponseMatchType.Global);
+	}
 }

@@ -1,4 +1,5 @@
 using Application.Envelopes;
+using Application.Models;
 using Domain.Envelopes;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
@@ -85,9 +86,10 @@ public class EnvelopeBackupRestoreTests(PostgresFixture server) : IClassFixture<
 		try
 		{
 			// Act
-			await ImportAsync(path);
+			BackupImportResult result = await ImportAsync(path);
 
-			// Assert
+			// Assert — a fresh destination creates every envelope row.
+			EnvelopeCounts(result).Should().Be((2, 0, 1, 0, 1, 0, 1, 0));
 			await using ApplicationDbContext verify = _target.CreateDbContext();
 			(await verify.Envelopes.IgnoreQueryFilters().OrderBy(row => row.Name).Select(row => new { row.Id, row.Name, row.IsActive }).ToListAsync())
 				.Should().Equal(new { Id = food, Name = "Food", IsActive = true }, new { Id = retired, Name = "Retired", IsActive = false });
@@ -139,10 +141,12 @@ public class EnvelopeBackupRestoreTests(PostgresFixture server) : IClassFixture<
 		try
 		{
 			// Act
-			await ImportAsync(path);
+			BackupImportResult result = await ImportAsync(path);
 
-			// Assert
+			// Assert — a derived restore reports everything it derived as created.
+			EnvelopeCounts(result).Should().Be((1, 0, 0, 0, 0, 0, 1, 0));
 			await using ApplicationDbContext verify = _target.CreateDbContext();
+			(await verify.ItemTypeEnvelopeDefaults.CountAsync()).Should().Be(0);
 			EnvelopeEntity vacation = await verify.Envelopes.SingleAsync();
 			vacation.Name.Should().Be("Vacation");
 			(await verify.YnabEnvelopeMappings.SingleAsync()).Should().Match<YnabEnvelopeMappingEntity>(row =>
@@ -153,6 +157,45 @@ public class EnvelopeBackupRestoreTests(PostgresFixture server) : IClassFixture<
 			(await verify.EnvelopeBackfills.AnyAsync()).Should().BeTrue();
 			EnvelopeParityReport parity = await EnvelopeParityReader.CheckAsync(verify, CancellationToken.None);
 			parity.Mismatches.Should().Be(0);
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
+	[Fact]
+	public async Task V15_RestoreOverExistingRows_CountsThemAsUpdated()
+	{
+		// Arrange
+		Guid food = Guid.NewGuid(), birthday = Guid.NewGuid(), category = Guid.NewGuid();
+		await using (ApplicationDbContext db = _source.CreateDbContext())
+		{
+			db.Envelopes.Add(new EnvelopeEntity { Id = food, Name = "Food", IsActive = true });
+			db.Occasions.Add(new OccasionEntity { Id = birthday, Name = "Birthday", IsActive = true });
+			db.TaxonomyIdentities.Add(new() { Id = category });
+			await db.SaveChangesAsync();
+			db.ItemTypeEnvelopeDefaults.Add(new ItemTypeEnvelopeDefaultEntity { Id = Guid.NewGuid(), CategoryId = category, EnvelopeId = food, CreatedAt = Now, UpdatedAt = Now });
+			db.YnabEnvelopeMappings.AddRange(
+				Mapping(food, "budget-a", "cat-a"),
+				Mapping(food, "budget-b", "cat-b"));
+			await db.SaveChangesAsync();
+		}
+		string path = await new BackupService(new Factory(_source.CreateOptions()), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+
+		try
+		{
+			BackupImportResult first = await ImportAsync(path);
+
+			// Act
+			BackupImportResult second = await ImportAsync(path);
+
+			// Assert
+			EnvelopeCounts(first).Should().Be((1, 0, 1, 0, 1, 0, 2, 0));
+			EnvelopeCounts(second).Should().Be((0, 1, 0, 1, 0, 1, 0, 2));
+			second.TotalUpdated.Should().BeGreaterThanOrEqualTo(5, "the envelope tables count toward the totals");
+			await using ApplicationDbContext verify = _target.CreateDbContext();
+			(await verify.YnabEnvelopeMappings.CountAsync()).Should().Be(2);
 		}
 		finally
 		{
@@ -186,12 +229,29 @@ public class EnvelopeBackupRestoreTests(PostgresFixture server) : IClassFixture<
 		}
 	}
 
-	private async Task ImportAsync(string path)
+	private async Task<BackupImportResult> ImportAsync(string path)
 	{
 		BackupImportService importer = new(new Factory(_target.CreateOptions()), NullLogger<BackupImportService>.Instance);
 		await using FileStream input = File.OpenRead(path);
-		await importer.ImportFromSqliteAsync(input, CancellationToken.None);
+		return await importer.ImportFromSqliteAsync(input, CancellationToken.None);
 	}
+
+	private static (int, int, int, int, int, int, int, int) EnvelopeCounts(BackupImportResult result) =>
+		(result.EnvelopesCreated, result.EnvelopesUpdated, result.OccasionsCreated, result.OccasionsUpdated,
+			result.ItemTypeEnvelopeDefaultsCreated, result.ItemTypeEnvelopeDefaultsUpdated,
+			result.YnabEnvelopeMappingsCreated, result.YnabEnvelopeMappingsUpdated);
+
+	private static YnabEnvelopeMappingEntity Mapping(Guid envelope, string budget, string category) => new()
+	{
+		Id = Guid.NewGuid(),
+		EnvelopeId = envelope,
+		YnabBudgetId = budget,
+		YnabCategoryId = category,
+		YnabCategoryName = category,
+		YnabCategoryGroupName = "Needs",
+		CreatedAt = Now,
+		UpdatedAt = Now,
+	};
 
 	private static async Task DowngradeToV14Async(string path)
 	{

@@ -130,4 +130,30 @@ describe("AreaTimeChart", () => {
     const headerTexts = Array.from(headers ?? []).map((h) => h.textContent);
     expect(headerTexts).not.toContain("Rolling Average");
   });
+
+  it("lists every point when several share a period, without a duplicate-key warning", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render(
+        <AreaTimeChart
+          data={[
+            { period: "2026-10-01", amount: 12 },
+            { period: "2026-10-01", amount: 30 },
+          ]}
+        />,
+      );
+      const rows = document.querySelectorAll("table.sr-only tbody tr");
+      expect(Array.from(rows, (row) => row.textContent)).toEqual([
+        "2026-10-0112",
+        "2026-10-0130",
+      ]);
+      expect(
+        consoleError.mock.calls.some((args) =>
+          args.some((arg) => String(arg).includes("same key")),
+        ),
+      ).toBe(false);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
 });

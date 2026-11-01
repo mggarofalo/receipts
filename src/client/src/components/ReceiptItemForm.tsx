@@ -4,6 +4,7 @@ import { usePermission } from "@/hooks/usePermission";
 import {
   categoryLegacyLabels,
   classificationChange,
+  currentCategoryChoice,
   type CategoryChoice,
   type CurrentClassification,
   type ClassificationRequest,
@@ -255,7 +256,23 @@ export function ReceiptItemForm({
     if (suggestion.unitPrice != null) {
       form.setValue("unitPrice", Number(suggestion.unitPrice));
     }
+    // The code's last item type fills a missing item type (none, or Unclassified); a type already chosen stays.
+    const suggested = categoryChoice?.categoryId
+      ? undefined
+      : currentCategoryChoice(taxonomy.data, suggestion.categoryId);
+    if (suggested) chooseCategory(suggested);
     setItemCodeAutocompleteOpen(false);
+  }
+
+  function chooseCategory(choice: CategoryChoice) {
+    setCategoryChoice(choice);
+    setCategoryOperationId(generateId());
+    const labels = categoryLegacyLabels(choice);
+    form.setValue("category", labels.category, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("subcategory", labels.subcategory ?? "");
   }
 
   async function handleFormSubmit(values: ReceiptItemSchemaValues) {
@@ -697,13 +714,7 @@ export function ReceiptItemForm({
                     loading={taxonomy.isLoading}
                     error={taxonomy.isError}
                     disabled={isSubmitting}
-                    onValueChange={(choice) => {
-                      setCategoryChoice(choice);
-                      setCategoryOperationId(generateId());
-                      const labels = categoryLegacyLabels(choice);
-                      field.onChange(labels.category);
-                      form.setValue("subcategory", labels.subcategory ?? "");
-                    }}
+                    onValueChange={chooseCategory}
                   />
                 </FormControl>
                 {mode === "edit" && !categoryChoice && (

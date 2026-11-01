@@ -548,13 +548,15 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			await CurrentClassificationReader.ReadAsync(context, [.. rows.Select(row => row.ItemId)], cancellationToken);
 		return [.. rows.Select(row =>
 		{
-			IReadOnlyList<Domain.Taxonomy.TaxonomyNode> path = types.GetValueOrDefault(row.ItemId)?.RecordedPath ?? [];
+			Domain.Taxonomy.CurrentClassification? type = types.GetValueOrDefault(row.ItemId);
+			IReadOnlyList<Domain.Taxonomy.TaxonomyNode> path = type?.RecordedPath ?? [];
 			return new ReceiptItemSuggestion
 			{
 				ItemCode = row.ItemCode,
 				Description = row.Description,
 				Category = path.Count > 0 ? path[0].Name : "",
 				Subcategory = path.Count > 1 ? path[1].Name : null,
+				CategoryId = path.Count > 0 ? type!.CategoryId : null,
 				UnitPrice = row.UnitPrice,
 				MatchType = matchType,
 			};

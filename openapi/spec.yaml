@@ -7854,7 +7854,7 @@ paths:
       operationId: GetCategoryTrendsReport
       tags: [Reports]
       summary: Get category spending trends over time
-      description: Returns time-series spending data broken down by category. Categories beyond the topN threshold are collapsed into "Other". Buckets are dense and zero-filled.
+      description: Returns time-series spending data broken down by category. Categories beyond the topN threshold are collapsed into "Other". Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted. A range of more than 5000 periods at the chosen granularity is rejected with 400.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -7960,7 +7960,7 @@ paths:
       operationId: GetBudgetTrendsReport
       tags: [Reports]
       summary: Get spending trends by envelope or occasion
-      description: Returns time-series spending by each purchase's recorded envelope (the budget view) or occasion. Per currency, series beyond topN are collapsed into Other. Purchases with no envelope or occasion form their own series. Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted.
+      description: Returns time-series spending by each purchase's recorded envelope (the budget view) or occasion. Per currency, series beyond topN are collapsed into Other. Purchases with no envelope or occasion form their own series. Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted. A range of more than 5000 periods at the chosen granularity is rejected with 400.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -14712,6 +14712,10 @@ components:
         subcategory:
           type: ["string", "null"]
           description: Second level of the most recent item's item type, if any
+        categoryId:
+          type: ["string", "null"]
+          format: uuid
+          description: The most recent item's item type (stable across taxonomy revisions); null when it has none
         unitPrice:
           type: number
           format: double
@@ -15466,6 +15470,30 @@ components:
           type: integer
           format: int32
         acceptedDuplicatePairsUpdated:
+          type: integer
+          format: int32
+        envelopesCreated:
+          type: integer
+          format: int32
+        envelopesUpdated:
+          type: integer
+          format: int32
+        occasionsCreated:
+          type: integer
+          format: int32
+        occasionsUpdated:
+          type: integer
+          format: int32
+        itemTypeEnvelopeDefaultsCreated:
+          type: integer
+          format: int32
+        itemTypeEnvelopeDefaultsUpdated:
+          type: integer
+          format: int32
+        ynabEnvelopeMappingsCreated:
+          type: integer
+          format: int32
+        ynabEnvelopeMappingsUpdated:
           type: integer
           format: int32
         totalCreated:

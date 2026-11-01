@@ -3,40 +3,13 @@ import { Button } from "@/components/ui/button";
 import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
 import { assistanceSuggestions } from "@/lib/assistance-candidates";
 import {
-  categoryPaths,
+  currentCategoryChoice,
   type CategoryChoice,
-  type CategoryPath,
   type CategoryRevision,
 } from "@/lib/category-paths";
 import type { components } from "@/generated/api";
 
 type Suggestion = components["schemas"]["UncategorizedItemSuggestion"];
-
-// One path index per taxonomy revision, shared by every row of the report.
-const pathIndexes = new WeakMap<
-  CategoryRevision["nodes"],
-  Map<string, CategoryPath>
->();
-
-/** A choice of a category in the current tree, or undefined when it is not selectable there. */
-function currentChoice(
-  revision: CategoryRevision | undefined,
-  categoryId: string | null | undefined,
-): CategoryChoice | undefined {
-  if (!revision || !categoryId) return undefined;
-  let index = pathIndexes.get(revision.nodes);
-  if (!index) {
-    // categoryPaths leaves out archived categories and their descendants.
-    index = new Map(
-      categoryPaths(revision.nodes).map((row) => [row.node.id, row]),
-    );
-    pathIndexes.set(revision.nodes, index);
-  }
-  const row = index.get(categoryId);
-  return row
-    ? { categoryId, taxonomyRevisionId: revision.id, path: row.path }
-    : undefined;
-}
 
 /**
  * Corrects one item in place: Jev's answer, when it still names a live item
@@ -60,7 +33,7 @@ export function ItemTypeCorrection({
   /** `fromSuggestion` is true when the choice is Jev's own answer. */
   onChoose: (choice: CategoryChoice, fromSuggestion: boolean) => void;
 }) {
-  const proposed = currentChoice(revision, suggestion?.categoryId);
+  const proposed = currentCategoryChoice(revision, suggestion?.categoryId);
   const suggestions = useMemo(
     () => (suggestion ? assistanceSuggestions(suggestion) : undefined),
     [suggestion],

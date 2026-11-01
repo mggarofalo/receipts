@@ -216,7 +216,7 @@ it("hides cached suggestions immediately while the edited description is still d
 it("hides cached item-code suggestions immediately while the edited code is still debouncing", async () => {
   server.use(http.get("*/api/receipt-items/suggestions", () => HttpResponse.json([{
     itemCode: "MILK-GAL", description: "Whole milk", category: "Food",
-    subcategory: "Dairy", unitPrice: 2.01, matchType: "location",
+    subcategory: "Dairy", categoryId: null, unitPrice: 2.01, matchType: "location",
   }])));
   const { user, description } = await prepare();
   const code = screen.getByPlaceholderText("e.g. MILK-GAL");
