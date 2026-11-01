@@ -11,4 +11,10 @@ public class SimilarItemResult
 	public string? DefaultSubcategory { get; set; }
 	public decimal? DefaultUnitPrice { get; set; }
 	public string? DefaultItemCode { get; set; }
+
+	/// <summary>
+	/// True when only the semantic neighbours admitted this row, not the trigram threshold (RECEIPTS-1098).
+	/// Such a row is not a typed completion, so it needs <see cref="Normalization.ReceiptSuggestionEvidence.SemanticFloor"/> instead.
+	/// </summary>
+	public bool AdmittedBySemanticSearchOnly { get; set; }
 }
