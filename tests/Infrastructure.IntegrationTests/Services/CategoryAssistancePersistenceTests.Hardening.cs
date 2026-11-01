@@ -39,11 +39,13 @@ public sealed partial class CategoryAssistancePersistenceTests
 			await db.SaveChangesAsync();
 		}
 		var before = await Store().GetAsync();
+		await using var verify = fixture.CreateDbContext();
+		// Limits-only saves share a revision, so earlier audit rows can name it: compare the whole audit instead.
+		int audited = await verify.CategoryAssistanceSettingsAudits.CountAsync();
 		Func<Task> denied = () => Store().UpdateAsync(actor, before.Revision, before with { Enabled = false });
 		(await denied.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(403);
 		(await Store().GetAsync()).Should().Be(before);
-		await using var verify = fixture.CreateDbContext();
-		(await verify.CategoryAssistanceSettingsAudits.CountAsync(x => x.PreviousRevision == before.Revision)).Should().Be(0);
+		(await verify.CategoryAssistanceSettingsAudits.CountAsync()).Should().Be(audited);
 	}
 
 	[Theory]
@@ -54,12 +56,13 @@ public sealed partial class CategoryAssistancePersistenceTests
 	public async Task InvalidLimitsCannotChangeSettingsOrCreateAudit(int daily, int pending)
 	{
 		string actor = await Admin(); var before = await Store().GetAsync();
+		await using var db = fixture.CreateDbContext();
+		int audited = await db.CategoryAssistanceSettingsAudits.CountAsync();
 		Func<Task> invalid = () => Store().UpdateAsync(actor, before.Revision,
 			before with { DailyLimit = daily, PendingLimit = pending });
 		(await invalid.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(400);
 		(await Store().GetAsync()).Should().Be(before);
-		await using var db = fixture.CreateDbContext();
-		(await db.CategoryAssistanceSettingsAudits.CountAsync(x => x.PreviousRevision == before.Revision)).Should().Be(0);
+		(await db.CategoryAssistanceSettingsAudits.CountAsync()).Should().Be(audited);
 	}
 
 	[Fact]
@@ -68,20 +71,23 @@ public sealed partial class CategoryAssistancePersistenceTests
 		string actor = await Admin(); var before = await Store().GetAsync();
 		await using var db = fixture.CreateDbContext();
 		await db.CategoryAssistanceSettings.SingleAsync();
-		var current = await Store().UpdateAsync(actor, before.Revision, before with { Enabled = false });
+		// A decision change rotates the revision; a limits-only save would keep it and leave nothing stale.
+		var current = await Store().UpdateAsync(actor, before.Revision, before with { AutoApply = !before.AutoApply });
 		await using var tx = await db.Database.BeginTransactionAsync();
 		Func<Task> stale = () => CategoryAssistanceSettingsStore.UpdateInTransactionAsync(db, actor, before.Revision,
 			before with { DailyLimit = 11 }, DateTimeOffset.UtcNow);
 		(await stale.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
 		await tx.RollbackAsync();
 		(await Store().GetAsync()).Should().Be(current);
+		await Store().UpdateAsync(actor, current.Revision, current with { AutoApply = before.AutoApply });
 	}
 
 	[Fact]
 	public async Task SettingsAuditRejectsBothUpdatesAndDeletesInPostgres()
 	{
 		string actor = await Admin(); var before = await Store().GetAsync();
-		var after = await Store().UpdateAsync(actor, before.Revision, before with { Enabled = false });
+		// A decision change gives this save a revision no other audit row carries.
+		var after = await Store().UpdateAsync(actor, before.Revision, before with { AutoApply = !before.AutoApply });
 		await using var db = fixture.CreateDbContext();
 		Func<Task> update = () => db.Database.ExecuteSqlInterpolatedAsync(
 			$"UPDATE category_assistance.\"SettingsAudit\" SET \"Actor\" = 'forged' WHERE \"Revision\" = {after.Revision}");
@@ -90,6 +96,7 @@ public sealed partial class CategoryAssistancePersistenceTests
 		(await update.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("append-only");
 		(await delete.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("append-only");
 		(await db.CategoryAssistanceSettingsAudits.SingleAsync(x => x.Revision == after.Revision)).Actor.Should().Be(actor);
+		await Store().UpdateAsync(actor, after.Revision, after with { AutoApply = before.AutoApply });
 	}
 
 	[Fact]

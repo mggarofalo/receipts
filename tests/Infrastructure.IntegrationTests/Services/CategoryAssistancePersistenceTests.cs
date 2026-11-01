@@ -36,14 +36,17 @@ public sealed partial class CategoryAssistancePersistenceTests(PostgresFixture f
 		var before = await Store().GetAsync();
 		async Task<int> Attempt(string admin)
 		{
-			try { await Store().UpdateAsync(admin, before.Revision, before with { Enabled = false }); return 200; }
+			// A decision change rotates the revision, so the compare-and-set has exactly one winner.
+			try { await Store().UpdateAsync(admin, before.Revision, before with { AutoApply = !before.AutoApply }); return 200; }
 			catch (TaxonomyException e) { return e.Status; }
 		}
 		(await Task.WhenAll(Attempt(actor), Attempt(other))).Should().BeEquivalentTo([200, 409]);
 		await using var verify = fixture.CreateDbContext();
-		var audit = await verify.CategoryAssistanceSettingsAudits.Where(x => x.PreviousRevision == before.Revision).SingleAsync();
+		var current = await Store().GetAsync();
+		current.Revision.Should().NotBe(before.Revision);
+		var audit = await verify.CategoryAssistanceSettingsAudits.SingleAsync(x => x.Revision == current.Revision);
 		audit.Actor.Should().BeOneOf(actor, other);
-		var current = await Store().GetAsync(); audit.Revision.Should().Be(current.Revision);
+		audit.PreviousRevision.Should().Be(before.Revision);
 		await using (var db = fixture.CreateDbContext())
 		await using (var transaction = await db.Database.BeginTransactionAsync())
 		{
@@ -53,6 +56,7 @@ public sealed partial class CategoryAssistancePersistenceTests(PostgresFixture f
 		}
 		(await Store().GetAsync()).Should().Be(current);
 		(await verify.CategoryAssistanceSettingsAudits.CountAsync(x => x.PreviousRevision == current.Revision)).Should().Be(0);
+		await Store().UpdateAsync(actor, current.Revision, current with { AutoApply = before.AutoApply });
 	}
 	[Fact]
 	public async Task ConsentIntentIdempotenceAndReceiptRollbackUseRealTransaction()

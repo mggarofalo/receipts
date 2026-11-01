@@ -43,7 +43,10 @@ public sealed class CategoryAssistanceSettingsStore(IDbContextFactory<Applicatio
 		var before = Read(row);
 		if (!CategoryAssistancePolicy.CanUpdateSettings(before, expectedRevision, actor, admin))
 		{ throw new TaxonomyException(409, "Category assistance settings changed. Refresh before saving."); }
-		proposed = proposed with { Revision = Guid.NewGuid() };
+		// Only a change that alters what is asked or how answers are decided starts a new revision; limits do not.
+		bool decisionChange = before.Enabled != proposed.Enabled || before.Provider != proposed.Provider
+			|| before.Model != proposed.Model || before.AutoApply != proposed.AutoApply;
+		proposed = proposed with { Revision = decisionChange ? Guid.NewGuid() : before.Revision };
 		if (!CategoryAssistancePolicy.IsValid(proposed) || proposed.Provider?.Length > 100 || proposed.Model?.Length > 200
 			|| proposed.Provider?.Contains('\0') == true || proposed.Model?.Contains('\0') == true)
 		{ throw new TaxonomyException(400, "Valid category assistance settings are required."); }
@@ -55,15 +58,18 @@ public sealed class CategoryAssistanceSettingsStore(IDbContextFactory<Applicatio
 		row.AutoApply = proposed.AutoApply;
 		// Results from the old revision can no longer be decided or written automatically. Retire them so they stop
 		// holding pending slots; a dispatch already started completes as stale on its own.
-		foreach (var attempt in await db.CategoryAssistanceAttempts
-					 .Where(x => x.State == "queued" || x.State == "suggested" || x.State == "abstained")
-					 .ToListAsync(ct))
+		if (decisionChange)
 		{
-			attempt.State = "stale";
-			attempt.ClaimToken = null;
-			attempt.LeaseExpiresAt = null;
-			attempt.NextEligibleAt = null;
-			attempt.CompletedAt = now;
+			foreach (var attempt in await db.CategoryAssistanceAttempts
+						 .Where(x => x.State == "queued" || x.State == "suggested" || x.State == "abstained")
+						 .ToListAsync(ct))
+			{
+				attempt.State = "stale";
+				attempt.ClaimToken = null;
+				attempt.LeaseExpiresAt = null;
+				attempt.NextEligibleAt = null;
+				attempt.CompletedAt = now;
+			}
 		}
 		db.CategoryAssistanceSettingsAudits.Add(new()
 		{

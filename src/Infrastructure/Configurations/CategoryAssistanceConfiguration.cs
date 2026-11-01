@@ -22,7 +22,9 @@ public sealed class CategoryAssistanceConfiguration : IEntityTypeConfiguration<C
 	public void Configure(EntityTypeBuilder<CategoryAssistanceSettingsAuditEntity> b)
 	{
 		b.ToTable("SettingsAudit", "category_assistance"); b.HasKey(x => x.Id);
-		b.Property(x => x.Actor).HasMaxLength(450); b.HasIndex(x => x.Revision).IsUnique();
+		b.Property(x => x.Actor).HasMaxLength(450);
+		// A limits-only save keeps the revision, so several audit rows can share one.
+		b.HasIndex(x => x.Revision);
 	}
 	public void Configure(EntityTypeBuilder<CategoryAssistanceObservationEntity> b)
 	{
