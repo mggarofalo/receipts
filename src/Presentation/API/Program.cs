@@ -127,8 +127,7 @@ app.Use(async (context, next) =>
 // Serve SPA static files in production (Vite dev server handles this in development)
 if (!app.Environment.IsDevelopment())
 {
-	app.UseDefaultFiles();
-	app.UseStaticFiles();
+	app.UseClientStaticFiles();
 }
 
 // Map Aspire health check endpoints (/health, /alive)
@@ -143,7 +142,7 @@ app.MapHub<EntityHub>("/hubs/entities");
 // SPA fallback: serve index.html for client-side routes in production
 if (!app.Environment.IsDevelopment())
 {
-	app.MapFallbackToFile("index.html");
+	app.MapClientFallback();
 }
 
 // Run application

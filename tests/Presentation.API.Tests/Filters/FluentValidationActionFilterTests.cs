@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -151,5 +152,54 @@ public class FluentValidationActionFilterTests
 
 		// Assert
 		nextCalled.Should().BeTrue();
+	}
+
+	private static ActionExecutingContext CreateBoundContext(string name, object argument, BindingSource source)
+	{
+		ActionDescriptor descriptor = new()
+		{
+			Parameters = [new ParameterDescriptor { Name = name, ParameterType = argument.GetType(), BindingInfo = new BindingInfo { BindingSource = source } }],
+		};
+		return new ActionExecutingContext(
+			new ActionContext(new DefaultHttpContext(), new RouteData(), descriptor),
+			[],
+			new Dictionary<string, object?> { [name] = argument },
+			new object());
+	}
+
+	[Fact]
+	public async Task OnActionExecutionAsync_EmptyQueryArray_CallsNext()
+	{
+		// Arrange
+		using ServiceProvider provider = new ServiceCollection().BuildServiceProvider();
+		FluentValidationActionFilter filter = new(provider);
+		ActionExecutingContext context = CreateBoundContext("status", Array.Empty<string>(), BindingSource.Query);
+		bool nextCalled = false;
+
+		// Act
+		await filter.OnActionExecutionAsync(context, () =>
+		{
+			nextCalled = true;
+			return Task.FromResult<ActionExecutedContext>(null!);
+		});
+
+		// Assert
+		nextCalled.Should().BeTrue();
+	}
+
+	[Fact]
+	public async Task OnActionExecutionAsync_EmptyBodyList_ThrowsValidationException()
+	{
+		// Arrange
+		using ServiceProvider provider = new ServiceCollection().BuildServiceProvider();
+		FluentValidationActionFilter filter = new(provider);
+		ActionExecutingContext context = CreateBoundContext("model", new List<TestModel>(), BindingSource.Body);
+
+		// Act
+		Func<Task> act = () => filter.OnActionExecutionAsync(context, () =>
+			Task.FromResult<ActionExecutedContext>(null!));
+
+		// Assert
+		await act.Should().ThrowAsync<ValidationException>();
 	}
 }
