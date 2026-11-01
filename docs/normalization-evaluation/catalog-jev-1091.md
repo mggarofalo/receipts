@@ -159,7 +159,8 @@ cannot change a top choice, so the sweep leaves those out.
 
 1. **Do not build RECEIPTS-1092 on v1.** No thresholds are recommended: no point in the sweep is safe.
 2. **Keep ChatGPT** for the catalog source-run. This comparison is indirect, but Jev v1 is worse on it.
-3. **RECEIPTS-1093:** no evidence supports automatic application. Answer "no" for v1.
+3. **RECEIPTS-1093:** no evidence supports automatic application. Answer "no" for v1. Accepted as
+   [the decision](../decisions/2026-11-01-no-automatic-jev-catalog-matches.md).
 4. **If Jev is pursued, write a `catalog-matching-questions-v2`** and evaluate it on a fresh cohort. Evidence from this
    run that a v2 should address:
    - **Non-product lines.** Gate them before any candidate is shown, so a product name inside an instruction cannot pull
