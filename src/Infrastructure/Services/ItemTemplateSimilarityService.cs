@@ -1,5 +1,6 @@
 using System.Globalization;
 using Application.Interfaces.Services;
+using Application.Normalization;
 using Application.Queries.Core.ItemTemplate.GetSimilarItems;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -16,9 +17,11 @@ public class ItemTemplateSimilarityService(
 {
 	/// <summary>
 	/// How many template and receipt-item vectors the hybrid search reads, nearest first (RECEIPTS-1098).
-	/// Rows repeat descriptions, so this bounds rows, not distinct names.
+	/// Every purchase has its own vector, so a frequent description repeats; the rows collapse to names
+	/// afterwards. The budget sits well above the largest repeat seen locally (a few hundred rows), so it
+	/// always spans many names, and reading it through HNSW still takes milliseconds.
 	/// </summary>
-	internal const int SemanticNeighbourCount = 100;
+	internal const int SemanticNeighbourRows = 1000;
 
 	private const double TrigramWeight = 0.4;
 	private const double VectorWeight = 0.6;
@@ -97,9 +100,12 @@ public class ItemTemplateSimilarityService(
 		{
 			parameters.Add(new("vector", searchVector));
 			parameters.Add(new("fingerprint", OnnxEmbeddingService.EmbeddingSpaceFingerprint));
-			parameters.Add(new("k", SemanticNeighbourCount));
+			parameters.Add(new("k", SemanticNeighbourRows));
+			parameters.Add(new("floor", ReceiptSuggestionEvidence.SemanticFloor));
 			// The kNN rule every vector query follows (NearestNeighbourSearch, RECEIPTS-1097). A vector
-			// counts only while it was built from the row's current text.
+			// counts only while it was built from the row's current text. A neighbour scores at any
+			// similarity but is admitted on its own only at the floor the handler keeps, so neighbours
+			// it would drop cannot take the places of trigram matches under the LIMIT.
 			knn = """
 				knn AS (
 				    SELECT e."EntityType" AS entity_type, e."EntityId" AS entity_id, e."EntityText" AS entity_text,
@@ -124,13 +130,13 @@ public class ItemTemplateSimilarityService(
 				""";
 			templateNeighbours = """
 				    UNION
-				    SELECT "Id" FROM knn_templates
+				    SELECT "Id" FROM knn_templates WHERE similarity >= @floor
 				""";
 			historyNeighbours = """
 				    UNION
 				    SELECT ri."Id", ri."Description", ri."ReceiptId", ri."UnitPrice", ri."ReceiptItemCode"
 				    FROM knn_history k JOIN "receipts"."ReceiptItems" ri ON ri."Description" = k.name
-				    WHERE ri."DeletedAt" IS NULL
+				    WHERE k.similarity >= @floor AND ri."DeletedAt" IS NULL
 				""";
 			// A neighbour's similarity, else the row's own current vector; null without one.
 			templateVector = """
@@ -164,7 +170,7 @@ public class ItemTemplateSimilarityService(
 			    SELECT DISTINCT ON (h."Description")
 			        h."Id" AS entity_id, h."Description" AS name, h."UnitPrice", h."ReceiptItemCode"
 			    FROM history_rows h
-			    JOIN "receipts"."Receipts" r ON r."Id" = h."ReceiptId"
+			    JOIN "receipts"."Receipts" r ON r."Id" = h."ReceiptId" AND r."DeletedAt" IS NULL
 			    ORDER BY h."Description", r."Date" DESC, h."Id" DESC
 			),
 			candidates AS (

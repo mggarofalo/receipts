@@ -30,10 +30,12 @@ public class ItemTemplateSimilarityAutocompleteTests(PostgresFixture server) : I
 		await using ApplicationDbContext context = fixture.CreateDbContext();
 		await using IDbContextTransaction transaction = await context.Database.BeginTransactionAsync();
 		// With sequential and plain index scans priced out, only an index that can evaluate the filter avoids a
-		// disabled plan. On a tiny table a full scan of an unrelated btree is otherwise cheaper than the GIN index;
-		// on real data the planner picks the trigram index unprompted. similarity() >= t could use no index at all.
+		// disabled plan. On a tiny table a full scan of an unrelated btree, or reaching items from receipts by a
+		// nested loop, is otherwise cheaper than the GIN index; on real data the planner picks the trigram index
+		// unprompted. similarity() >= t could use no index at all.
 		await context.Database.ExecuteSqlRawAsync("SET LOCAL enable_seqscan = off");
 		await context.Database.ExecuteSqlRawAsync("SET LOCAL enable_indexscan = off");
+		await context.Database.ExecuteSqlRawAsync("SET LOCAL enable_nestloop = off");
 		await ItemTemplateSimilarityService.SetThresholdAsync(context, 0.3, CancellationToken.None);
 		(string sql, NpgsqlParameter[] parameters) = ItemTemplateSimilarityService.Query("organic milk",
 			semantic ? new Vector(Axis(0)) : null, 5);
@@ -84,6 +86,73 @@ public class ItemTemplateSimilarityAutocompleteTests(PostgresFixture server) : I
 		offered.AdmittedBySemanticSearchOnly.Should().BeTrue("\"chicken br\" shares too few trigrams with it");
 		offered.SemanticSimilarity.Should().BeApproximately(1, 1e-6);
 		offered.DefaultUnitPrice.Should().Be(9.99m);
+	}
+
+	[Fact]
+	public async Task Handle_FindsANeighbourBehindMoreRepeatsOfOneDescriptionThanItsOwnBudgetOfNames()
+	{
+		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(fixture);
+		// Purchases repeat a description, one vector each; 150 nearer repeats would fill a budget of 100 rows.
+		List<Guid> repeats = await SeedHistoryAsync([.. Enumerable.Range(0, 150).Select(day =>
+			("KS CHKN BRST", new DateOnly(2025, 1, 1).AddDays(day), 9.99m, (string?)null, (Guid?)null))]);
+		List<Guid> other = await SeedHistoryAsync(("KS BNLS SKNLS BRST", new DateOnly(2025, 1, 1), 11.49m, null, null));
+		await SeedVectorsAsync(repeats, "KS CHKN BRST", Axis(0));
+		await SeedVectorsAsync(other, "KS BNLS SKNLS BRST", Blend(0.95));
+		GetSimilarItemsQueryHandler handler = new(Service(new AxisEmbeddings()));
+
+		List<SimilarItemResult> results = [.. await handler.Handle(new("chicken br", 5, 0.3), CancellationToken.None)];
+
+		results.Select(result => result.Name).Should().Equal("KS CHKN BRST", "KS BNLS SKNLS BRST");
+	}
+
+	[Fact]
+	public async Task Handle_KeepsACompletionWhenManyNeighboursBelowTheFloorOutscoreIt()
+	{
+		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(fixture);
+		// No vector, so it scores by its low trigram similarity alone.
+		await SeedHistoryAsync(("CHICKEN BREAST BONELESS SKINLESS FAMILY PACK", new DateOnly(2025, 1, 1), 14.99m, null, null));
+		// Each scores 0.6 * 0.79 by vector alone: above the completion, more than the reserve, and below the floor.
+		foreach (int n in Enumerable.Range(0, 30))
+		{
+			string name = $"ZZ{n:D2} QX";
+			await SeedVectorsAsync(await SeedHistoryAsync((name, new DateOnly(2025, 1, 1), 1m, null, null)), name, Blend(0.79));
+		}
+		GetSimilarItemsQueryHandler handler = new(Service(new AxisEmbeddings()));
+
+		List<SimilarItemResult> results = [.. await handler.Handle(new("chicken br", 5, 0.1), CancellationToken.None)];
+
+		results.Should().ContainSingle().Which.Name.Should().Be("CHICKEN BREAST BONELESS SKINLESS FAMILY PACK");
+	}
+
+	[Fact]
+	public async Task Handle_OffersATemplateNeighbourOnceAndInPlaceOfItsHistory()
+	{
+		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(fixture);
+		Guid template = Guid.NewGuid();
+		await using (ApplicationDbContext seed = fixture.CreateDbContext())
+		{
+			seed.ItemTemplates.Add(new ItemTemplateEntity { Id = template, Name = "KS CHKN BRST", DefaultUnitPrice = 8.49m, DefaultUnitPriceCurrency = Currency.USD });
+			seed.ItemEmbeddings.Add(new ItemEmbeddingEntity
+			{
+				Id = Guid.NewGuid(),
+				EntityType = "ItemTemplate",
+				EntityId = template,
+				EntityText = "KS CHKN BRST",
+				Embedding = new Vector(Axis(0)),
+				ModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		await SeedVectorsAsync(await SeedHistoryAsync(("ks chkn brst", new DateOnly(2025, 1, 1), 9.99m, null, null)), "ks chkn brst", Axis(0));
+		GetSimilarItemsQueryHandler handler = new(Service(new AxisEmbeddings()));
+
+		List<SimilarItemResult> results = [.. await handler.Handle(new("chicken br", 5, 0.3), CancellationToken.None)];
+
+		SimilarItemResult offered = results.Should().ContainSingle().Subject;
+		offered.Source.Should().Be("template");
+		offered.AdmittedBySemanticSearchOnly.Should().BeTrue();
+		offered.DefaultUnitPrice.Should().Be(8.49m);
 	}
 
 	[Fact]
