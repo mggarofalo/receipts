@@ -136,8 +136,6 @@ describe("LineItemsSection", () => {
       description: `Half item ${index}`,
       quantity: 0.5,
       unitPrice: 2.01,
-      category: "Food",
-      subcategory: "",
     }));
     renderWithProviders(<LineItemsSection items={items} onChange={vi.fn()} />);
     expect(screen.getAllByText("$1.01")).toHaveLength(2);
@@ -171,6 +169,10 @@ describe("LineItemsSection", () => {
     renderWithProviders(<LineItemsSection {...defaultProps} />);
     expect(screen.getByPlaceholderText("Item description")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. MILK-GAL")).toBeInTheDocument();
+    // The picker is no longer a form field, but it is still labelled "Category".
+    expect(
+      screen.getByLabelText("Category", { selector: "button" }),
+    ).toHaveAttribute("role", "combobox");
   });
 
   it("renders Add Item button", () => {
@@ -193,15 +195,12 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 2,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
     expect(screen.getByText("Milk")).toBeInTheDocument();
     expect(screen.getByText("$3.50")).toBeInTheDocument();
     expect(screen.getByText("$7.00")).toBeInTheDocument(); // line total
-    expect(screen.getByText("Food")).toBeInTheDocument();
   });
 
   it("displays subtotal with existing items", () => {
@@ -212,8 +211,6 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 2,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
       {
         id: "2",
@@ -221,8 +218,6 @@ describe("LineItemsSection", () => {
         description: "Bread",
         quantity: 1,
         unitPrice: 4.0,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
@@ -241,8 +236,6 @@ describe("LineItemsSection", () => {
         description: "Fractional item",
         quantity: 10,
         unitPrice: 0.09,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
@@ -259,8 +252,6 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 1,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
@@ -269,20 +260,47 @@ describe("LineItemsSection", () => {
     expect(onChange).toHaveBeenCalledWith([]);
   });
 
-  it("shows category/subcategory for items", () => {
+  it("shows the chosen category path, Unclassified for an empty path, and nothing without a choice", () => {
+    const line = (id: string, description: string): ReceiptLineItem => ({
+      id,
+      receiptItemCode: "",
+      description,
+      quantity: 1,
+      unitPrice: 5,
+    });
     const items: ReceiptLineItem[] = [
       {
-        id: "1",
-        receiptItemCode: "",
-        description: "Soap",
-        quantity: 1,
-        unitPrice: 5,
-        category: "Household",
-        subcategory: "Cleaning",
+        ...line("1", "Soap"),
+        categoryChoice: {
+          categoryId: "cleaning",
+          taxonomyRevisionId: "revision-1",
+          path: [
+            { id: "house", name: "Household", archived: false },
+            { id: "cleaning", name: "Cleaning", parentId: "house", archived: false },
+          ],
+        },
       },
+      {
+        ...line("2", "Mystery"),
+        categoryChoice: {
+          categoryId: null,
+          taxonomyRevisionId: "revision-1",
+          path: [],
+        },
+      },
+      line("3", "Unchosen"),
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
-    expect(screen.getByText("Household / Cleaning")).toBeInTheDocument();
+    const column = screen
+      .getAllByRole("columnheader")
+      .findIndex((header) => header.textContent === "Category");
+    const categoryCell = (description: string) =>
+      (screen.getByText(description).closest("tr") as HTMLElement)
+        .querySelectorAll("td")[column];
+    expect(categoryCell("Soap")).toHaveTextContent("Household / Cleaning");
+    expect(categoryCell("Mystery")).toHaveTextContent("Unclassified");
+    expect(categoryCell("Unchosen")).not.toHaveTextContent("Unclassified");
+    expect(categoryCell("Unchosen")).not.toHaveTextContent("/");
   });
 
   it("wraps long descriptions so the table cannot force page horizontal scroll (WCAG 1.4.10)", () => {
@@ -294,8 +312,6 @@ describe("LineItemsSection", () => {
         description: longDescription,
         quantity: 1,
         unitPrice: 2.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
@@ -335,8 +351,6 @@ describe("LineItemsSection", () => {
         description: "Gasoline",
         quantity: 2,
         unitPrice: 3.459,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
@@ -363,8 +377,6 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 2,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
@@ -380,8 +392,6 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 2,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
@@ -405,8 +415,6 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 2,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
@@ -434,8 +442,6 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 2,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
@@ -463,8 +469,6 @@ describe("LineItemsSection", () => {
         description: "Milk",
         quantity: 2,
         unitPrice: 3.5,
-        category: "Food",
-        subcategory: "",
       },
     ];
     renderWithProviders(<LineItemsSection items={items} onChange={onChange} />);
@@ -516,7 +520,7 @@ describe("LineItemsSection", () => {
     it("does not expose template promotion on entered rows", () => {
       const items: ReceiptLineItem[] = [{
         id: "1", receiptItemCode: "MILK-GAL", description: "Milk (gallon)",
-        quantity: 2, unitPrice: 3.5, category: "Food", subcategory: "Dairy",
+        quantity: 2, unitPrice: 3.5
       }];
       renderWithProviders(<LineItemsSection {...defaultProps} items={items} />);
       expect(screen.queryByRole("button", { name: /save as template/i })).not.toBeInTheDocument();
@@ -556,8 +560,6 @@ it("normalizes equivalent add and edit drafts identically while preserving item 
     id: expect.any(String),
     description: "Milk",
     receiptItemCode: "CODE",
-    category: "Food",
-    subcategory: "",
     quantity: 1,
     unitPrice: 0,
   });
@@ -582,8 +584,6 @@ it("retains an explicit nested category identity and operation while editing unr
   await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
   const added = onChange.mock.calls[0][0][0] as ReceiptLineItem;
   expect(added).toMatchObject({
-    category: "Food",
-    subcategory: "Fruit",
     categoryChoice: {
       categoryId: "fruit",
       taxonomyRevisionId: "revision-1",
@@ -591,6 +591,9 @@ it("retains an explicit nested category identity and operation while editing unr
     },
     categoryOperationId: expect.any(String),
   });
+  // The chosen identity is the only record of the item type; no labels ride along.
+  expect(added).not.toHaveProperty("category");
+  expect(added).not.toHaveProperty("subcategory");
   rerender(<LineItemsSection items={[added]} onChange={onChange} />);
   await user.click(screen.getByRole("button", { name: /edit/i }));
   await user.clear(screen.getByLabelText("Edit description"));
@@ -657,8 +660,6 @@ describe("envelope display", () => {
     description,
     quantity: 1,
     unitPrice: 1,
-    category: path[0].name,
-    subcategory: "",
     categoryChoice: {
       categoryId: path[path.length - 1].id,
       taxonomyRevisionId: "revision-1",
@@ -677,8 +678,6 @@ describe("envelope display", () => {
       description: "Legacy line",
       quantity: 1,
       unitPrice: 1,
-      category: "Food",
-      subcategory: "",
     },
   ];
   const row = (description: string) =>
@@ -851,8 +850,6 @@ describe("item-code suggestion category", () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
     expect(onChange.mock.calls[0][0][0]).toMatchObject({
       receiptItemCode: "MILK-GAL",
-      category: "Food",
-      subcategory: "Fruit",
       categoryChoice: {
         categoryId: "fruit",
         taxonomyRevisionId: "revision-1",
@@ -877,7 +874,6 @@ describe("item-code suggestion category", () => {
     await user.click(screen.getByRole("button", { name: /add item/i }));
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
     expect(onChange.mock.calls[0][0][0]).toMatchObject({
-      category: "Household",
       categoryChoice: { categoryId: "house" },
     });
   });
@@ -894,8 +890,6 @@ describe("item-code suggestion category", () => {
     await user.click(screen.getByRole("button", { name: /add item/i }));
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
     expect(onChange.mock.calls[0][0][0]).toMatchObject({
-      category: "Food",
-      subcategory: "Fruit",
       categoryChoice: { categoryId: "fruit" },
     });
   });

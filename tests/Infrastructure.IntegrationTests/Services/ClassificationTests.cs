@@ -153,9 +153,12 @@ public sealed partial class ClassificationTests(PostgresFixture fixture) : IClas
 		item.Description = originalDescription; item.Classification = null;
 		await new Infrastructure.Repositories.ReceiptItemRepository(factory).UpdateAsync([item], default);
 		(await Service().HistoryAsync(item.Id, null, 10)).Items.Should().HaveCount(2);
-		item.Category = "Ambiguous legacy edit";
-		Func<Task> ambiguous = () => repository.UpdateAsync([item], default);
-		(await ambiguous.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
+		// A relabel without a choice neither conflicts nor appends, and the stored labels stand.
+		item.Category = "Ambiguous legacy edit"; item.Subcategory = "Other";
+		await repository.UpdateAsync([item], default);
+		(await Service().HistoryAsync(item.Id, null, 10)).Items.Should().HaveCount(2);
+		var relabelled = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id);
+		relabelled.Category.Should().Be(rootName); relabelled.Subcategory.Should().BeNull();
 
 		var bad = ReceiptItemEntityGenerator.Generate(receiptId);
 		bad.Classification = new(Guid.NewGuid(), seed.Revision, null, Guid.NewGuid(), "Invalid target");

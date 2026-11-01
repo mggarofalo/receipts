@@ -174,7 +174,10 @@ describe("ReceiptItemForm", () => {
     expect(screen.getByText(/^Description/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Quantity/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Unit Price/)).toBeInTheDocument();
-    expect(screen.getByText(/^Category/)).toBeInTheDocument();
+    // The picker is no longer a form field, but it is still labelled "Category".
+    expect(
+      screen.getByLabelText("Category", { selector: "button" }),
+    ).toHaveAttribute("role", "combobox");
     expect(screen.queryByText(/^Subcategory/)).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /create item/i }),
@@ -201,8 +204,6 @@ describe("ReceiptItemForm", () => {
 
           quantity: 2,
           unitPrice: 3.99,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -257,8 +258,6 @@ describe("ReceiptItemForm", () => {
 
           quantity: 3,
           unitPrice: 2.5,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -278,8 +277,6 @@ describe("ReceiptItemForm", () => {
 
           quantity: 1,
           unitPrice: 3.99,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -292,11 +289,14 @@ describe("ReceiptItemForm", () => {
           receiptId: "r-1",
           receiptItemCode: "ITM-001",
           description: "Milk",
-          category: "Groceries",
-          subcategory: "Dairy",
         }),
       );
     });
+    // Legacy labels are retired: a create carries no category text at all.
+    const submitted = defaultProps.onSubmit.mock.calls[0][0];
+    expect(submitted).not.toHaveProperty("category");
+    expect(submitted).not.toHaveProperty("subcategory");
+    expect(submitted.classification).toBeUndefined();
   });
 
   it("defaults quantity to 1", () => {
@@ -365,8 +365,6 @@ describe("ReceiptItemForm", () => {
           receiptId: "r-1",
           quantity: 1,
           unitPrice: 0,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -391,8 +389,6 @@ describe("ReceiptItemForm", () => {
           receiptItemCode: "ITM-001",
           quantity: 1,
           unitPrice: 3.99,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -420,8 +416,6 @@ describe("ReceiptItemForm", () => {
           receiptItemCode: "ITM-001",
           quantity: 1,
           unitPrice: 3.99,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -454,8 +448,6 @@ describe("ReceiptItemForm", () => {
           receiptItemCode: "ITM-001",
           quantity: 1,
           unitPrice: 3.99,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -488,8 +480,6 @@ describe("ReceiptItemForm", () => {
           receiptItemCode: "ITM-001",
           quantity: 1,
           unitPrice: 3.99,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -527,8 +517,6 @@ describe("ReceiptItemForm", () => {
           description: "Sourdough Loaf",
           quantity: 1,
           unitPrice: 3.99,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -576,8 +564,6 @@ describe("ReceiptItemForm", () => {
 
           quantity: 1,
           unitPrice: 1.29,
-          category: "Groceries",
-          subcategory: "Dairy",
         }}
       />,
     );
@@ -668,8 +654,6 @@ it("normalizes persisted item text with the same draft rules", async () => {
         receiptId: "r-1",
         receiptItemCode: " CODE ",
         description: " Milk ",
-        category: "Groceries",
-        subcategory: " Dairy ",
         quantity: 1,
         unitPrice: 0,
       }}
@@ -680,14 +664,14 @@ it("normalizes persisted item text with the same draft rules", async () => {
   expect(onSubmit.mock.calls[0][0]).toMatchObject({
     receiptItemCode: "CODE",
     description: "Milk",
-    // The item type is unchanged, so the stored labels go back exactly as
-    // they were recorded rather than being re-derived from the draft.
-    category: "Groceries",
-    subcategory: " Dairy ",
     quantity: 1,
     unitPrice: 0,
   });
   expect(onSubmit.mock.calls[0][0].classification).toBeUndefined();
+  // The item type is unchanged and the stored labels are write-once history,
+  // so the edit carries no labels.
+  expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("category");
+  expect(onSubmit.mock.calls[0][0]).not.toHaveProperty("subcategory");
 });
 
 it.each(["description", "receiptItemCode"])(
@@ -704,8 +688,6 @@ it.each(["description", "receiptItemCode"])(
           receiptId: "r-1",
           receiptItemCode: "CODE",
           description: "Milk",
-          category: "Groceries",
-          subcategory: "Dairy",
           quantity: 1,
           unitPrice: 0,
           [field]: "   ",
@@ -726,8 +708,6 @@ const classificationDefaults = {
   description: "Apple",
   quantity: 1,
   unitPrice: 2,
-  category: "Food",
-  subcategory: "Produce",
 };
 const recorded = {
   assignmentId: "assignment-1",
@@ -812,19 +792,13 @@ describe("classification submissions", () => {
       { id: "produce", name: "Produce", parentId: "root", archived: false },
     ],
   };
-  const staleLabelDefaults = {
-    ...classificationDefaults,
-    category: "Old Root",
-    subcategory: "Old Sub",
-  };
-
-  it("sends the stored labels back untouched when the same category is re-picked", async () => {
+  it("sends neither a classification nor labels when the same category is re-picked", async () => {
     const user = userEvent.setup();
     const submit = vi.fn();
     render(
       <ReceiptItemForm
         mode="edit"
-        defaultValues={staleLabelDefaults}
+        defaultValues={classificationDefaults}
         currentClassification={sameRevisionRecorded}
         onSubmit={submit}
         onCancel={vi.fn()}
@@ -835,20 +809,18 @@ describe("classification submissions", () => {
     await user.click(screen.getByRole("button", { name: "Update Item" }));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     const submitted = submit.mock.calls[0][0];
-    expect(submitted).toMatchObject({
-      category: "Old Root",
-      subcategory: "Old Sub",
-    });
+    expect(submitted).not.toHaveProperty("category");
+    expect(submitted).not.toHaveProperty("subcategory");
     expect(submitted.classification).toBeUndefined();
   });
 
-  it("sends the picker's labels with a classification when a different category is picked", async () => {
+  it("sends only a classification, never labels, when a different category is picked", async () => {
     const user = userEvent.setup();
     const submit = vi.fn();
     render(
       <ReceiptItemForm
         mode="edit"
-        defaultValues={staleLabelDefaults}
+        defaultValues={classificationDefaults}
         currentClassification={sameRevisionRecorded}
         onSubmit={submit}
         onCancel={vi.fn()}
@@ -859,14 +831,14 @@ describe("classification submissions", () => {
     await user.click(screen.getByRole("button", { name: "Update Item" }));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     expect(submit.mock.calls[0][0]).toMatchObject({
-      category: "Food",
-      subcategory: "Produce",
       classification: {
         categoryId: "fruit",
         taxonomyRevisionId: "revision-1",
         expectedAssignmentId: "assignment-1",
       },
     });
+    expect(submit.mock.calls[0][0]).not.toHaveProperty("category");
+    expect(submit.mock.calls[0][0]).not.toHaveProperty("subcategory");
   });
 
   it("preserves a deep recorded path and omits untouched assignment mutation even when taxonomy is unavailable", async () => {
@@ -896,13 +868,13 @@ describe("classification submissions", () => {
     expect(submit.mock.calls[0][0].classification).toBeUndefined();
   });
   it.each([
-    ["Food", "root", "Food", ""],
-    ["Food / Produce", "produce", "Food", "Produce"],
-    ["Unclassified", null, "", ""],
-    ["Food / Produce / Fruit", "fruit", "Food", "Produce"],
+    ["Food", "root"],
+    ["Food / Produce", "produce"],
+    ["Unclassified", null],
+    ["Food / Produce / Fruit", "fruit"],
   ])(
     "submits %s with exact identity and stable operation across retry",
-    async (label, categoryId, category, subcategory) => {
+    async (label, categoryId) => {
       const user = userEvent.setup();
       const submit = vi.fn();
       const { rerender } = render(
@@ -919,9 +891,9 @@ describe("classification submissions", () => {
       await user.click(screen.getByRole("button", { name: "Update Item" }));
       await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
       const first = submit.mock.calls[0][0];
+      expect(first).not.toHaveProperty("category");
+      expect(first).not.toHaveProperty("subcategory");
       expect(first).toMatchObject({
-        category,
-        subcategory,
         classification: {
           categoryId,
           taxonomyRevisionId: "revision-1",
@@ -938,7 +910,7 @@ describe("classification submissions", () => {
             ...recorded,
             assignmentId: "assignment-from-background-refresh",
           }}
-          serverErrors={{ category: "Taxonomy changed; review your selection" }}
+          serverErrors={{ description: "Taxonomy changed; review your selection" }}
           onSubmit={submit}
           onCancel={vi.fn()}
         />,
@@ -1026,8 +998,6 @@ describe("item-code suggestion category", () => {
       receiptItemCode: "MILK-GAL",
       description: "Whole milk",
       unitPrice: 3.5,
-      category: "Food",
-      subcategory: "Produce",
       classification: {
         categoryId: "fruit",
         taxonomyRevisionId: "revision-1",
@@ -1080,8 +1050,6 @@ describe("item-code suggestion category", () => {
     await user.click(screen.getByRole("button", { name: "Update Item" }));
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     expect(submit.mock.calls[0][0]).toMatchObject({
-      category: "Food",
-      subcategory: "Produce",
       classification: {
         categoryId: "fruit",
         taxonomyRevisionId: "revision-1",

@@ -38,8 +38,6 @@ const defaults = {
   description: "Manual milk",
   quantity: 1,
   unitPrice: 3.45,
-  category: "Food",
-  subcategory: "Dairy",
 };
 let receiptRequests: { offset: number; limit: number; q: string }[];
 let receiptCount: number;

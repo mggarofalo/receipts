@@ -211,6 +211,24 @@ describe("ReceiptItemsCard", () => {
       expect(screen.getByRole("button", { name: "Update Item" })).toBeVisible();
     },
   );
+  it("sends an edit without the stored item's legacy labels", async () => {
+    const { useUpdateReceiptItem } = await import("@/hooks/useReceiptItems");
+    const mutate = vi.fn();
+    vi.mocked(useUpdateReceiptItem).mockReturnValue(
+      mockMutationResult({ mutate, isPending: false }),
+    );
+    renderWithQueryClient(
+      <ReceiptItemsCard receiptId="receipt-1" items={mockItems} subtotal={46} />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: /edit/i })[0]);
+    await user.click(screen.getByRole("button", { name: "Update Item" }));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    const { body } = mutate.mock.calls[0][0];
+    expect(body).toMatchObject({ id: "item-1", description: "Widget A" });
+    expect(body).not.toHaveProperty("category");
+    expect(body).not.toHaveProperty("subcategory");
+  });
   it("shows subcent unit price while the line total and subtotal stay at cents", () => {
     renderWithQueryClient(
       <ReceiptItemsCard

@@ -83,8 +83,8 @@ public class UpdateOwnershipServiceTests
 		stored.UnitPriceCurrency.Should().Be(Currency.USD);
 		stored.TotalAmount.Should().Be(8);
 		stored.TotalAmountCurrency.Should().Be(Currency.USD);
-		stored.Category.Should().Be("Groceries");
-		stored.Subcategory.Should().Be("Dairy");
+		stored.Category.Should().Be("Food", "the legacy labels are write-once history an edit never changes");
+		stored.Subcategory.Should().BeNull();
 		stored.NormalizedDescriptionId.Should().Be(newDescription == "Milk" ? canonicalId : null);
 	}
 

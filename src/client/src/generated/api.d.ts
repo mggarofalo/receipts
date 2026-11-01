@@ -6554,7 +6554,7 @@ export interface components {
              * @description Optional occasion tag. Omitted or null takes the receipt's occasion on create and keeps the stored tag on update.
              */
             occasionId?: string | null;
-            /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path. */
+            /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. */
             classification?: components["schemas"]["ClassificationRequest"] | null;
             /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
             normalizationIntent?: components["schemas"]["ReceiptNormalizationIntent"] | null;
@@ -6564,7 +6564,9 @@ export interface components {
             quantity: number;
             /** Format: double */
             unitPrice: number;
-            category: string;
+            /** @description Retired legacy label. Accepted for older clients and ignored; the item's type is set only through classification. */
+            category?: string;
+            /** @description Retired legacy label. Accepted for older clients and ignored. */
             subcategory?: string | null;
             /**
              * Format: uuid
@@ -6583,7 +6585,7 @@ export interface components {
              * @description Optional occasion tag. Omitted or null takes the receipt's occasion on create and keeps the stored tag on update.
              */
             occasionId?: string | null;
-            /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. Legacy labels must agree with the pinned path. */
+            /** @description Optional explicit manual assignment, atomic with receipt facts. Requires a nonempty clientRequestId query parameter for atomic retries. Omission preserves classification; categoryId null explicitly clears. */
             classification?: components["schemas"]["ClassificationRequest"] | null;
             /** @description Omitted means use a current approved scoped mapping or retain NeedsReview; no automatic inference is approved. */
             normalizationIntent?: components["schemas"]["ReceiptNormalizationIntent"] | null;
@@ -6595,7 +6597,9 @@ export interface components {
             quantity: number;
             /** Format: double */
             unitPrice: number;
-            category: string;
+            /** @description Retired legacy label. Accepted for older clients and ignored; an edit never changes the stored label. */
+            category?: string;
+            /** @description Retired legacy label. Accepted for older clients and ignored. */
             subcategory?: string | null;
         };
         /** @description Current assignment pinned to its recorded taxonomy revision. */

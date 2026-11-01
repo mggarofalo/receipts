@@ -36,8 +36,6 @@ const defaults = {
   description: "Manual milk",
   quantity: 1,
   unitPrice: 2.01,
-  category: "Food",
-  subcategory: "Dairy",
 };
 function deferred() {
   let resolve!: () => void;
@@ -265,8 +263,6 @@ for (const consumer of ["item-form", "line-add", "line-edit"] as const) {
       description: "Retained milk",
       quantity: 1,
       unitPrice: 2.01,
-      category: "Food",
-      subcategory: "Dairy",
     });
     expect(writes).toEqual([]);
   });
@@ -388,7 +384,15 @@ for (const consumer of ["item-form", "line-add", "line-edit"] as const) {
     expect(within(c.picker).getByText("Dairy")).toBeVisible();
     expect(within(c.picker).getByText("Food")).toBeVisible();
     const value = await save(consumer, c);
-    expect(value).toMatchObject({ category: "Food", subcategory: "Dairy" });
+    // The nested identity replaces the parent; no labels are derived from it.
+    // The item form already records Dairy, so re-picking it sends no change.
+    if (consumer === "item-form") expect(value.classification).toBeUndefined();
+    else
+      expect(value.categoryChoice).toMatchObject({
+        categoryId: taxonomyFixture.nodes[1].id,
+      });
+    expect(value).not.toHaveProperty("category");
+    expect(value).not.toHaveProperty("subcategory");
     expect(writes).toEqual([]);
   });
   it(`${consumer} explicitly clears classification through Unclassified`, async () => {
@@ -435,8 +439,6 @@ it("keeps a newer row edit draft when an earlier held refresh fails", async () =
   await user.click(screen.getByRole("button", { name: "Save" }));
   expect(rows.find((r) => r.id === "second")).toMatchObject({
     description: "New second-row draft",
-    category: "Food",
-    subcategory: "Dairy",
   });
   expect(writes).toEqual([]);
 });

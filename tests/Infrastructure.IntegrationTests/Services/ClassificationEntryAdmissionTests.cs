@@ -68,8 +68,9 @@ public sealed partial class ClassificationTests
 			replay.Items.Single().Id.Should().Be(itemId);
 			await using var db = fixture.CreateDbContext();
 			var stored = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == itemId);
-			stored.Category.Should().Be(payload.category);
-			stored.Subcategory.Should().Be(payload.subcategory);
+			// The wire labels are retired and ignored: the identity is carried by the classification alone.
+			stored.Category.Should().BeEmpty();
+			stored.Subcategory.Should().BeNull();
 			stored.TotalAmount.Should().Be(7);
 			var history = await Service().HistoryAsync(itemId, null, 10);
 			history.Items.Should().ContainSingle().Which.CategoryId.Should().Be(categoryId);

@@ -184,20 +184,39 @@ group or report anything. Every reader uses the item's current assignment:
   and history rows' `SimilarItemResponse.defaultCategory/defaultSubcategory`
   are null. The fields stay so the contract does not break.
 
-What still touches the strings, by design, until the writes are retired:
+### Legacy label strings: writes retired (RECEIPTS-1085)
 
-- `ReceiptItemResponse.category/subcategory` are echoed only so an edit can
-  send them back unchanged; `ClassificationService.ProtectLegacyEditAsync`
-  treats a changed label without a classification intent as a legacy write.
-  The edit form therefore resends the stored labels whenever the item type is
-  unchanged, even after the picker was reopened.
-- The write path (`ClassificationService` legacy resolution, write
-  fingerprints, the initial backfill) and backups.
-- Eligibility guards that treat non-blank labels as an earlier human choice:
-  category assistance enrolment, dispatch, read and decision stores, historical
-  approved mappings and organization discovery. Moving them to the
-  assignment's `LegacyCategory`/`LegacySubcategory` evidence belongs with
-  retiring the writes.
+Nothing writes the strings any more, except restoring a backup. They are
+write-once history: what the item said when it was imported or last relabelled
+before this change.
+
+- Item create, update and complete-receipt requests still accept `category` and
+  `subcategory` so older clients keep working, but the server ignores them. A
+  new item stores an empty label; an edit keeps the stored labels. Neither field
+  is part of a request's retry fingerprint.
+- An item's type changes only through an explicit `classification` intent. An
+  edit without one leaves the assignment alone; there is no label resolution
+  and no label-contradiction check.
+- A new item saved without a choice takes an approved mapping when one applies.
+  Otherwise it gets the same no-choice `legacy_write` assignment as before
+  (`unresolved_path`, no category, empty label evidence), which keeps it
+  eligible for category assistance and organization.
+- The eligibility guards (category assistance enrolment, dispatch, read and
+  decision stores, historical approved mappings, organization discovery) still
+  treat non-blank stored labels as an earlier human choice. They stay on the
+  item columns because `legacy_import` assignments carry no label evidence of
+  their own: the columns are the only record of what an imported item said.
+  With the writes retired, those columns can no longer change underneath the
+  guards.
+
+What still touches the strings, by design:
+
+- `ReceiptItemResponse.category/subcategory` and the item code suggestion's
+  labels echo the stored history; the client no longer sends them back.
+- Backups export and restore them; the initial legacy backfill reads them.
+- The sample-data seeder writes legacy-shaped items for the backfill to import.
+- Item template default strings, and the legacy suggestion tables' delete
+  guards, which count items by stored name.
 - Item templates keep their own default category strings (no taxonomy field).
 - The legacy category and subcategory suggestion tables (`/api/categories`,
   `/api/subcategories`) still guard deletes by counting items with a matching

@@ -114,15 +114,10 @@ public sealed partial class ClassificationTests
 		}
 		finally
 		{
-			// Restore fixture readiness through the compatibility writer for subsequent cases.
-			if (inTrash)
-			{
-				await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"ReceiptItems\" SET \"DeletedAt\" = NULL WHERE \"Id\" = {orphan.Id}");
-			}
-
-			orphan.Category = await db.TaxonomyNodes.Where(row => row.RevisionId == entry.Approval.TaxonomyRevisionId
-				&& row.ParentId == null && !row.Archived).Select(row => row.Name).FirstAsync();
-			await new ReceiptItemRepository(new ActorFactory(fixture)).UpdateAsync([orphan], default);
+			// Restore fixture readiness for subsequent cases. An ordinary edit no longer turns labels into an
+			// assignment, so the test-made gap is removed rather than repaired.
+			await db.ReceiptItems.IgnoreQueryFilters().Where(row => row.Id == orphan.Id).ExecuteDeleteAsync();
+			await db.Receipts.IgnoreQueryFilters().Where(row => row.Id == parent.Id).ExecuteDeleteAsync();
 		}
 	}
 
@@ -131,7 +126,6 @@ public sealed partial class ClassificationTests
 	[InlineData("stale")]
 	[InlineData("source")]
 	[InlineData("disabled")]
-	[InlineData("legacy")]
 	[InlineData("clear")]
 	public async Task UnavailableMappingAndExplicitEvidenceNeverGuess(string scenario)
 	{
@@ -150,7 +144,6 @@ public sealed partial class ClassificationTests
 		}
 
 		if (scenario == "source") { entry.Item.Description += " different"; }
-		if (scenario == "legacy") { entry.Item.Category = "Ambiguous legacy evidence"; }
 		var item = new Infrastructure.Mapping.ReceiptItemMapper().ToDomain(entry.Item);
 		if (scenario == "clear") { item.Classification = new(null, revision, null, Guid.NewGuid(), "Deliberate clear"); }
 		var saved = await MappingWriter(enabled: scenario != "disabled").CreateAsync(
@@ -165,6 +158,27 @@ public sealed partial class ClassificationTests
 			await new ReceiptItemRepository(new ActorFactory(fixture), Options.Create(new ClassificationOptions { WritesEnabled = true })).UpdateAsync([stored], default);
 			(await Service().HistoryAsync(stored.Id, null, 10)).Items.Should().ContainSingle().Which.Id.Should().Be(assignment.Id);
 		}
+	}
+
+	[Theory]
+	[InlineData("Ambiguous legacy evidence", null)]
+	[InlineData("Other root", "Other child")]
+	public async Task ApprovedMappingAppliesToANewItemWhateverLegacyLabelsItCarries(string category, string? subcategory)
+	{
+		// Arrange: labels are retired evidence, not a choice, so they no longer suppress an approved mapping.
+		var entry = await MappingEntryAsync();
+		entry.Item.Category = category; entry.Item.Subcategory = subcategory;
+		var item = new Infrastructure.Mapping.ReceiptItemMapper().ToDomain(entry.Item);
+
+		// Act
+		var saved = await MappingWriter().CreateAsync(new Infrastructure.Mapping.ReceiptMapper().ToDomain(entry.Receipt), [], [item], [],
+			Guid.NewGuid(), default);
+
+		// Assert
+		var assignment = (await Service().HistoryAsync(saved.Items.Single().Id, null, 10)).Items.Should().ContainSingle().Subject;
+		assignment.Source.Should().Be("approved_mapping");
+		assignment.CategoryId.Should().Be(entry.Command.CategoryId);
+		assignment.LegacyResolution.Should().BeNull();
 	}
 
 	[Theory]

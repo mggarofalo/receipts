@@ -38,7 +38,7 @@ public class ReceiptItemMapperTests
 	}
 
 	[Fact]
-	public void ToDomain_FromCreateRequest_MapsAllPropertiesWithEmptyId()
+	public void ToDomain_FromCreateRequest_MapsAllPropertiesWithEmptyIdAndIgnoresLegacyLabels()
 	{
 		// Arrange
 		CreateReceiptItemRequest request = new()
@@ -61,8 +61,9 @@ public class ReceiptItemMapperTests
 		Assert.Equal(3.0m, actual.Quantity);
 		Assert.Equal(2.49m, actual.UnitPrice.Amount);
 		Assert.Equal(Currency.USD, actual.UnitPrice.Currency);
-		Assert.Equal("Groceries", actual.Category);
-		Assert.Equal("Produce", actual.Subcategory);
+		// Request labels are retired: a new item stores none, whatever the request sent.
+		Assert.Equal("", actual.Category);
+		Assert.Null(actual.Subcategory);
 	}
 
 	[Fact]
@@ -133,7 +134,7 @@ public class ReceiptItemMapperTests
 	}
 
 	[Fact]
-	public void ToDomain_FromUpdateRequest_MapsAllPropertiesIncludingId()
+	public void ToDomain_FromUpdateRequest_MapsAllPropertiesIncludingIdAndIgnoresLegacyLabels()
 	{
 		// Arrange
 		Guid expectedId = Guid.NewGuid();
@@ -158,8 +159,9 @@ public class ReceiptItemMapperTests
 		Assert.Equal(5.0m, actual.Quantity);
 		Assert.Equal(0.79m, actual.UnitPrice.Amount);
 		Assert.Equal(Currency.USD, actual.UnitPrice.Currency);
-		Assert.Equal("Groceries", actual.Category);
-		Assert.Equal("Fruit", actual.Subcategory);
+		// Request labels are retired: the mapped edit carries none, so the stored labels stand.
+		Assert.Equal("", actual.Category);
+		Assert.Null(actual.Subcategory);
 	}
 
 	[Fact]
@@ -236,6 +238,27 @@ public class ReceiptItemMapperTests
 
 		// Assert
 		Assert.Equal((double)33.4567m, actual.UnitPrice);
+	}
+
+	[Theory]
+	[InlineData(null, null)]
+	[InlineData("", null)]
+	[InlineData("Groceries", "Produce")]
+	public void ToDomain_LegacyLabelsInAnyShape_AreIgnored(string? category, string? subcategory)
+	{
+		// Arrange
+		CreateReceiptItemRequest create = new() { Description = "Apples", Quantity = 1, UnitPrice = 1, Category = category!, Subcategory = subcategory };
+		UpdateReceiptItemRequest update = new() { Id = Guid.NewGuid(), Description = "Apples", Quantity = 1, UnitPrice = 1, Category = category!, Subcategory = subcategory };
+
+		// Act
+		ReceiptItem created = _mapper.ToDomain(create);
+		ReceiptItem updated = _mapper.ToDomain(update);
+
+		// Assert
+		Assert.Equal("", created.Category);
+		Assert.Null(created.Subcategory);
+		Assert.Equal("", updated.Category);
+		Assert.Null(updated.Subcategory);
 	}
 
 	[Fact]

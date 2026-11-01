@@ -18,9 +18,17 @@ public class BudgetChoiceServiceTests
 {
 	private static BudgetChoiceService Service(EnvelopeWorld world) => new(world.Factory);
 
-	private static async Task<ReceiptItemEntity> CreateItemAsync(EnvelopeWorld world, ReceiptItemEntity item)
-		=> (await new ReceiptItemRepository(world.Factory, Options.Create(new ClassificationOptions { WritesEnabled = true }))
+	/// <summary>Saves a new item, then gives it an item type through a classification write when one is named.</summary>
+	private static async Task<ReceiptItemEntity> CreateItemAsync(EnvelopeWorld world, ReceiptItemEntity item, Guid? itemType = null)
+	{
+		ReceiptItemEntity created = (await new ReceiptItemRepository(world.Factory, Options.Create(new ClassificationOptions { WritesEnabled = true }))
 			.CreateAsync([item], CancellationToken.None)).Single();
+		if (itemType is not null)
+		{
+			await world.ClassifyAsync(created.Id, itemType);
+		}
+		return created;
+	}
 
 	// --- Receipt choices ---
 
@@ -30,8 +38,8 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity defaulted = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
-		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: world.Food));
+		ReceiptItemEntity defaulted = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Food), world.Groceries);
 
 		// Act
 		bool actual = await Service(world).SetReceiptChoicesAsync(receipt.Id, world.Car, null, CancellationToken.None);
@@ -53,7 +61,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Act
 		bool actual = await Service(world).SetReceiptChoicesAsync(receipt.Id, null, null, CancellationToken.None);
@@ -139,8 +147,8 @@ public class BudgetChoiceServiceTests
 		Guid own = await AddOccasionAsync(world, isActive: true);
 		Guid? next = cleared ? null : await AddOccasionAsync(world, isActive: true);
 		ReceiptEntity receipt = await world.AddReceiptAsync(occasion: previous);
-		ReceiptItemEntity inherited = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
-		ReceiptItemEntity tagged = EnvelopeWorld.NewItem(receipt.Id, "Groceries");
+		ReceiptItemEntity inherited = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+		ReceiptItemEntity tagged = EnvelopeWorld.NewItem(receipt.Id);
 		tagged.OccasionId = own;
 		tagged = await CreateItemAsync(world, tagged);
 
@@ -161,8 +169,8 @@ public class BudgetChoiceServiceTests
 		Guid previous = await AddOccasionAsync(world, isActive: true);
 		Guid next = await AddOccasionAsync(world, isActive: true);
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Food, occasion: previous);
-		ReceiptItemEntity receiptSourced = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Fuel"));
-		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Fuel", envelopeOverride: world.Food));
+		ReceiptItemEntity receiptSourced = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Fuel);
+		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Food), world.Fuel);
 		await SoftDeleteItemAsync(world, receiptSourced.Id);
 		await SoftDeleteItemAsync(world, overridden.Id);
 
@@ -187,7 +195,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Act
 		bool actual = await Service(world).SetItemChoicesAsync(created.Id, world.Car, null, CancellationToken.None);
@@ -205,7 +213,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: world.Food));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Food), world.Groceries);
 
 		// Act
 		await Service(world).SetItemChoicesAsync(created.Id, null, null, CancellationToken.None);
@@ -222,7 +230,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: world.Car));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
 
 		// Act
 		await Service(world).SetItemChoicesAsync(created.Id, null, null, CancellationToken.None);
@@ -239,7 +247,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Retired);
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: world.Car));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
 
 		// Act
 		await Service(world).SetItemChoicesAsync(created.Id, null, null, CancellationToken.None);
@@ -259,7 +267,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		await world.SetStoredEnvelopeAsync(created.Id, world.Retired, source);
 
 		// Act
@@ -278,7 +286,7 @@ public class BudgetChoiceServiceTests
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		Guid occasion = await AddOccasionAsync(world, isActive: true);
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		BudgetChoiceService service = Service(world);
 
 		// Act
@@ -312,7 +320,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Act
 		Func<Task> act = () => Service(world).SetItemChoicesAsync(created.Id, world.Retired, null, CancellationToken.None);
@@ -330,7 +338,7 @@ public class BudgetChoiceServiceTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		await world.SetStoredEnvelopeAsync(created.Id, world.Retired, EnvelopeSource.Item);
 
 		// Act

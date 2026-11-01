@@ -37,8 +37,6 @@ vi.mock("./LineItemsSection", () => ({
             description: "Milk",
             quantity: 1,
             unitPrice: 5,
-            category: "Food",
-            subcategory: "",
             normalizationChoice: stagedChoice,
           },
         ])
@@ -226,8 +224,7 @@ it.each([400, 503])(
             quantity: 1,
             unitPrice: 5,
             envelopeId: null,
-            category: "Food",
-            subcategory: null,
+            // Legacy labels are retired: complete-receipt items carry none.
           },
         ],
         adjustments: [],

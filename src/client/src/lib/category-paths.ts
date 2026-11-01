@@ -43,14 +43,6 @@ export function categoryPaths(nodes: CategoryNode[]): CategoryPath[] {
   );
 }
 
-/** Compatibility snapshots are transport labels, never identity resolution. */
-export function categoryLegacyLabels(choice: CategoryChoice) {
-  return {
-    category: choice.path[0]?.name ?? "",
-    subcategory: choice.path[1]?.name ?? null,
-  };
-}
-
 export type CurrentClassification =
   components["schemas"]["CurrentClassificationResponse"];
 export type ClassificationRequest =

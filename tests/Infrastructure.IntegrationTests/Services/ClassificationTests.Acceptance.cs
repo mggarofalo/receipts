@@ -40,7 +40,7 @@ public sealed partial class ClassificationTests
 	}
 
 	[Fact]
-	public async Task DeepAssignmentSurvivesUnchangedLegacyEchoAfterTaxonomyRename()
+	public async Task DeepAssignmentSurvivesRelabelledEditsAfterTaxonomyRename()
 	{
 		var seed = await SeedAsync();
 		Guid leaf = Guid.NewGuid();
@@ -48,7 +48,9 @@ public sealed partial class ClassificationTests
 				[new TaxonomyEdit("create", leaf, seed.Child, "Deep leaf")]));
 		await using var db = fixture.CreateDbContext();
 		var item = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
+		(string Category, string? Subcategory) storedLabels = (item.Category, item.Subcategory);
 		string rootName = deep.Nodes.Single(x => x.Id == seed.Root).Name;
+		// Labels that agree with the explicit path are ignored like any others.
 		item.Category = rootName; item.Subcategory = "Child";
 		item.Classification = new(leaf, deep.Id, seed.Assignment, Guid.NewGuid(), "Explicit deep choice");
 		var repository = new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture),
@@ -58,34 +60,36 @@ public sealed partial class ClassificationTests
 		original.Path.Select(x => x.Id).Should().Equal(seed.Root, seed.Child, leaf);
 		var renamed = await Tree().ChangeAsync(Actor, new(deep.Id, Guid.NewGuid(), "Rename current root",
 				[new TaxonomyEdit("rename", seed.Root, Name: "Renamed " + Guid.NewGuid())]));
-		item.Classification = null; item.Description = "Fact edit retaining old labels";
+		item.Classification = null; item.Description = "Fact edit sending stale labels";
 		item.UnitPrice += 1; item.TotalAmount = decimal.Round(item.Quantity * item.UnitPrice, 2, MidpointRounding.AwayFromZero);
 		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).UpdateAsync([item], default);
 		var history = await Service().HistoryAsync(item.Id, null, 10);
 		history.Items.Should().HaveCount(2);
 		history.Items.First().Should().BeEquivalentTo(original);
 		var stored = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id);
-		stored.Category.Should().Be(rootName); stored.Subcategory.Should().Be("Child");
+		stored.Category.Should().Be(storedLabels.Category); stored.Subcategory.Should().Be(storedLabels.Subcategory);
 		stored.Description.Should().Be(item.Description); stored.TotalAmount.Should().Be(item.TotalAmount);
 		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == item.Id)).AssignmentId.Should().Be(original.Id);
 
-		// A changed lossy path must not infer the third-level target from the leaf's name.
+		// Labels naming a different, lossy path neither infer a target from the leaf's name nor conflict.
 		item.Category = renamed.Nodes.Single(x => x.Id == seed.Root).Name;
-		item.Subcategory = "Deep leaf"; item.Description = "Rejected lossy edit";
-		Func<Task> rejected = () => repository.UpdateAsync([item], default);
-		(await rejected.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
-		(await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id)).Description.Should().Be(stored.Description);
+		item.Subcategory = "Deep leaf"; item.Description = "Relabelled lossy edit";
+		await repository.UpdateAsync([item], default);
+		stored = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id);
+		stored.Description.Should().Be("Relabelled lossy edit");
+		stored.Category.Should().Be(storedLabels.Category); stored.Subcategory.Should().Be(storedLabels.Subcategory);
 		(await Service().HistoryAsync(item.Id, null, 10)).Items.Should().BeEquivalentTo(history.Items);
 	}
 
 	[Fact]
-	public async Task LegacyCommitWinsAgainstExplicitAssignmentWaitingOnHeadWithoutLosingEitherHistory()
+	public async Task RelabelledEditCommittingFirstLeavesAnExplicitAssignmentWaitingOnHeadValid()
 	{
 		var seed = await SeedAsync();
 		await using var db = fixture.CreateDbContext();
 		var item = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
+		(string Category, string? Subcategory) storedLabels = (item.Category, item.Subcategory);
 		item.Category = await db.TaxonomyNodes.Where(x => x.RevisionId == seed.Revision && x.CategoryId == seed.Root).Select(x => x.Name).SingleAsync();
-		item.Subcategory = "Child"; item.Description = "Committed legacy edit";
+		item.Subcategory = "Child"; item.Description = "Committed relabelled edit";
 		var barrier = new CommitBarrier();
 		var legacy = new Infrastructure.Repositories.ReceiptItemRepository(new BarrierFactory(fixture, barrier)).UpdateAsync([item], default);
 		int blocker = await barrier.Entered.Task.WaitAsync(TimeSpan.FromSeconds(15));
@@ -94,14 +98,17 @@ public sealed partial class ClassificationTests
 		try { await WaitForDatabaseBlockAsync(blocker); explicitWrite.IsCompleted.Should().BeFalse(); }
 		finally { barrier.Release.TrySetResult(); }
 		await legacy;
-		Func<Task> rejected = async () => { await explicitWrite; };
-		(await rejected.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
+		// The edit appended nothing, so the explicit choice's expected assignment is still current.
+		PurchaseClassification chosen = await explicitWrite;
 		var history = await Service().HistoryAsync(item.Id, null, 10);
 		history.Items.Should().HaveCount(2);
-		history.Items.First().Source.Should().Be("legacy_write");
-		history.Items.First().CategoryId.Should().Be(seed.Child);
+		history.Items.First().Id.Should().Be(chosen.Id);
+		history.Items.First().Source.Should().Be("manual");
+		history.Items.First().CategoryId.Should().Be(seed.Root);
 		history.Items.First().PreviousAssignmentId.Should().Be(seed.Assignment);
-		(await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id)).Description.Should().Be(item.Description);
+		var stored = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == item.Id);
+		stored.Description.Should().Be(item.Description);
+		stored.Category.Should().Be(storedLabels.Category); stored.Subcategory.Should().Be(storedLabels.Subcategory);
 		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == item.Id)).AssignmentId.Should().Be(history.Items.First().Id);
 	}
 

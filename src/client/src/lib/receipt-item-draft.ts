@@ -6,6 +6,4 @@ export const receiptItemDraftSchema = z.object({
   description: z.string().trim().min(1, "Description is required"),
   quantity: z.number().positive("Quantity must be positive"),
   unitPrice: z.number().min(0, "Unit price must be non-negative"),
-  category: z.string().trim(),
-  subcategory: z.string().trim().optional().default(""),
 });

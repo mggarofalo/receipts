@@ -42,8 +42,6 @@ const defaults = {
   description: "Manual milk",
   quantity: 1,
   unitPrice: 3.459,
-  category: "Food",
-  subcategory: "Dairy",
 };
 const normalized = {
   id: "raw",

@@ -293,7 +293,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			if (clientRequestId is Guid requestId)
 			{
 				request = await Infrastructure.Services.ReceiptWriteIdempotency.FindOrCreateAsync(context, requestId, "item-create",
-					new { ReceiptId = entities[0].ReceiptId, templates = templateIds, items = entities.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.UnitPriceCurrency, value.TotalAmountCurrency, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification, value.EnvelopeOverrideId, value.OccasionId }) }, cancellationToken);
+					new { ReceiptId = entities[0].ReceiptId, templates = templateIds, items = entities.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.UnitPriceCurrency, value.TotalAmountCurrency, value.NormalizationIntent, value.Classification, value.EnvelopeOverrideId, value.OccasionId }) }, cancellationToken);
 				if (request.ReceiptId != Guid.Empty)
 				{
 					var saved = await context.ReceiptItems.Where(value => request.ItemIds.Contains(value.Id)).ToListAsync(cancellationToken);
@@ -385,8 +385,6 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 					value.UnitPriceCurrency,
 					value.TotalAmount,
 					value.TotalAmountCurrency,
-					value.Category,
-					value.Subcategory,
 					value.NormalizationIntent,
 					value.Classification,
 					value.EnvelopeOverrideId,
@@ -406,7 +404,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		foreach (ReceiptItemEntity entity in entities)
 		{
 			ReceiptItemEntity existingEntity = existingEntities.Single(e => e.Id == entity.Id);
-			await ClassificationService.ProtectLegacyEditAsync(context, entity, existingEntity, cancellationToken);
+			ClassificationService.MarkExisting(context, existingEntity.Id);
 			// Canonical identity describes the raw text. Ordinary edits preserve it; a text
 			// change clears it so the resolver can classify the new description.
 			if (!string.Equals(existingEntity.Description, entity.Description, StringComparison.Ordinal))
@@ -424,8 +422,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 			existingEntity.UnitPriceCurrency = entity.UnitPriceCurrency;
 			existingEntity.TotalAmount = entity.TotalAmount;
 			existingEntity.TotalAmountCurrency = entity.TotalAmountCurrency;
-			existingEntity.Category = entity.Category;
-			existingEntity.Subcategory = entity.Subcategory;
+			// The legacy labels are write-once history; an item's type changes only through classification.
 		}
 		await ItemEnvelopeWriter.ApplyEditsAsync(context,
 			entities.Select(entity => (entity, existingEntities.Single(e => e.Id == entity.Id))).ToList(), cancellationToken);

@@ -70,8 +70,6 @@ vi.mock("./LineItemsSection", () => ({
             description: `Fractional line ${index}`,
             quantity: fixture.quantity,
             unitPrice: fixture.unitPrice,
-            category: "Food",
-            subcategory: "",
           })),
         )
       }
