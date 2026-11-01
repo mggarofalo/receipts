@@ -64,9 +64,7 @@ interface ReceiptItem {
   description: string;
   quantity: number;
   unitPrice: number;
-  category: string;
   currentClassification?: CurrentClassification | null;
-  subcategory?: string | null;
   normalizedDescriptionName?: string | null;
   normalizationRevision?: string;
   normalizationReviewState?: components["schemas"]["NormalizationReviewState"];
@@ -164,8 +162,6 @@ export function ReceiptItemsCard({
           description: values.description,
           quantity: values.quantity,
           unitPrice: values.unitPrice,
-          category: values.category,
-          subcategory: values.subcategory,
           // Present only when this line was entered from a template and the description still
           // matches it. The server uses it to stamp the item's canonical description and skip
           // the resolver (RECEIPTS-881).
@@ -201,8 +197,6 @@ export function ReceiptItemsCard({
           description: values.description,
           quantity: values.quantity,
           unitPrice: values.unitPrice,
-          category: values.category,
-          subcategory: values.subcategory,
           normalizationIntent: values.normalizationIntent,
           classification: values.classification,
         },
@@ -502,8 +496,6 @@ export function ReceiptItemsCard({
                 description: editItem.description,
                 quantity: editItem.quantity,
                 unitPrice: editItem.unitPrice,
-                category: editItem.category,
-                subcategory: editItem.subcategory ?? "",
               }}
               hideReceiptField
               isSubmitting={updateReceiptItem.isPending}

@@ -240,8 +240,6 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 	private sealed class AggregateState
 	{
 		public Guid? RevisionId { get; set; }
-		public List<TaxonomyNodeEntity> Nodes { get; set; } = [];
-		public HashSet<Guid> Changed { get; } = [];
 		public HashSet<Guid> Existing { get; } = [];
 		public bool MappingReady { get; set; }
 	}
@@ -256,14 +254,8 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		{ throw new TaxonomyException(409, "Classification backfill is incomplete: existing receipt items have no assignment. Repair or restore the missing classification evidence before retrying."); }
 	}
 
-	internal static Task ProtectLegacyEditAsync(ApplicationDbContext db, ReceiptItemEntity incoming, ReceiptItemEntity stored, CancellationToken ct)
-	{
-		AggregateState state = Aggregates.GetOrCreateValue(db);
-		state.Existing.Add(stored.Id);
-		if (incoming.Classification == null && (incoming.Category != stored.Category || incoming.Subcategory != stored.Subcategory))
-		{ state.Changed.Add(stored.Id); }
-		return Task.CompletedTask;
-	}
+	// An edit changes an item's type only through an explicit classification intent.
+	internal static void MarkExisting(ApplicationDbContext db, Guid itemId) => Aggregates.GetOrCreateValue(db).Existing.Add(itemId);
 
 	internal static async Task PrepareAggregateAsync(ApplicationDbContext db, IEnumerable<ReceiptItemEntity> items, bool enabled, CancellationToken ct)
 	{
@@ -278,25 +270,10 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		if (explicitWrite) { await RequireReadyAsync(db, ct); }
 		AggregateState state = Aggregates.GetOrCreateValue(db);
 		// Check preexisting evidence before the new aggregate is persisted. Ordinary
-		// saving retains its legacy fallback while an incomplete backfill is repaired.
+		// saving keeps its no-choice fallback while an incomplete backfill is repaired.
 		state.MappingReady = enabled && migrated && (explicitWrite || !await db.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().AnyAsync(item =>
 			!db.CurrentClassifications.Any(current => current.ReceiptItemId == item.Id), ct));
-		if (migrated)
-		{
-			state.RevisionId = head.RevisionId;
-			state.Nodes = await db.TaxonomyNodes.AsNoTracking().Where(x => x.RevisionId == head.RevisionId).ToListAsync(ct);
-		}
-	}
-
-	private static Guid? ResolveLegacy(AggregateState state, string? category, string? subcategory)
-	{
-		// Empty and dirty evidence remains distinct from a deliberate null choice.
-		if (string.IsNullOrEmpty(category)) { return null; }
-		var roots = state.Nodes.Where(x => x.ParentId == null && x.Name == category).ToList();
-		if (roots.Count != 1 || roots[0].Archived) { return null; }
-		if (subcategory == null) { return roots[0].CategoryId; }
-		var children = state.Nodes.Where(x => x.ParentId == roots[0].CategoryId && x.Name == subcategory).ToList();
-		return children.Count == 1 && !children[0].Archived ? children[0].CategoryId : null;
+		if (migrated) { state.RevisionId = head.RevisionId; }
 	}
 
 	internal static async Task ApplyAggregateAsync(ApplicationDbContext db, IEnumerable<ReceiptItemEntity> items, bool enabled, CancellationToken ct)
@@ -307,29 +284,20 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 			if (item.Classification is { } intent)
 			{
 				string actor = db.ReceiptWriteActor ?? throw new TaxonomyException(400, "A signed-in actor is required for classification.");
-				PurchaseClassification result = await AssignInTransactionAsync(db, actor, item.Id,
+				await AssignInTransactionAsync(db, actor, item.Id,
 					new(intent.CategoryId, intent.TaxonomyRevisionId, intent.ExpectedAssignmentId, intent.OperationId, intent.Reason), enabled, TimeProvider.System, ct, prepared: true);
-				string category = result.Path.FirstOrDefault()?.Name ?? item.Category;
-				string? subcategory = result.Path.Skip(1).FirstOrDefault()?.Name;
-				if (intent.CategoryId != null && (item.Category != category || item.Subcategory != subcategory))
-				{ throw new TaxonomyException(409, "Legacy category labels contradict the explicit classification path."); }
 				continue;
 			}
 			if (state.RevisionId is not Guid revision) { continue; }
+			if (state.Existing.Contains(item.Id)) { continue; }
 			CurrentClassificationEntity? current = await db.CurrentClassifications.SingleOrDefaultAsync(x => x.ReceiptItemId == item.Id, ct);
-			if (state.Existing.Contains(item.Id) && !state.Changed.Contains(item.Id)) { continue; }
-			// A replay or incidental edit must never replace an existing assignment, including clear.
-			if (!state.Existing.Contains(item.Id) && current != null) { continue; }
-			if (state.MappingReady && !state.Existing.Contains(item.Id) && string.IsNullOrEmpty(item.Category)
-				&& item.Subcategory == null && await ApplyApprovedMappingAsync(db, item, revision, ct))
-			{ continue; }
-			Guid? target = ResolveLegacy(state, item.Category, item.Subcategory);
-			if (state.Existing.Contains(item.Id) && target == null)
-			{ throw new TaxonomyException(409, "Legacy category labels do not identify one selectable root or two-level path. Refresh and use an explicit classification choice."); }
+			// A replay must never replace an existing assignment, including clear.
+			if (current != null) { continue; }
+			if (state.MappingReady && await ApplyApprovedMappingAsync(db, item, revision, ct)) { continue; }
+			// A new item saved without a choice keeps the unresolved observation that makes it eligible for assistance.
 			string legacyActor = db.ReceiptWriteActor ?? throw new TaxonomyException(400, "A signed-in actor is required for classification.");
-			await AppendAsync(db, legacyActor, item.Id, target, revision, current, Guid.NewGuid(), "legacy_write",
-				"Observed legacy category labels during receipt save.", TimeProvider.System, ct, item.Category, item.Subcategory,
-				target == null ? "unresolved_path" : "resolved_path");
+			await AppendAsync(db, legacyActor, item.Id, null, revision, current, Guid.NewGuid(), "legacy_write",
+				"Saved without a category choice.", TimeProvider.System, ct, item.Category, item.Subcategory, "unresolved_path");
 			await db.SaveChangesAsync(ct);
 		}
 	}

@@ -77,16 +77,17 @@ internal sealed class EnvelopeWorld
 		return receipt;
 	}
 
-	public static ReceiptItemEntity NewItem(Guid receiptId, string category, string? subcategory = null, Guid? envelopeOverride = null)
+	/// <summary>A new item as the API mapper builds it: request labels are retired, so it carries none.</summary>
+	public static ReceiptItemEntity NewItem(Guid receiptId, Guid? envelopeOverride = null)
 	{
-		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receiptId, subcategory: subcategory);
-		item.Category = category;
+		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receiptId, subcategory: null);
+		item.Category = "";
 		item.EnvelopeOverrideId = envelopeOverride;
 		return item;
 	}
 
 	/// <summary>An incoming edit of a stored item, as the API mapper would build it.</summary>
-	public static ReceiptItemEntity Edit(ReceiptItemEntity stored, string category, Guid? envelopeOverride = null) => new()
+	public static ReceiptItemEntity Edit(ReceiptItemEntity stored, Guid? envelopeOverride = null) => new()
 	{
 		Id = stored.Id,
 		ReceiptId = stored.ReceiptId,
@@ -97,10 +98,48 @@ internal sealed class EnvelopeWorld
 		UnitPriceCurrency = stored.UnitPriceCurrency,
 		TotalAmount = stored.TotalAmount,
 		TotalAmountCurrency = stored.TotalAmountCurrency,
-		Category = category,
+		Category = "",
 		Subcategory = null,
 		EnvelopeOverrideId = envelopeOverride,
 	};
+
+	/// <summary>
+	/// Records a classification write the way every assignment chokepoint does: append the assignment, move the
+	/// current pointer and let <see cref="ItemEnvelopeWriter.AfterItemTypeChangeAsync"/> make the envelope follow.
+	/// An item's type changes only through classification; the explicit-intent path locks rows with PostgreSQL SQL,
+	/// so this InMemory world stands in for it.
+	/// </summary>
+	public async Task ClassifyAsync(Guid itemId, Guid? categoryId)
+	{
+		await using ApplicationDbContext db = Factory.CreateDbContext();
+		CurrentClassificationEntity? current = await db.CurrentClassifications.SingleOrDefaultAsync(row => row.ReceiptItemId == itemId);
+		long sequence = current is null ? 1 : 1 + await db.Classifications.Where(row => row.Id == current.AssignmentId).Select(row => row.Sequence).SingleAsync();
+		PurchaseClassificationEntity assignment = new()
+		{
+			Id = Guid.NewGuid(),
+			ReceiptItemId = itemId,
+			Sequence = sequence,
+			PreviousAssignmentId = current?.AssignmentId,
+			CategoryId = categoryId,
+			TaxonomyRevisionId = Revision,
+			RecordedAt = DateTimeOffset.UtcNow,
+			Actor = "envelope-tester",
+			Source = "manual",
+			Reason = "test",
+			OperationId = Guid.NewGuid(),
+		};
+		db.Classifications.Add(assignment);
+		if (current is null)
+		{
+			db.CurrentClassifications.Add(new() { ReceiptItemId = itemId, AssignmentId = assignment.Id });
+		}
+		else
+		{
+			current.AssignmentId = assignment.Id;
+		}
+		await ItemEnvelopeWriter.AfterItemTypeChangeAsync(db, itemId, categoryId, Revision, CancellationToken.None);
+		await db.SaveChangesAsync();
+	}
 
 	public async Task<ReceiptItemEntity> ReadItemAsync(Guid id)
 	{

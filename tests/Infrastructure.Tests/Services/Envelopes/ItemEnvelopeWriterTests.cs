@@ -11,16 +11,24 @@ using Microsoft.Extensions.Options;
 namespace Infrastructure.Tests.Services.Envelopes;
 
 /// <summary>
-/// Drives the persistence chokepoints end to end on InMemory: item saves record the envelope and the
-/// legacy classification write (ClassificationService.AppendAsync) makes default envelopes follow the item type.
+/// Drives the persistence chokepoints end to end on InMemory: item saves record the envelope and a
+/// classification write (<see cref="EnvelopeWorld.ClassifyAsync"/>) makes default envelopes follow the item type.
 /// </summary>
 public class ItemEnvelopeWriterTests
 {
 	private static ReceiptItemRepository Items(EnvelopeWorld world)
 		=> new(world.Factory, Options.Create(new ClassificationOptions { WritesEnabled = true }));
 
-	private static async Task<ReceiptItemEntity> CreateItemAsync(EnvelopeWorld world, ReceiptItemEntity item)
-		=> (await Items(world).CreateAsync([item], CancellationToken.None)).Single();
+	/// <summary>Saves a new item, then gives it an item type through a classification write when one is named.</summary>
+	private static async Task<ReceiptItemEntity> CreateItemAsync(EnvelopeWorld world, ReceiptItemEntity item, Guid? itemType = null)
+	{
+		ReceiptItemEntity created = (await Items(world).CreateAsync([item], CancellationToken.None)).Single();
+		if (itemType is not null)
+		{
+			await world.ClassifyAsync(created.Id, itemType);
+		}
+		return created;
+	}
 
 	[Fact]
 	public async Task Create_NoOverride_GetsItemTypeDefaultOnceClassified()
@@ -30,7 +38,7 @@ public class ItemEnvelopeWriterTests
 		ReceiptEntity receipt = await world.AddReceiptAsync();
 
 		// Act
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -46,7 +54,7 @@ public class ItemEnvelopeWriterTests
 		ReceiptEntity receipt = await world.AddReceiptAsync();
 
 		// Act
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", "Produce"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Produce);
 
 		// Assert
 		(await world.ReadItemAsync(created.Id)).EnvelopeId.Should().Be(world.Food);
@@ -60,7 +68,7 @@ public class ItemEnvelopeWriterTests
 		ReceiptEntity receipt = await world.AddReceiptAsync();
 
 		// Act
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Gifts"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Gifts);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -74,10 +82,10 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Act
-		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Fuel")], CancellationToken.None);
+		await world.ClassifyAsync(created.Id, world.Fuel);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -91,11 +99,11 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: world.Car));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
 
 		// Act
-		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Fuel")], CancellationToken.None);
-		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Gifts")], CancellationToken.None);
+		await world.ClassifyAsync(created.Id, world.Fuel);
+		await world.ClassifyAsync(created.Id, world.Gifts);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -109,10 +117,10 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Act
-		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Groceries", world.Car)], CancellationToken.None);
+		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, world.Car)], CancellationToken.None);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -126,11 +134,11 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: world.Car));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
 		await ArchiveAsync(world, world.Car);
 
 		// Act
-		Func<Task> act = () => Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Groceries", world.Car)], CancellationToken.None);
+		Func<Task> act = () => Items(world).UpdateAsync([EnvelopeWorld.Edit(created, world.Car)], CancellationToken.None);
 
 		// Assert
 		await act.Should().NotThrowAsync();
@@ -143,10 +151,10 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Act
-		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Gifts")], CancellationToken.None);
+		await world.ClassifyAsync(created.Id, world.Gifts);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -160,8 +168,8 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity defaulted = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
-		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: world.Food));
+		ReceiptItemEntity defaulted = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Food), world.Groceries);
 		receipt.PaidFromEnvelopeId = world.Car;
 
 		// Act
@@ -182,7 +190,7 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		receipt.PaidFromEnvelopeId = null;
 
 		// Act
@@ -214,7 +222,7 @@ public class ItemEnvelopeWriterTests
 		}
 
 		// Act
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -229,8 +237,8 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
-		ReceiptItemEntity receiptSourced = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
-		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Fuel", envelopeOverride: world.Food));
+		ReceiptItemEntity receiptSourced = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+		ReceiptItemEntity overridden = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Food), world.Fuel);
 
 		// Act
 		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
@@ -256,11 +264,11 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		await world.SetStoredEnvelopeAsync(created.Id, world.Retired, EnvelopeSource.Historical);
 
 		// Act
-		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Fuel")], CancellationToken.None);
+		await world.ClassifyAsync(created.Id, world.Fuel);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -274,11 +282,11 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		await world.SetStoredEnvelopeAsync(created.Id, null, EnvelopeSource.Historical);
 
 		// Act
-		await Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Fuel")], CancellationToken.None);
+		await world.ClassifyAsync(created.Id, world.Fuel);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -292,13 +300,13 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
 		{
 			db.ItemTypeEnvelopeDefaults.Single(row => row.CategoryId == world.Groceries).EnvelopeId = world.Car;
 			await db.SaveChangesAsync();
 		}
-		ReceiptItemEntity edit = EnvelopeWorld.Edit(created, "Groceries");
+		ReceiptItemEntity edit = EnvelopeWorld.Edit(created);
 		edit.Description = "Renamed";
 
 		// Act
@@ -319,7 +327,7 @@ public class ItemEnvelopeWriterTests
 		Guid choice = archived ? world.Retired : Guid.NewGuid();
 
 		// Act
-		Func<Task> act = () => CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", envelopeOverride: choice));
+		Func<Task> act = () => CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: choice), world.Groceries);
 
 		// Assert
 		(await act.Should().ThrowAsync<EnvelopeException>()).Which.Status.Should().Be(400);
@@ -333,10 +341,10 @@ public class ItemEnvelopeWriterTests
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Act
-		Func<Task> act = () => Items(world).UpdateAsync([EnvelopeWorld.Edit(created, "Groceries", world.Retired)], CancellationToken.None);
+		Func<Task> act = () => Items(world).UpdateAsync([EnvelopeWorld.Edit(created, world.Retired)], CancellationToken.None);
 
 		// Assert
 		(await act.Should().ThrowAsync<EnvelopeException>()).Which.Status.Should().Be(400);
@@ -375,7 +383,7 @@ public class ItemEnvelopeWriterTests
 			db.Occasions.Add(new() { Id = occasion, Name = "Past", IsActive = false });
 			await db.SaveChangesAsync();
 		}
-		ReceiptItemEntity item = EnvelopeWorld.NewItem(receipt.Id, "Groceries");
+		ReceiptItemEntity item = EnvelopeWorld.NewItem(receipt.Id);
 		item.OccasionId = occasion;
 
 		// Act
@@ -399,7 +407,7 @@ public class ItemEnvelopeWriterTests
 		ReceiptEntity receipt = await world.AddReceiptAsync(occasion: occasion);
 
 		// Act
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Assert
 		(await world.ReadItemAsync(created.Id)).OccasionId.Should().Be(occasion);
@@ -423,7 +431,7 @@ public class ItemEnvelopeWriterTests
 		}
 
 		// Act
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -444,7 +452,7 @@ public class ItemEnvelopeWriterTests
 		}
 
 		// Act
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries", "Produce"));
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Produce);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -459,7 +467,7 @@ public class ItemEnvelopeWriterTests
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
 		ReceiptEntity receipt = await world.AddReceiptAsync();
 		await ArchiveAsync(world, world.Food);
-		ReceiptItemEntity whileArchived = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity whileArchived = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
 		{
 			(await db.Envelopes.SingleAsync(row => row.Id == world.Food)).IsActive = true;
@@ -467,13 +475,49 @@ public class ItemEnvelopeWriterTests
 		}
 
 		// Act
-		ReceiptItemEntity afterRestore = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, "Groceries"));
+		ReceiptItemEntity afterRestore = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
 
 		// Assert
 		(await world.ReadItemAsync(whileArchived.Id)).EnvelopeId.Should().BeNull("restoring does not move recorded history");
 		ReceiptItemEntity actual = await world.ReadItemAsync(afterRestore.Id);
 		actual.EnvelopeId.Should().Be(world.Food);
 		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
+	[Fact]
+	public async Task Create_WithoutACategoryChoice_IsUnresolvedDefault()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+
+		// Act
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id));
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().BeNull();
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
+	[Fact]
+	public async Task Edit_CarryingDifferentLegacyLabels_DoesNotChangeItemTypeOrEnvelope()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+		ReceiptItemEntity edit = EnvelopeWorld.Edit(created);
+		edit.Category = "Fuel";
+
+		// Act
+		await Items(world).UpdateAsync([edit], CancellationToken.None);
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Food, "labels no longer reclassify an item");
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+		actual.Category.Should().BeEmpty();
 	}
 
 	private static async Task ArchiveAsync(EnvelopeWorld world, Guid envelopeId)

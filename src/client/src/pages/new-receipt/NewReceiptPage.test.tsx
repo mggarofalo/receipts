@@ -148,8 +148,6 @@ vi.mock("./LineItemsSection", () => ({
               description: "Milk",
               quantity: 1,
               unitPrice: 50,
-              category: "Food",
-              subcategory: "",
             },
           ])
         }
@@ -165,8 +163,6 @@ vi.mock("./LineItemsSection", () => ({
               description: "Gift wrap",
               quantity: 1,
               unitPrice: 50,
-              category: "Gifts",
-              subcategory: "",
               envelopeId: "env-gifts",
             },
           ])
@@ -547,13 +543,15 @@ describe("NewReceiptPage", () => {
           items: [
             expect.objectContaining({
               description: "Milk",
-              category: "Food",
-              subcategory: null,
             }),
           ],
         }),
       );
     });
+    // Legacy labels are retired: complete-receipt items carry none.
+    const [request] = mockCreateCompleteReceiptAsync.mock.calls[0];
+    expect(request.items[0]).not.toHaveProperty("category");
+    expect(request.items[0]).not.toHaveProperty("subcategory");
 
     expect(toast.success).toHaveBeenCalledWith("Receipt saved");
     expect(mockNavigate).toHaveBeenCalledWith("/receipts/receipt-123");

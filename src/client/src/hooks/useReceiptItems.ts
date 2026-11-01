@@ -115,8 +115,6 @@ export function useCreateReceiptItem() {
         description: string;
         quantity: number;
         unitPrice: number;
-        category: string;
-        subcategory: string;
         /** Set when the line was entered from a template (RECEIPTS-881). */
         itemTemplateId?: string;
         normalizationIntent?: ReceiptNormalizationIntent;
@@ -135,7 +133,7 @@ export function useCreateReceiptItem() {
             path: { receiptId },
             query: { clientRequestId: requestId },
           },
-          body: { ...body, subcategory: body.subcategory || null },
+          body,
         },
       );
       if (error) throw error;
@@ -163,8 +161,6 @@ export function useUpdateReceiptItem() {
         description: string;
         quantity: number;
         unitPrice: number;
-        category: string;
-        subcategory: string;
         normalizationIntent?: ReceiptNormalizationIntent;
         classification?: ClassificationRequest;
       };
@@ -179,7 +175,7 @@ export function useUpdateReceiptItem() {
           path: { id: body.id },
           query: { clientRequestId: requestId },
         },
-        body: { ...body, subcategory: body.subcategory || null },
+        body,
       });
       if (error) throw error;
       if (attempt.current?.id === requestId) attempt.current = null;

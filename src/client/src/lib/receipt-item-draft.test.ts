@@ -6,8 +6,6 @@ const valid = {
   description: " Milk ",
   quantity: 1,
   unitPrice: 0,
-  category: " Food ",
-  subcategory: " Dairy ",
 };
 
 describe("receipt item draft", () => {
@@ -17,8 +15,6 @@ describe("receipt item draft", () => {
       description: "Milk",
       quantity: 0.5,
       unitPrice: 0,
-      category: "Food",
-      subcategory: "Dairy",
     });
   });
   it.each(["description"])("rejects whitespace-only %s", (field) => {
@@ -43,26 +39,24 @@ describe("receipt item draft", () => {
     expect(
       receiptItemDraftSchema.parse({
         description: "Milk",
-        category: "Food",
         quantity: 1,
         unitPrice: 0,
       }),
     ).toEqual({
       receiptItemCode: "",
       description: "Milk",
-      category: "Food",
-      subcategory: "",
       quantity: 1,
       unitPrice: 0,
     });
   });
 });
 
-it("accepts parent and Unclassified compatibility snapshots", () => {
-  expect(
-    receiptItemDraftSchema.parse({ ...valid, category: "", subcategory: "" }),
-  ).toMatchObject({ category: "", subcategory: "" });
-  expect(
-    receiptItemDraftSchema.parse({ ...valid, subcategory: "" }),
-  ).toMatchObject({ category: "Food", subcategory: "" });
+it("drops retired legacy labels instead of carrying them in the draft", () => {
+  const parsed = receiptItemDraftSchema.parse({
+    ...valid,
+    category: "Food",
+    subcategory: "Dairy",
+  });
+  expect(parsed).not.toHaveProperty("category");
+  expect(parsed).not.toHaveProperty("subcategory");
 });

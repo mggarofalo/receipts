@@ -30,20 +30,18 @@ Explicit selections, including clearing the category, take precedence; an invali
 explicit selection returns a rejection disposition without falling back to a mapping.
 
 Aggregate receipt saves now reuse approvals for genuinely new items with no explicit
-classification intent and empty legacy category/subcategory labels, when classification
-writes are enabled and the legacy migration is complete. Existing assignments, including
-manual clear, survive incidental financial or source edits. Nonempty legacy labels retain
-the compatibility writer's behavior; they may be deliberate or imported evidence and do
-not constitute a request to apply a mapping. Future contextual defaults must preserve this
-distinction.
+classification intent, when classification writes are enabled and the legacy migration is
+complete. Existing assignments, including manual clear, survive incidental financial or
+source edits. Request labels are ignored since RECEIPTS-1085, so they no longer opt an item
+out of a mapping.
 
 The aggregate writer holds `taxonomy.Head` before reading the mapping through its own
 DbContext and transaction. Approval, revocation and taxonomy changes take the same lock.
 It checks normalized source values as well as the fingerprint and current semantic
 validity, then appends classification and operation evidence atomically with receipt
 facts. A preview alone never authorizes a write. Missing, revoked, stale or unavailable
-mappings retain the existing `legacy_write` fallback (including unresolved null), without
-calling a model/provider.
+mappings fall back to the no-choice `legacy_write` assignment (unresolved, null category),
+without calling a model/provider.
 
 Mapping assignments use source `approved_mapping`, the current taxonomy revision, and a
 JSON `CategoryMappingReuseEvidence` reason containing the immutable mapping revision,

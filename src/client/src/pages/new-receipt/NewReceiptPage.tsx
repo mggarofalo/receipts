@@ -281,7 +281,6 @@ export default function NewReceiptPage() {
           quantity: item.quantity,
           unitPrice: item.unitPrice,
           envelopeId: item.envelopeId ?? null,
-          category: item.category,
           classification: item.categoryOperationId
             ? classificationChange(
                 item.categoryChoice,
@@ -289,7 +288,6 @@ export default function NewReceiptPage() {
                 item.categoryOperationId,
               )
             : undefined,
-          subcategory: item.subcategory || null,
           normalizationIntent: currentNormalizationChoice(
             item.normalizationChoice,
             receiptNormalizationSource(headerValues.location, item),

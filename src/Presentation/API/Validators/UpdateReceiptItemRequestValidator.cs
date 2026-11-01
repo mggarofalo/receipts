@@ -9,7 +9,6 @@ public class UpdateReceiptItemRequestValidator : AbstractValidator<UpdateReceipt
 	public const string IdMustNotBeEmpty = "ID must not be empty.";
 	public const string DescriptionMustNotBeEmpty = "Description must not be empty.";
 	public const string QuantityMustBePositive = "Quantity must be positive.";
-	public const string CategoryMustNotBeEmpty = "Category must not be empty.";
 
 	public UpdateReceiptItemRequestValidator()
 	{
@@ -28,9 +27,5 @@ public class UpdateReceiptItemRequestValidator : AbstractValidator<UpdateReceipt
 		RuleFor(x => x.Quantity)
 			.GreaterThan(0)
 			.WithMessage(QuantityMustBePositive);
-
-		RuleFor(x => x.Category)
-			.NotNull()
-			.WithMessage(CategoryMustNotBeEmpty);
 	}
 }

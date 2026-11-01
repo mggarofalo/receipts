@@ -115,8 +115,8 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			stored.Quantity.Should().Be(2);
 			stored.UnitPrice.Should().Be(4);
 			stored.TotalAmount.Should().Be(8);
-			stored.Category.Should().Be("Groceries");
-			stored.Subcategory.Should().Be("Dairy");
+			stored.Category.Should().Be("Food", "the legacy labels are write-once history an edit never changes");
+			stored.Subcategory.Should().BeNull();
 			stored.ReceiptItemCode.Should().Be("new-code");
 			stored.NormalizedDescriptionId.Should().Be(canonicalId);
 		}
@@ -224,8 +224,8 @@ public class UpdateOwnershipTests(PostgresFixture fixture) : IClassFixture<Postg
 			stored.Quantity.Should().Be(2);
 			stored.UnitPrice.Should().Be(4);
 			stored.TotalAmount.Should().Be(8);
-			stored.Category.Should().Be("Groceries");
-			stored.Subcategory.Should().Be("Dairy");
+			stored.Category.Should().Be("Food", "the legacy labels are write-once history an edit never changes");
+			stored.Subcategory.Should().BeNull();
 			stored.ReceiptItemCode.Should().Be("new-code");
 			stored.NormalizedDescriptionId.Should().Be(original.NormalizedDescriptionId);
 		}

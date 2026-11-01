@@ -50,8 +50,6 @@ describe("receipt item retry identity", () => {
     description: "Milk",
     quantity: 1,
     unitPrice: 5,
-    category: "Food",
-    subcategory: "",
   };
 
   it("reuses the create request identity after a lost response, and retires it after success", async () => {
@@ -67,7 +65,9 @@ describe("receipt item retry identity", () => {
       "Connection lost",
     );
     await result.current.mutateAsync({ ...input, body: { ...body } });
-    expect(post.mock.calls[0][1].body.subcategory).toBeNull();
+    // Legacy labels are retired: the request carries neither.
+    expect(post.mock.calls[0][1].body).not.toHaveProperty("category");
+    expect(post.mock.calls[0][1].body).not.toHaveProperty("subcategory");
     expect(post.mock.calls[1][1].body).toEqual(post.mock.calls[0][1].body);
     const firstId = post.mock.calls[0][1].params.query.clientRequestId;
     expect(firstId).toEqual(expect.any(String));
@@ -94,7 +94,8 @@ describe("receipt item retry identity", () => {
     await expect(result.current.mutateAsync(input)).rejects.toMatchObject({
       status: 409,
     });
-    expect(put.mock.calls[0][1].body.subcategory).toBeNull();
+    expect(put.mock.calls[0][1].body).not.toHaveProperty("category");
+    expect(put.mock.calls[0][1].body).not.toHaveProperty("subcategory");
     const firstId = put.mock.calls[0][1].params.query.clientRequestId;
     expect(put.mock.calls[1][1].params.query.clientRequestId).toBe(firstId);
     await expect(
@@ -178,8 +179,6 @@ describe("useReceiptItems", () => {
       description: "Bananas",
       quantity: 6,
       unitPrice: 0.5,
-      category: "Food",
-      subcategory: "Produce",
     };
     const created = { id: "2", ...body };
     (client.POST as Mock).mockResolvedValue({
@@ -214,8 +213,6 @@ describe("useReceiptItems", () => {
       description: "Apples (updated)",
       quantity: 5,
       unitPrice: 1.75,
-      category: "Food",
-      subcategory: "Produce",
     };
     (client.PUT as Mock).mockResolvedValue({ error: undefined });
 
@@ -306,8 +303,6 @@ describe("useReceiptItems", () => {
         description: "X",
         quantity: 1,
         unitPrice: 1,
-        category: "C",
-        subcategory: "S",
       },
     });
 
@@ -331,8 +326,6 @@ describe("useReceiptItems", () => {
         description: "X",
         quantity: 1,
         unitPrice: 1,
-        category: "C",
-        subcategory: "S",
       },
     });
 

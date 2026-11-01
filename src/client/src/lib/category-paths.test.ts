@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  categoryLegacyLabels,
   classificationChange,
   categoryPaths,
   currentCategoryChoice,
@@ -33,35 +32,6 @@ describe("categoryPaths", () => {
         { id: "cycle", name: "Cycle", parentId: "cycle", archived: false },
       ]),
     ).toEqual([]);
-  });
-
-  it("only derives the first two compatibility labels from a chosen identity", () => {
-    const path = ["Food", "Produce", "Fruit"].map((name, index) => ({
-      id: String(index),
-      name,
-      archived: false,
-    }));
-    expect(
-      categoryLegacyLabels({
-        categoryId: "2",
-        taxonomyRevisionId: "revision",
-        path,
-      }),
-    ).toEqual({ category: "Food", subcategory: "Produce" });
-    expect(
-      categoryLegacyLabels({
-        categoryId: "0",
-        taxonomyRevisionId: "revision",
-        path: path.slice(0, 1),
-      }),
-    ).toEqual({ category: "Food", subcategory: null });
-    expect(
-      categoryLegacyLabels({
-        categoryId: null,
-        taxonomyRevisionId: "revision",
-        path: [],
-      }),
-    ).toEqual({ category: "", subcategory: null });
   });
 });
 

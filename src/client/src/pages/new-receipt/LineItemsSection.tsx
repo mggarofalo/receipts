@@ -11,7 +11,6 @@ import {
 } from "@/components/envelopes/BudgetChoices";
 import { previewItemEnvelope, receiptEnvelope } from "@/lib/envelope-display";
 import {
-  categoryLegacyLabels,
   type CategoryChoice,
   currentCategoryChoice,
 } from "@/lib/category-paths";
@@ -30,7 +29,7 @@ import {
   calculateSubtotal,
   calculateLineTotal,
 } from "@/lib/receipt-arithmetic";
-import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, useId } from "react";
 import { generateId } from "@/lib/id";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
@@ -58,6 +57,7 @@ import {
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   Form,
   FormControl,
@@ -86,8 +86,6 @@ export interface ReceiptLineItem {
   description: string;
   quantity: number;
   unitPrice: number;
-  category: string;
-  subcategory: string;
   normalizationChoice?: ReceiptNormalizationChoice;
   categoryChoice?: CategoryChoice;
   categoryOperationId?: string;
@@ -119,6 +117,7 @@ export function LineItemsSection({
   // Index of the keyboard-highlighted row in the description lookup.
   const [descriptionActiveIndex, setDescriptionActiveIndex] = useState(0);
   const taxonomy = useCategoryTaxonomy();
+  const categoryPickerId = useId();
   const { isAdmin } = usePermission();
   const [categoryChoice, setCategoryChoice] = useState<CategoryChoice>();
   const [categoryOperationId, setCategoryOperationId] = useState(generateId);
@@ -131,8 +130,6 @@ export function LineItemsSection({
       description: "",
       quantity: 1,
       unitPrice: 0,
-      category: "",
-      subcategory: "",
     },
   });
 
@@ -182,14 +179,8 @@ export function LineItemsSection({
     (choice: CategoryChoice) => {
       setCategoryChoice(choice);
       setCategoryOperationId(generateId());
-      const labels = categoryLegacyLabels(choice);
-      form.setValue("category", labels.category, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-      form.setValue("subcategory", labels.subcategory ?? "");
     },
-    [form],
+    [],
   );
 
   const applyItemCodeSuggestion = useCallback(
@@ -445,8 +436,6 @@ export function LineItemsSection({
         unitPrice: values.unitPrice,
         categoryChoice,
         categoryOperationId,
-        category: values.category,
-        subcategory: values.subcategory ?? "",
         normalizationChoice: currentNormalizationChoice(
           normalizationChoice,
           receiptNormalizationSource(location, values),
@@ -462,8 +451,6 @@ export function LineItemsSection({
         description: "",
         quantity: 1,
         unitPrice: 0,
-        category: "",
-        subcategory: "",
       });
       setShowSuggestions(false);
       setShowItemCodeSuggestions(false);
@@ -494,16 +481,12 @@ export function LineItemsSection({
     description: string;
     quantity: number;
     unitPrice: number;
-    category: string;
-    subcategory: string;
     categoryChoice?: CategoryChoice;
     categoryOperationId?: string;
   }>({
     description: "",
     quantity: 1,
     unitPrice: 0,
-    category: "",
-    subcategory: "",
   });
 
   const startEditing = useCallback((item: ReceiptLineItem) => {
@@ -514,8 +497,6 @@ export function LineItemsSection({
       unitPrice: item.unitPrice,
       categoryChoice: item.categoryChoice,
       categoryOperationId: item.categoryOperationId,
-      category: item.category,
-      subcategory: item.subcategory,
     });
   }, []);
 
@@ -539,8 +520,6 @@ export function LineItemsSection({
               unitPrice: draft.unitPrice,
               categoryChoice: editDraft.categoryChoice,
               categoryOperationId: editDraft.categoryOperationId,
-              category: draft.category,
-              subcategory: draft.subcategory,
             }
           : item,
       ),
@@ -851,38 +830,28 @@ export function LineItemsSection({
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem className="min-w-[12rem] flex-1">
-                    <FormLabel>Category</FormLabel>
-                    <FormControl>
-                      <CategoryPathPicker
-                        ref={field.ref}
-                        onBlur={field.onBlur}
-                        name={field.name}
-                        revision={taxonomy.data}
-                        canCreate={isAdmin()}
-                        value={categoryChoice}
-                        loading={taxonomy.isLoading}
-                        error={taxonomy.isError}
-                        onValueChange={chooseCategory}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                    {taxonomy.isError && (
-                      <RequestFailure
-                        message="Categories unavailable. Your draft is retained."
-                        retry={() => {
-                          void taxonomy.refetch();
-                        }}
-                        isRetrying={taxonomy.isFetching}
-                      />
-                    )}
-                  </FormItem>
+              {/* The item type is a classification choice, not a form value. */}
+              <div className="grid min-w-[12rem] flex-1 grid-cols-[minmax(0,1fr)] gap-2">
+                <Label htmlFor={categoryPickerId}>Category</Label>
+                <CategoryPathPicker
+                  id={categoryPickerId}
+                  revision={taxonomy.data}
+                  canCreate={isAdmin()}
+                  value={categoryChoice}
+                  loading={taxonomy.isLoading}
+                  error={taxonomy.isError}
+                  onValueChange={chooseCategory}
+                />
+                {taxonomy.isError && (
+                  <RequestFailure
+                    message="Categories unavailable. Your draft is retained."
+                    retry={() => {
+                      void taxonomy.refetch();
+                    }}
+                    isRetrying={taxonomy.isFetching}
+                  />
                 )}
-              />
+              </div>
             </div>
 
             <div className="flex flex-wrap items-end gap-3">
@@ -1008,13 +977,10 @@ export function LineItemsSection({
                           loading={taxonomy.isLoading}
                           error={taxonomy.isError}
                           onValueChange={(choice) => {
-                            const labels = categoryLegacyLabels(choice);
                             setEditDraft((d) => ({
                               ...d,
                               categoryChoice: choice,
                               categoryOperationId: generateId(),
-                              category: labels.category,
-                              subcategory: labels.subcategory ?? "",
                             }));
                           }}
                         />
@@ -1068,11 +1034,10 @@ export function LineItemsSection({
                       )}
                     </TableCell>
                     <TableCell>
-                      {item.categoryChoice
-                        ? item.categoryChoice.path
-                            .map((node) => node.name)
-                            .join(" / ") || "Unclassified"
-                        : `${item.category}${item.subcategory ? ` / ${item.subcategory}` : ""}`}
+                      {item.categoryChoice &&
+                        (item.categoryChoice.path
+                          .map((node) => node.name)
+                          .join(" / ") || "Unclassified")}
                       <EnvelopeBadge
                         envelopes={envelopes}
                         envelopeId={itemEnvelopes.get(item.id)}

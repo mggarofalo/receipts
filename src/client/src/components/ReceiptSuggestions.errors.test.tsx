@@ -524,8 +524,6 @@ const itemDefaults = {
   description: "Manual milk",
   quantity: 1,
   unitPrice: 2.01,
-  category: "Food",
-  subcategory: "Dairy",
 };
 it.each(["edit", "new"] as const)(
   "retains %s item values and location-scoped item-code Retry outside its popup",

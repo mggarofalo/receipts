@@ -48,7 +48,7 @@ public class CompleteReceiptWriter(
 				receipt.PaidFromEnvelopeId,
 				receipt.OccasionId,
 				transactions = transactions.Select(value => new { value.CardId, value.Amount, value.Date }),
-				items = items.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.Category, value.Subcategory, value.NormalizationIntent, value.Classification, value.EnvelopeOverrideId, value.OccasionId }),
+				items = items.Select(value => new { value.Description, value.ReceiptItemCode, value.Quantity, value.UnitPrice, value.TotalAmount, value.NormalizationIntent, value.Classification, value.EnvelopeOverrideId, value.OccasionId }),
 				adjustments = adjustments.Select(value => new { value.Type, value.Amount, value.Description })
 			}, cancellationToken);
 			if (request.ReceiptId != Guid.Empty)

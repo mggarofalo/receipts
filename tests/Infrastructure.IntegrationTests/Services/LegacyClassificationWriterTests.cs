@@ -56,27 +56,33 @@ public sealed class LegacyClassificationWriterTests : IClassFixture<PostgresFixt
 		await repository.UpdateAsync([original], default);
 		(await classifications.HistoryAsync(original.Id, null, 10)).Items.Single().Id.Should().Be(first.Id);
 
-		var resolved = New("Food", "Dairy");
+		// Labels that name a real path no longer resolve it: a save without a choice records an unresolved observation.
+		var labelled = New("Food", "Dairy");
 		var unresolved = New("  unknown  ", "");
 		Guid requestId = Guid.NewGuid();
-		await repository.CreateAsync([resolved, unresolved], [], requestId, default);
-		await repository.CreateAsync([resolved, unresolved], [], requestId, default);
-		var resolvedHistory = (await classifications.HistoryAsync(resolved.Id, null, 10)).Items.Single();
-		resolvedHistory.CategoryId.Should().Be(first.CategoryId);
-		resolvedHistory.Source.Should().Be("legacy_write");
-		resolvedHistory.LegacyResolution.Should().Be("resolved_path");
+		await repository.CreateAsync([labelled, unresolved], [], requestId, default);
+		// A retry under the same request ID is the same request even when its labels differ.
+		labelled.Category = "Relabelled"; labelled.Subcategory = null;
+		await repository.CreateAsync([labelled, unresolved], [], requestId, default);
+		(await db.ReceiptItems.AsNoTracking().CountAsync(x => x.ReceiptId == receiptId)).Should().Be(3);
+		var labelledRow = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == labelled.Id);
+		labelledRow.Category.Should().Be("Food"); labelledRow.Subcategory.Should().Be("Dairy");
+		var labelledHistory = (await classifications.HistoryAsync(labelled.Id, null, 10)).Items.Single();
+		labelledHistory.CategoryId.Should().BeNull();
+		labelledHistory.Source.Should().Be("legacy_write");
+		labelledHistory.Reason.Should().Be("Saved without a category choice.");
+		labelledHistory.LegacyResolution.Should().Be("unresolved_path");
+		labelledHistory.LegacyCategory.Should().Be("Food"); labelledHistory.LegacySubcategory.Should().Be("Dairy");
 		var unknown = (await classifications.HistoryAsync(unresolved.Id, null, 10)).Items.Single();
 		unknown.CategoryId.Should().BeNull(); unknown.LegacyResolution.Should().Be("unresolved_path");
 		unknown.LegacyCategory.Should().Be("  unknown  "); unknown.LegacySubcategory.Should().Be("");
-		resolved.Subcategory = null;
-		await repository.UpdateAsync([resolved], default);
-		var broad = (await classifications.HistoryAsync(resolved.Id, null, 10)).Items.First();
-		broad.Sequence.Should().Be(2); broad.Path.Should().ContainSingle();
-		resolved.Category = "unmatched"; resolved.Description = "Must roll back";
-		Func<Task> ambiguous = () => repository.UpdateAsync([resolved], default);
-		(await ambiguous.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
-		(await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == resolved.Id)).Description.Should().Be("Manual item");
-		(await classifications.HistoryAsync(resolved.Id, null, 10)).Items.Should().HaveCount(2);
+		// An edit that relabels without a choice keeps the stored labels and appends nothing; it never conflicts.
+		labelled.Category = "unmatched"; labelled.Subcategory = null; labelled.Description = "Relabelled edit";
+		await repository.UpdateAsync([labelled], default);
+		labelledRow = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == labelled.Id);
+		labelledRow.Description.Should().Be("Relabelled edit");
+		labelledRow.Category.Should().Be("Food"); labelledRow.Subcategory.Should().Be("Dairy");
+		(await classifications.HistoryAsync(labelled.Id, null, 10)).Items.Should().ContainSingle().Which.Id.Should().Be(labelledHistory.Id);
 		var receiptMapper = new Infrastructure.Mapping.ReceiptMapper();
 		var itemMapper = new Infrastructure.Mapping.ReceiptItemMapper();
 		var complete = new CompleteReceiptWriter(factory, receiptMapper, new Infrastructure.Mapping.TransactionMapper(), itemMapper, new Infrastructure.Mapping.AdjustmentMapper());
@@ -86,8 +92,13 @@ public sealed class LegacyClassificationWriterTests : IClassFixture<PostgresFixt
 		var saved = await complete.CreateAsync(completeReceipt, [], [completeItem], [], completeRequest, default);
 		var replay = await complete.CreateAsync(completeReceipt, [], [completeItem], [], completeRequest, default);
 		replay.Receipt.Id.Should().Be(saved.Receipt.Id);
+		// A complete retry is the same request even when its labels differ.
+		var relabelledReplay = await complete.CreateAsync(completeReceipt, [], [itemMapper.ToDomain(New("Relabelled"))], [], completeRequest, default);
+		relabelledReplay.Receipt.Id.Should().Be(saved.Receipt.Id);
+		relabelledReplay.Items.Single().Id.Should().Be(saved.Items.Single().Id);
 		var completeHistory = (await classifications.HistoryAsync(saved.Items.Single().Id, null, 10)).Items.Single();
-		completeHistory.Source.Should().Be("legacy_write"); completeHistory.CategoryId.Should().Be(first.CategoryId);
+		completeHistory.Source.Should().Be("legacy_write"); completeHistory.CategoryId.Should().BeNull();
+		completeHistory.LegacyResolution.Should().Be("unresolved_path");
 		(await migration.ReadStatusAsync()).Backfilled.Should().BeTrue();
 		db.Database.HasPendingModelChanges().Should().BeFalse();
 

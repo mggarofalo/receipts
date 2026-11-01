@@ -2,7 +2,6 @@ import { CategoryPathPicker } from "@/components/categories/CategoryPathPicker";
 import { useCategoryTaxonomy } from "@/hooks/useCategoryTaxonomy";
 import { usePermission } from "@/hooks/usePermission";
 import {
-  categoryLegacyLabels,
   classificationChange,
   currentCategoryChoice,
   type CategoryChoice,
@@ -20,7 +19,7 @@ import {
 import { generateId } from "@/lib/id";
 import { RequestFailure } from "@/components/RequestFailure";
 import { calculateLineTotal } from "@/lib/receipt-arithmetic";
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, useId } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -48,6 +47,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   Form,
   FormControl,
@@ -129,6 +129,7 @@ export function ReceiptItemForm({
     useFieldHistory(itemCodeHistory);
 
   const taxonomy = useCategoryTaxonomy();
+  const categoryPickerId = useId();
   const { isAdmin } = usePermission();
   const [initialClassification] = useState(currentClassification);
   const [categoryChoice, setCategoryChoice] = useState<
@@ -159,8 +160,6 @@ export function ReceiptItemForm({
       description: "",
       quantity: 1,
       unitPrice: 0,
-      category: "",
-      subcategory: "",
       ...defaultValues,
     },
   });
@@ -267,12 +266,6 @@ export function ReceiptItemForm({
   function chooseCategory(choice: CategoryChoice) {
     setCategoryChoice(choice);
     setCategoryOperationId(generateId());
-    const labels = categoryLegacyLabels(choice);
-    form.setValue("category", labels.category, {
-      shouldDirty: true,
-      shouldValidate: true,
-    });
-    form.setValue("subcategory", labels.subcategory ?? "");
   }
 
   async function handleFormSubmit(values: ReceiptItemSchemaValues) {
@@ -289,14 +282,6 @@ export function ReceiptItemForm({
     );
     onSubmit({
       ...values,
-      // An edit that keeps the item type sends the stored labels back untouched;
-      // relabelled text without a classification is read as a legacy write.
-      ...(mode === "edit" && !classification
-        ? {
-            category: defaultValues?.category ?? values.category,
-            subcategory: defaultValues?.subcategory ?? values.subcategory,
-          }
-        : {}),
       classification,
       normalizationIntent: currentNormalizationChoice(
         normalizationChoice,
@@ -697,44 +682,34 @@ export function ReceiptItemForm({
 
         {/* flex-wrap + per-field min-w so fields wrap instead of colliding. */}
         <div className="flex flex-wrap gap-4">
-          <FormField
-            control={form.control}
-            name="category"
-            render={({ field }) => (
-              <FormItem className="min-w-[200px] flex-1">
-                <FormLabel>Category</FormLabel>
-                <FormControl>
-                  <CategoryPathPicker
-                    ref={field.ref}
-                    onBlur={field.onBlur}
-                    name={field.name}
-                    revision={taxonomy.data}
-                    canCreate={isAdmin()}
-                    value={categoryChoice}
-                    loading={taxonomy.isLoading}
-                    error={taxonomy.isError}
-                    disabled={isSubmitting}
-                    onValueChange={chooseCategory}
-                  />
-                </FormControl>
-                {mode === "edit" && !categoryChoice && (
-                  <p className="text-sm text-muted-foreground">
-                    No category recorded yet. Choose one to classify this item.
-                  </p>
-                )}
-                <FormMessage />
-                {taxonomy.isError && (
-                  <RequestFailure
-                    message="Categories unavailable. Your item and saved category are retained."
-                    retry={() => {
-                      void taxonomy.refetch();
-                    }}
-                    isRetrying={taxonomy.isFetching}
-                  />
-                )}
-              </FormItem>
+          {/* The item type is a classification choice, not a form value. */}
+          <div className="grid min-w-[200px] flex-1 grid-cols-[minmax(0,1fr)] gap-2">
+            <Label htmlFor={categoryPickerId}>Category</Label>
+            <CategoryPathPicker
+              id={categoryPickerId}
+              revision={taxonomy.data}
+              canCreate={isAdmin()}
+              value={categoryChoice}
+              loading={taxonomy.isLoading}
+              error={taxonomy.isError}
+              disabled={isSubmitting}
+              onValueChange={chooseCategory}
+            />
+            {mode === "edit" && !categoryChoice && (
+              <p className="text-sm text-muted-foreground">
+                No category recorded yet. Choose one to classify this item.
+              </p>
             )}
-          />
+            {taxonomy.isError && (
+              <RequestFailure
+                message="Categories unavailable. Your item and saved category are retained."
+                retry={() => {
+                  void taxonomy.refetch();
+                }}
+                isRetrying={taxonomy.isFetching}
+              />
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-4">
