@@ -83,7 +83,7 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 	}
 
 	[Fact]
-	public async Task SettingsSaveRetiresUndecidedAttemptsAndLeavesOthersUntouched()
+	public async Task DecisionChangeRetiresUndecidedAttemptsAndLeavesOthersUntouched()
 	{
 		var seed = await SeedAsync(root: 0.95, leaf: 0.95);
 		DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -110,7 +110,7 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 			before = await db.CategoryAssistanceAttempts.AsNoTracking().Where(x => kept.Contains(x.Id)).ToListAsync();
 		}
 
-		await SaveSettingsAsync(seed, s => s with { DailyLimit = s.DailyLimit + 1 });
+		await SaveSettingsAsync(seed, s => s with { AutoApply = !s.AutoApply });
 
 		await using var verify = fixture.CreateDbContext();
 		foreach (var row in await verify.CategoryAssistanceAttempts.AsNoTracking().Where(x => retired.Contains(x.Id)).ToListAsync())
@@ -122,11 +122,66 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 			row.CompletedAt.Should().NotBeNull().And.BeOnOrAfter(now.AddSeconds(-1));
 		}
 		(await verify.CategoryAssistanceAttempts.AsNoTracking().Where(x => kept.Contains(x.Id)).ToListAsync())
-			.Should().BeEquivalentTo(before, "a settings save leaves started and decided attempts alone");
+			.Should().BeEquivalentTo(before, "a decision change leaves started and decided attempts alone");
 	}
 
 	[Fact]
-	public async Task SettingsSaveFreesPendingSlotsHeldByUndecidedResults()
+	public async Task LimitsOnlySavesKeepTheRevisionAuditEachSaveAndLeaveUndecidedAttemptsAlone()
+	{
+		var store = new CategoryAssistanceSettingsStore(new Factory(fixture), TimeProvider.System);
+		string admin = await UserAsync();
+		var initial = await store.GetAsync();
+		var enabled = await store.UpdateAsync(admin, initial.Revision,
+			initial with { Enabled = true, Provider = "jev", Model = CategorySuggestionPolicy.Model });
+		enabled.Revision.Should().NotBe(initial.Revision, "enabling is a decision change");
+		var seed = await SeedAsync(root: 0.95, leaf: 0.95);
+		var undecided = new List<Guid> { seed.Attempt, await CloneAttemptAsync(seed, "queued"), await CloneAttemptAsync(seed, "abstained") };
+		List<CategoryAssistanceAttemptEntity> before;
+		await using (var db = fixture.CreateDbContext())
+		{
+			before = await db.CategoryAssistanceAttempts.AsNoTracking().Where(x => undecided.Contains(x.Id)).ToListAsync();
+		}
+		before.Select(x => x.SettingsRevision).Should().AllBeEquivalentTo(enabled.Revision);
+
+		var daily = await store.UpdateAsync(seed.Actor, enabled.Revision, enabled with { DailyLimit = enabled.DailyLimit + 1 });
+		// The second save is made with the revision the first save left in place.
+		var pending = await store.UpdateAsync(admin, enabled.Revision, daily with { PendingLimit = daily.PendingLimit + 1 });
+
+		daily.Revision.Should().Be(enabled.Revision);
+		pending.Revision.Should().Be(enabled.Revision);
+		(await store.GetAsync()).Should().Be(enabled with { DailyLimit = enabled.DailyLimit + 1, PendingLimit = enabled.PendingLimit + 1 });
+		await using var verify = fixture.CreateDbContext();
+		var audit = await verify.CategoryAssistanceSettingsAudits.AsNoTracking()
+			.Where(x => x.Revision == enabled.Revision).OrderBy(x => x.RecordedAt).ToListAsync();
+		audit.Select(x => (x.Actor, x.PreviousRevision)).Should().Equal(
+			(admin, initial.Revision), (seed.Actor, enabled.Revision), (admin, enabled.Revision));
+		(await verify.CategoryAssistanceAttempts.AsNoTracking().Where(x => undecided.Contains(x.Id)).ToListAsync())
+			.Should().BeEquivalentTo(before, "a limits-only save does not retire results of the current revision");
+	}
+
+	[Fact]
+	public async Task AfterADecisionChangeASaveWithTheOldRevisionIsRefused()
+	{
+		var seed = await SeedAsync(root: 0.95, leaf: 0.95);
+		var store = new CategoryAssistanceSettingsStore(new Factory(fixture), TimeProvider.System);
+		var current = await store.GetAsync();
+		var limits = await store.UpdateAsync(seed.Actor, current.Revision, current with { DailyLimit = current.DailyLimit + 1 });
+		limits.Revision.Should().Be(current.Revision);
+
+		var decided = await store.UpdateAsync(seed.Actor, limits.Revision, limits with { AutoApply = !limits.AutoApply });
+
+		decided.Revision.Should().NotBe(current.Revision);
+		await using var verify = fixture.CreateDbContext();
+		(await verify.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == seed.Attempt)).State.Should().Be("stale");
+		int audited = await verify.CategoryAssistanceSettingsAudits.CountAsync();
+		Func<Task> stale = () => store.UpdateAsync(seed.Actor, current.Revision, limits with { PendingLimit = limits.PendingLimit + 1 });
+		(await stale.Should().ThrowAsync<Application.Taxonomy.TaxonomyException>()).Which.Status.Should().Be(409);
+		(await store.GetAsync()).Should().Be(decided);
+		(await verify.CategoryAssistanceSettingsAudits.CountAsync()).Should().Be(audited);
+	}
+
+	[Fact]
+	public async Task DecisionChangeFreesPendingSlotsHeldByUndecidedResults()
 	{
 		var seed = await SeedAsync(root: 0.95, leaf: 0.95, pendingLimit: 2);
 		await CloneAttemptAsync(seed, "abstained");
@@ -134,7 +189,7 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 		var dispatch = Dispatch();
 		(await dispatch.ClaimQueuedAsync(default)).Should().BeNull("a suggestion and an abstention fill the pending limit");
 
-		await SaveSettingsAsync(seed, s => s with { DailyLimit = s.DailyLimit + 1 });
+		await SaveSettingsAsync(seed, s => s with { AutoApply = !s.AutoApply });
 		Guid soap = await AddItemAsync(seed, description: "Dish soap", attach: false);
 
 		var work = await dispatch.ClaimQueuedAsync(default);
