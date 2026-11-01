@@ -1018,6 +1018,51 @@ public class EmbeddingGenerationServiceTests
 	}
 
 	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_LabelVectorFromAnotherEmbeddingSpace_IsRebuiltInPlace()
+	{
+		Guid id = Guid.NewGuid();
+		Guid labelRowId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = id,
+				CanonicalName = "KS ORG CHKN BRST",
+				DisplayLabel = "Chicken breast",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(CreateFakeEmbedding()),
+				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			seed.ItemEmbeddings.Add(new ItemEmbeddingEntity
+			{
+				Id = labelRowId,
+				EntityType = CatalogSemanticNeighbours.LabelEntityType,
+				EntityId = id,
+				EntityText = "Chicken breast",
+				Embedding = new Vector(CreateFakeEmbedding()),
+				ModelVersion = "obsolete-space",
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((List<string> texts, CancellationToken _) => texts.Select(_ => CreateFakeEmbedding()).ToList());
+
+		(await CreatePublisherAwareService().ProcessPendingEmbeddingsAsync(CancellationToken.None)).Should().Be(1);
+
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		ItemEmbeddingEntity label = await verify.ItemEmbeddings.SingleAsync();
+		label.Id.Should().Be(labelRowId, "the row is updated, not duplicated");
+		label.ModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
+			change.EntityType == CommittedEntityType.NormalizedDescription)), Times.Once,
+			"a new label vector changes the name's suggestions");
+	}
+
+	[Fact]
 	public async Task ProcessPendingEmbeddingsAsync_LabelChangesDuringGeneration_SkipsTheStaleLabel()
 	{
 		Guid id = Guid.NewGuid();

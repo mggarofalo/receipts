@@ -57,7 +57,7 @@ forces the index plan with 60% of rows stale, and fails without the rule.
 ## Rebuild behavior
 
 `EmbeddingGenerationService` processes at most 50 rows per cycle. It prioritizes searchable
-canonical descriptions, then item templates and receipt items. Rows with a missing vector, changed
+canonical descriptions, then their display labels, then item templates and receipt items. Rows with a missing vector, changed
 source text, or obsolete fingerprint are eligible. Each cycle generates outside the database
 transaction, then locks and re-reads the source rows before writing; edits or deletions that race
 inference are skipped and picked up by a later cycle.

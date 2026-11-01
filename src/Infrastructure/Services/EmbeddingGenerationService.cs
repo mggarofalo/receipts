@@ -174,7 +174,9 @@ public class EmbeddingGenerationService(
 		{
 			await transaction.CommitAsync(cancellationToken);
 		}
-		if (canonical.Count > 0 && changed > 0)
+		// A label vector changes the name's suggestions as much as its canonical vector does.
+		if ((canonical.Count > 0 || items.Any(generated => generated.Item.EntityType == CatalogSemanticNeighbours.LabelEntityType))
+			&& changed > 0)
 		{
 			await committedChangePublisher.PublishAsync(new(
 				CommittedEntityType.NormalizedDescription,

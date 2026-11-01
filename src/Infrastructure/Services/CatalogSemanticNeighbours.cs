@@ -16,23 +16,27 @@ internal static class CatalogSemanticNeighbours
 	internal const string LabelEntityType = "NormalizedDescriptionLabel";
 
 	/// <summary>
-	/// The <paramref name="limit"/> nearest active names. Run it through <see cref="NearestNeighbourSearch"/>:
-	/// the canonical half scans the HNSW index. The label half is an exact scan, at most one row per name.
+	/// The <paramref name="limit"/> nearest active names. Run it through <see cref="NearestNeighbourSearch"/>
+	/// for the canonical half. The label half is an exact scan over at most one row per name: the
+	/// materialized CTE filters to label rows before ordering, so the ItemEmbeddings HNSW index, which
+	/// mostly holds receipt items, can never spend the iterative scan's tuple budget on other rows.
 	/// </summary>
 	internal static IQueryable<CatalogNeighbour> Nearest(DatabaseFacade database, Vector query, int limit)
 	{
 		string fingerprint = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
 		return database.SqlQuery<CatalogNeighbour>($"""
+			WITH labels AS MATERIALIZED (
+				SELECT d."Id", e."Embedding" FROM matching."ItemEmbeddings" e
+				JOIN matching."NormalizedDescriptions" d ON d."Id" = e."EntityId"
+				WHERE e."EntityType" = {LabelEntityType} AND e."ModelVersion" = {fingerprint}
+					AND d."Status" = 'Active' AND e."EntityText" = d."DisplayLabel")
 			SELECT n."Id", max(n."Similarity") AS "Similarity" FROM (
 				(SELECT "Id", 1 - ("Embedding" <=> {query}::vector) AS "Similarity" FROM matching."NormalizedDescriptions"
 				WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {fingerprint}
 				ORDER BY "Embedding" <=> {query}::vector, "Id" LIMIT {limit})
 				UNION ALL
-				(SELECT d."Id", 1 - (e."Embedding" <=> {query}::vector) FROM matching."ItemEmbeddings" e
-				JOIN matching."NormalizedDescriptions" d ON d."Id" = e."EntityId"
-				WHERE e."EntityType" = {LabelEntityType} AND e."ModelVersion" = {fingerprint}
-					AND d."Status" = 'Active' AND e."EntityText" = d."DisplayLabel"
-				ORDER BY e."Embedding" <=> {query}::vector, d."Id" LIMIT {limit})) n
+				(SELECT "Id", 1 - ("Embedding" <=> {query}::vector) FROM labels
+				ORDER BY "Embedding" <=> {query}::vector, "Id" LIMIT {limit})) n
 			GROUP BY n."Id" ORDER BY max(n."Similarity") DESC, n."Id" LIMIT {limit}
 			""");
 	}
