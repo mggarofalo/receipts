@@ -41,7 +41,7 @@ internal static class NormalizationCandidateRetrieval
 		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
 		CancellationToken cancellationToken, NormalizationRetrievalProbe? probe = null, ILogger? logger = null)
 		=> RetrieveAsync(context, source, embeddingService, cancellationToken,
-			candidate => ReceiptSuggestionEvidence.IsUseful(source, candidate), ReceiptSuggestionEvidence.LexicalTerms, probe, logger);
+			candidate => ReceiptSuggestionEvidence.IsUseful(source, candidate), DescriptionTokenMode.Receipt, probe, logger);
 
 	/// <summary>
 	/// Suggestions are best effort: a full inference queue or an unavailable model degrades to the
@@ -65,19 +65,10 @@ internal static class NormalizationCandidateRetrieval
 		}
 	}
 
-	/// <summary>The lowercase terms the lexical channel probes, one bounded query each.</summary>
-	internal static string[] LexicalTokens(string description, Func<string, IEnumerable<string>>? lexicalTerms = null)
-	{
-		IEnumerable<string> terms = lexicalTerms?.Invoke(description)
-				?? description.Split([' ', '\t', '-', '/'], StringSplitOptions.RemoveEmptyEntries)
-						.Where(token => token.Length >= 2);
-		return terms.Select(token => token.ToLowerInvariant()).Distinct().Take(8).ToArray();
-	}
-
 	internal static async Task<IReadOnlyList<NormalizationCatalogCandidate>> RetrieveAsync(
 		ApplicationDbContext context, NormalizationSourceKey source, IEmbeddingService? embeddingService,
 				CancellationToken cancellationToken, Func<NormalizationCatalogCandidate, bool>? include = null,
-				Func<string, IEnumerable<string>>? lexicalTerms = null, NormalizationRetrievalProbe? probe = null,
+				DescriptionTokenMode tokenMode = DescriptionTokenMode.Catalog, NormalizationRetrievalProbe? probe = null,
 				ILogger? logger = null)
 	{
 		Guid? hiddenMappingId = probe?.HiddenMappingId;
@@ -134,13 +125,13 @@ internal static class NormalizationCandidateRetrieval
 				nearest = neighbours.Select(neighbour => neighbour.Id).ToList();
 			}
 		}
-		string text = source.Description.ToLowerInvariant();
+		string text = DescriptionText.Lower(source.Description);
 		Add(await AlphabeticalAsync(active.Where(target => target.CanonicalName.ToLower() == text || (target.DisplayLabel ?? target.CanonicalName).ToLower() == text)), "exact");
 		// Approved examples are evidence, never self-training on automatic links.
 		Add(await AlphabeticalAsync(active.Where(target => context.NormalizationSourceMappings.Any(mapping => mapping.State == "active" && !mapping.Exclude
 			&& mapping.TargetId == target.Id && mapping.Description == source.Description
 			&& (hiddenMappingId == null || mapping.Id != hiddenMappingId)))), "approved_example");
-		string[] tokens = LexicalTokens(source.Description, lexicalTerms);
+		string[] tokens = DescriptionText.LexicalTokens(source.Description, tokenMode);
 		// The relevance query needs pg_trgm, like the semantic channel needs pgvector.
 		if (tokens.Length > 0 && context.Database.IsNpgsql())
 		{
@@ -201,13 +192,9 @@ internal static class NormalizationCandidateRetrieval
 	}
 
 	/// <summary>
-	/// The lexical channel in one query (RECEIPTS-1094). A name scores the number of distinct source tokens
-	/// it contains as whole words; a name that only contains a token inside a longer word scores zero
-	/// and ranks after every whole-word match. Ties break on trigram similarity to the description.
-	/// The filter is only LIKE terms on the two trigram-indexed expressions, so a bitmap index scan
-	/// answers it; the regex scoring runs on the filtered rows alone. Tokens are lowered in .NET and
-	/// names by PostgreSQL lower(), which agree for non-ASCII letters under the UTF-8 locale the
-	/// deployed database uses.
+	/// The lexical channel in one query (RECEIPTS-1094), scored by <see cref="Relevance"/>. The filter is
+	/// only LIKE terms on the two trigram-indexed expressions, so a bitmap index scan answers it; the
+	/// regex scoring runs on the filtered rows alone.
 	/// </summary>
 	private static Task<List<LexicalHit>> LexicalAsync(ApplicationDbContext context, string[] tokens, string description,
 		CancellationToken cancellationToken)
@@ -224,12 +211,7 @@ internal static class NormalizationCandidateRetrieval
 			parameters.Add(new NpgsqlParameter($"p{parameters.Count}", value));
 			return $"@p{parameters.Count - 1}";
 		}
-		// A whole word is bounded by the start or end of the name or by a character that is neither a
-		// letter nor a digit, so tokens such as "(lg)" match too. Other characters are escaped; surrogate
-		// halves are left alone so a supplementary character is not split.
-		string words = Parameter(tokens.Select(token =>
-			$"(^|[^[:alnum:]]){Regex.Replace(token, @"[^\p{L}\p{N}\p{Cs}]", @"\$0")}($|[^[:alnum:]])").ToArray());
-		string text = Parameter(description.ToLowerInvariant());
+		(string score, string similarity) = Relevance(tokens, description, Parameter);
 		// Short tokens still score but only filter when nothing longer exists.
 		string[] filtered = tokens.Where(token => token.Length >= MinimumIndexedTokenLength).ToArray();
 		string filter = string.Join(" OR ", (filtered.Length > 0 ? filtered : tokens).Select(token =>
@@ -238,16 +220,34 @@ internal static class NormalizationCandidateRetrieval
 			return $"""lower("CanonicalName") LIKE {pattern} OR lower(COALESCE("DisplayLabel", "CanonicalName")) LIKE {pattern}""";
 		}));
 		string sql = $"""
-			SELECT "Id",
-				(SELECT count(*)::int FROM unnest({words}::text[]) AS word
-					WHERE lower("CanonicalName") ~ word OR lower(COALESCE("DisplayLabel", "CanonicalName")) ~ word) AS "Score",
-				similarity(lower(COALESCE("DisplayLabel", "CanonicalName")), {text})::double precision AS "Similarity"
+			SELECT "Id", {score} AS "Score", {similarity} AS "Similarity"
 			FROM matching."NormalizedDescriptions"
 			WHERE "Status" = 'Active' AND ({filter})
 			ORDER BY "Score" DESC, "Similarity" DESC, "CanonicalName", "Id"
 			LIMIT {LexicalLimit}
 			""";
 		return (sql, parameters.ToArray());
+	}
+
+	/// <summary>
+	/// The relevance of an active name to typed or receipt text (RECEIPTS-1094), as SQL over the
+	/// <c>matching."NormalizedDescriptions"</c> row in scope. A name scores the number of distinct tokens
+	/// it contains as whole words; a name that only contains a token inside a longer word scores zero.
+	/// Ties break on trigram similarity to the whole text, then the caller orders by name and Id.
+	/// </summary>
+	internal static (string Score, string Similarity) Relevance(string[] tokens, string text, Func<object, string> parameter)
+	{
+		// A whole word is bounded by the start or end of the name or by a character that is neither a
+		// letter nor a digit, so tokens such as "(lg)" match too. Other characters are escaped; surrogate
+		// halves are left alone so a supplementary character is not split.
+		string words = parameter(tokens.Select(token =>
+			$"(^|[^[:alnum:]]){Regex.Replace(token, @"[^\p{L}\p{N}\p{Cs}]", @"\$0")}($|[^[:alnum:]])").ToArray());
+		string lowered = parameter(DescriptionText.Lower(text));
+		return ($"""
+				(SELECT count(*)::int FROM unnest({words}::text[]) AS word
+					WHERE lower("CanonicalName") ~ word OR lower(COALESCE("DisplayLabel", "CanonicalName")) ~ word)
+				""",
+			$"""similarity(lower(COALESCE("DisplayLabel", "CanonicalName")), {lowered})::double precision""");
 	}
 
 	private sealed class LexicalHit

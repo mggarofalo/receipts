@@ -27,6 +27,20 @@ public sealed class NormalizationCatalogPolicyTests
 		NormalizationCatalogPolicy.Hash(new(" Store A ", " BF  FRANKS 8CT ", " 0123 ")).Should().Be(original);
 	}
 
+	[Fact]
+	public void SourceKey_TrimsOnlySpacesSoTabsAndNonBreakingSpacesSurvive()
+	{
+		// SourceHash must not change (RECEIPTS-1100): the source key trims spaces only, to match PostgreSQL
+		// btrim, and this golden hash was captured from main before the description normaliser consolidation.
+		var raw = new NormalizationSourceKey(" Store A ", "\t BF  FRANKS 8CT ", " 0123 ");
+
+		var normalized = NormalizationCatalogPolicy.Normalize(raw);
+
+		normalized.Description.Should().Be("\t BF  FRANKS 8CT");
+		NormalizationCatalogPolicy.Hash(raw).Should().Be("55017C0602445D906A3C4200C3BAE980569067F8C99D07867531244E4EFA9C5A");
+		NormalizationCatalogPolicy.Normalize(new("Store", "\u00A0Milk\u00A0", null)).Description.Should().Be("\u00A0Milk\u00A0");
+	}
+
 	[Theory]
 	[InlineData(null)]
 	[InlineData("")]

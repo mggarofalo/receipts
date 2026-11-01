@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace Application.Normalization;
 
 /// <summary>Conservative evidence for suggestions shown during receipt entry.</summary>
@@ -13,17 +11,6 @@ public static class ReceiptSuggestionEvidence
 	/// missed targets as 0.75 with fewer than half the wrong admissions. Re-check it with that harness.
 	/// </summary>
 	public const double SemanticFloor = 0.80;
-
-	private static readonly HashSet<string> NonProductWords = new(StringComparer.OrdinalIgnoreCase)
-		{
-				"oz", "lb", "lbs", "kg", "g", "ml", "l", "ct", "pc", "pcs", "in", "cm", "mm", "fl",
-				"ounce", "ounces", "gram", "grams", "kilogram", "kilograms", "pound", "pounds",
-				"inch", "inches", "liter", "liters", "litre", "litres", "gallon", "gallons", "gal",
-				"pack", "packs", "count", "each", "piece", "pieces", "can", "cans",
-				"bottle", "bottles", "bag", "bags", "box", "boxes", "jar", "jars",
-				"whole", "organic", "baked", "fresh", "natural", "original", "classic", "large", "small", "medium",
-				"for", "and", "the", "with", "without", "of", "to", "or"
-		};
 
 	public static bool IsUseful(NormalizationSourceKey source, NormalizationCatalogCandidate candidate)
 	{
@@ -59,19 +46,13 @@ public static class ReceiptSuggestionEvidence
 	/// <summary>History is a text completion, not an assertion of product identity.</summary>
 	public static bool IsDescriptionCompletion(string source, string candidate)
 	{
-		if (string.Equals(source.Trim(), candidate.Trim(), StringComparison.OrdinalIgnoreCase)) { return true; }
+		if (DescriptionText.SameText(source, candidate)) { return true; }
 		HashSet<string> sourceWords = Words(source, 2);
 		HashSet<string> targetWords = Words(candidate, 2);
 		int matched = targetWords.Count(word => sourceWords.Any(prefix => word.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)));
 		return matched >= 2 || (matched == 1 && (sourceWords.Count == 1 || targetWords.Count == 1));
 	}
 
-	public static IEnumerable<string> LexicalTerms(string text) => Terms(text, 3);
-
-	private static HashSet<string> Words(string text, int minimumLength = 3) => Terms(text, minimumLength)
+	private static HashSet<string> Words(string text, int minimumLength = 3) => DescriptionText.ProductWords(text, minimumLength)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-	private static IEnumerable<string> Terms(string text, int minimumLength) => Regex.Matches(text, @"\p{L}+", RegexOptions.CultureInvariant)
-			.Select(match => match.Value)
-			.Where(word => word.Length >= minimumLength && !NonProductWords.Contains(word));
 }
