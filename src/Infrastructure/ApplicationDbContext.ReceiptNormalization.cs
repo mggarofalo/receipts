@@ -292,12 +292,24 @@ public partial class ApplicationDbContext
 		}
 		if (Database.IsNpgsql())
 		{
-			// The downgrade-only SQL guards recognize exactly these locally validated rows.
-			// Transaction-local scope expires on commit/rollback and is replaced at each save.
-			string prepared = "," + string.Join(',', entries.Select(entry => entry.Entity.Id)) + ",";
-			await Database.ExecuteSqlInterpolatedAsync($"SELECT set_config('receipts.review_prepared', {prepared}, true)", ct).ConfigureAwait(false);
+			await PrepareReviewEvidenceAsync([.. entries.Select(entry => entry.Entity.Id)], ct).ConfigureAwait(false);
 		}
 	}
+
+	/// <summary>
+	/// Marks exactly these locally validated items for the downgrade-only SQL guards
+	/// (<c>matching.review_item_prepared</c>), so their review evidence survives this transaction's writes.
+	/// The ids replace the session temp table's contents, where each guard call is one primary-key probe
+	/// (RECEIPTS-1112); the transaction-local flag switches the lookup on, expires on commit or rollback,
+	/// and is cleared after each save, so ids left from an earlier save are never trusted.
+	/// </summary>
+	internal Task PrepareReviewEvidenceAsync(Guid[] ids, CancellationToken ct) =>
+		Database.ExecuteSqlInterpolatedAsync($"""
+			CREATE TEMP TABLE IF NOT EXISTS review_prepared ("Id" uuid PRIMARY KEY);
+			TRUNCATE pg_temp.review_prepared;
+			INSERT INTO pg_temp.review_prepared SELECT DISTINCT unnest({ids});
+			SELECT set_config('receipts.review_prepared', 'on', true);
+			""", ct);
 
 	/// <summary>
 	/// Items per review-work statement. A backup restore saves every imported item at once (about 16,500 for the owner),
