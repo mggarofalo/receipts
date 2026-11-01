@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using API.Configuration;
@@ -294,6 +295,70 @@ public sealed class ClassificationEntryHttpTests(PostgresFixture fixture) : ICla
 		history[0].Source.Should().Be("manual");
 		ReceiptItemEntity afterChoice = await ReadItemAsync(itemId);
 		afterChoice.Category.Should().BeEmpty(); afterChoice.Subcategory.Should().BeNull();
+	}
+
+	// Raw JSON, not DTOs, so the label keys are really absent (or really null) on the wire.
+	private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+
+	[Theory]
+	[InlineData("omitted", "")]
+	[InlineData("null", "\"category\": null, \"subcategory\": null,")]
+	public async Task RequestsWithoutLabelsSucceedOnCompleteCreateAndUpdate(string shape, string labels)
+	{
+		await SeedAsync();
+		await using var app = await CreateHostAsync(Mock.Of<IEntityChangeNotifier>());
+		using var client = app.GetTestClient();
+		client.DefaultRequestHeaders.Add("X-Test-Role", AppRoles.User);
+		async Task<ReceiptItemEntity> ReadItemAsync(Guid id)
+		{
+			await using var read = fixture.CreateDbContext();
+			return await read.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == id);
+		}
+
+		// (a) A complete receipt whose item carries no labels.
+		string completeBody = $$"""
+			{ "clientRequestId": "{{Guid.NewGuid()}}",
+			  "receipt": { "location": "No labels {{shape}}", "date": "2024-01-01", "taxAmount": 0 },
+			  "items": [ { {{labels}} "description": "Complete {{shape}}", "quantity": 1, "unitPrice": 2 } ],
+			  "transactions": [], "adjustments": [] }
+			""";
+		using var completed = await client.PostAsync("/api/receipts/complete", Json(completeBody));
+		completed.StatusCode.Should().Be(HttpStatusCode.OK, await completed.Content.ReadAsStringAsync());
+		using var completedJson = JsonDocument.Parse(await completed.Content.ReadAsStringAsync());
+		Guid receiptId = completedJson.RootElement.GetProperty("receipt").GetProperty("id").GetGuid();
+		Guid completeItem = completedJson.RootElement.GetProperty("items")[0].GetProperty("id").GetGuid();
+
+		// (b) A standalone item create with no labels.
+		string createBody = $$"""{ {{labels}} "description": "Item {{shape}}", "quantity": 2, "unitPrice": 1.5 }""";
+		using var created = await client.PostAsync($"/api/receipts/{receiptId}/receipt-items?clientRequestId={Guid.NewGuid()}", Json(createBody));
+		created.StatusCode.Should().Be(HttpStatusCode.OK, await created.Content.ReadAsStringAsync());
+		using var createdJson = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+		Guid itemId = createdJson.RootElement.GetProperty("id").GetGuid();
+
+		foreach (Guid id in new[] { completeItem, itemId })
+		{
+			ReceiptItemEntity stored = await ReadItemAsync(id);
+			stored.Category.Should().BeEmpty(); stored.Subcategory.Should().BeNull();
+		}
+
+		// (c) An update with no labels keeps the labels already stored (historical rows carry real ones).
+		await using (var db = fixture.CreateDbContext())
+		{
+			await db.Database.ExecuteSqlInterpolatedAsync(
+				$"UPDATE receipts.\"ReceiptItems\" SET \"Category\" = {"Historical"}, \"Subcategory\" = {"Kept"} WHERE \"Id\" = {itemId}");
+		}
+		var before = (await new ClassificationService(new Factory(fixture), TimeProvider.System,
+			Options.Create(new ClassificationOptions { WritesEnabled = true })).HistoryAsync(itemId, null, 10)).Items;
+		string updateBody = $$"""{ "id": "{{itemId}}", {{labels}} "description": "Updated {{shape}}", "quantity": 3, "unitPrice": 1.5 }""";
+		using var updated = await client.PutAsync($"/api/receipt-items/{itemId}?clientRequestId={Guid.NewGuid()}", Json(updateBody));
+		updated.StatusCode.Should().Be(HttpStatusCode.NoContent, await updated.Content.ReadAsStringAsync());
+		ReceiptItemEntity afterUpdate = await ReadItemAsync(itemId);
+		afterUpdate.Description.Should().Be("Updated " + shape);
+		afterUpdate.Quantity.Should().Be(3);
+		afterUpdate.Category.Should().Be("Historical"); afterUpdate.Subcategory.Should().Be("Kept");
+		(await new ClassificationService(new Factory(fixture), TimeProvider.System,
+			Options.Create(new ClassificationOptions { WritesEnabled = true })).HistoryAsync(itemId, null, 10)).Items
+			.Should().BeEquivalentTo(before, "an edit without a choice appends no assignment");
 	}
 
 	[Fact]

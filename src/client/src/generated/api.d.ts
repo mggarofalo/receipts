@@ -6565,7 +6565,7 @@ export interface components {
             /** Format: double */
             unitPrice: number;
             /** @description Retired legacy label. Accepted for older clients and ignored; the item's type is set only through classification. */
-            category?: string;
+            category?: string | null;
             /** @description Retired legacy label. Accepted for older clients and ignored. */
             subcategory?: string | null;
             /**
@@ -6598,7 +6598,7 @@ export interface components {
             /** Format: double */
             unitPrice: number;
             /** @description Retired legacy label. Accepted for older clients and ignored; an edit never changes the stored label. */
-            category?: string;
+            category?: string | null;
             /** @description Retired legacy label. Accepted for older clients and ignored. */
             subcategory?: string | null;
         };

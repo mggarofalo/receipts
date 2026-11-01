@@ -14553,7 +14553,7 @@ components:
           type: number
           format: double
         category:
-          type: string
+          type: ["string", "null"]
           description: Retired legacy label. Accepted for older clients and ignored; the item's type is set only through classification.
         subcategory:
           type: ["string", "null"]
@@ -14599,7 +14599,7 @@ components:
           type: number
           format: double
         category:
-          type: string
+          type: ["string", "null"]
           description: Retired legacy label. Accepted for older clients and ignored; an edit never changes the stored label.
         subcategory:
           type: ["string", "null"]
