@@ -155,3 +155,37 @@ recorded responses through the production parser, `CategorySuggestionPolicy` and
 request bytes, stage-2 requests production would send, abstentions, suggestions, and
 automatic root and leaf writes (with leaf writes off, as configured, and on, for
 comparison). It sends nothing and reads no configuration or credential.
+
+## Catalog-matching packets (`catalog-matching-v1`, RECEIPTS-1091)
+
+The catalog evaluation uses the same journal, approval, credential and transport safeguards around production's
+`catalog-matching-questions-v1` ([spec](../../docs/jev-catalog-matching.md)). Every request is built by
+`JevCatalogMatchingQuestions`, parsed by its parsers and decided by `CatalogMatchingPolicy`; the tool holds no wording or
+decision logic. An evaluation asks stage 2 (Q3) about the stage-1 top choice for every case, where production asks it
+only when it can change the outcome. A case with an empty shortlist is decided without a request.
+
+A packet holds `policy.private.json` and `cases.private.json`, both bound by `freeze.private.json`. Each case has an
+`id`, a `stratum` (`proxy`, `not-in-shortlist`, `hard-negative` or `injection`), the sent `description`, `store` and
+`candidates`, and local-only labels. Real sources carry `leaveOneOut: true`, which removes their own description from
+every candidate's approved examples before the request is built; synthetic examples are constructed evidence and are
+kept.
+
+```bash
+# Real strata, read-only, into one private file (receipt text: never commit it).
+RECEIPTS_RECALL_CONNECTION="Host=...;..." RECEIPTS_JEV_COHORT_OUTPUT=<private>/export.private.json \
+  dotnet test tests/Infrastructure.IntegrationTests --filter Prerequisite=CatalogJevCohort
+dotnet <dll> catalog-build <export> docs/normalization-evaluation/catalog-jev-1091.synthetic.json \
+  docs/normalization-evaluation/catalog.v2.json <repository-root> <new-private-root> <source-commit>
+dotnet <dll> catalog-plan <packet> <repository-root> <new-private-plan.json>
+dotnet <dll> live-run <packet> <repository-root> <approval.json> <packet>/live.journal.jsonl <new-output.json> --dry-run --api-user-secrets
+dotnet <dll> live-run <packet> <repository-root> <approval.json> <packet>/live.journal.jsonl <new-output.json> --send-authorized --api-user-secrets
+dotnet <dll> catalog-parity <packet> <repository-root> <live-output.json> <new-private-parity.json>
+dotnet <dll> catalog-score <packet> <repository-root> <new-private-score.json>
+```
+
+`catalog-build` writes a `smoke` packet (the preregistered 10 cases) and a `full` packet. The full packet's prior carry
+is the smoke packet's whole reservation, so the two together stay within one approval. A catalog live run also appends
+each response's latency to `latency.private.jsonl` in the packet. The journal format is shared with round 4 and is
+unchanged. `catalog-score` writes an `aggregate` (counts, rates, calibration, gates and an exploratory threshold sweep,
+with no text) and private per-case rows. The 2026-11-01 results are in
+[catalog-jev-1091.md](../../docs/normalization-evaluation/catalog-jev-1091.md).

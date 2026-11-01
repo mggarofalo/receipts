@@ -5,14 +5,20 @@ catalog source-run: given a receipt line and the shortlist that retrieval found,
 any. It plays the role that [`classification-questions-v7`](jev-suggestion-adapter.md#request-policy) plays for category
 assistance.
 
-This document is the specification. The request builder exists and is tested; nothing calls Jev with it yet.
+This document is the specification. The request builder, response parser and decision exist and are tested; no
+production path calls Jev with them.
+
+> **Evaluation result (RECEIPTS-1091): do not ship v1.** The offline evaluation passed the protocol and abstention
+> gates but failed the injection and wrong-variant safety gates, and no threshold setting fixes either. Instructions
+> that name a catalog product turned non-product lines into confident matches. See
+> [the results](normalization-evaluation/catalog-jev-1091.md), which also list what a v2 should change.
 
 | Piece | Where | Issue |
 | --- | --- | --- |
 | Input contract and rules | `Application.NormalizationAi.CatalogMatchingPolicy` (`src/Application/NormalizationAi/CatalogMatching.cs`) | RECEIPTS-1090 |
 | Request builder (all wording) | `Infrastructure.Jev.JevCatalogMatchingQuestions` | RECEIPTS-1090 |
-| Response parser and decision | the same two classes, added with the evaluation | RECEIPTS-1091 / 1092 |
-| Offline evaluation against ChatGPT, thresholds | `tools/Receipts.JevProductionParity` | RECEIPTS-1091 |
+| Response parser, validation and decision | `JevCatalogMatchingQuestions.ParseStage1`/`ParseStage2`, `CatalogMatchingPolicy.IsValidJudgment`/`TopCandidate`/`AsksStage2`/`Decide` | RECEIPTS-1091 |
+| Offline evaluation ([preregistration](normalization-evaluation/catalog-jev-1091-preregistration.md), [results](normalization-evaluation/catalog-jev-1091.md)) | `tools/Receipts.JevProductionParity` (`catalog-*` commands) | RECEIPTS-1091 |
 | Provider in the catalog source-run | API | RECEIPTS-1092 |
 | Whether strong matches may apply themselves | `docs/decisions/` | RECEIPTS-1093 |
 

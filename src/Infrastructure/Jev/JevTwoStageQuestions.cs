@@ -175,7 +175,8 @@ public static class JevTwoStageQuestions
 		}
 	}
 
-	private static void RequireObject(JsonElement element, params string[] keys)
+	/// <summary>Throws unless the element is an object with exactly these properties.</summary>
+	internal static void RequireObject(JsonElement element, params string[] keys)
 	{
 		if (element.ValueKind != JsonValueKind.Object) { throw new JsonException(); }
 
