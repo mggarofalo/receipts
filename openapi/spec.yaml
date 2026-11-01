@@ -667,7 +667,7 @@ paths:
               { $ref: "#/components/schemas/CategoryAssistanceSettingsRequest" }
       responses:
         "200":
-          description: Saved settings with new revision
+          description: Saved settings. The revision changes when consent, provider, model or automatic writes change; a limits-only save keeps it.
           content:
             application/json:
               schema:

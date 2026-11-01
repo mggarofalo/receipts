@@ -8334,7 +8334,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Saved settings with new revision */
+            /** @description Saved settings. The revision changes when consent, provider, model or automatic writes change; a limits-only save keeps it. */
             200: {
                 headers: {
                     [name: string]: unknown;

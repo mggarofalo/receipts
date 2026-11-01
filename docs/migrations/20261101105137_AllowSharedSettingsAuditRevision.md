@@ -19,5 +19,9 @@ No data changes. The table is small (one row per settings save), so the rebuild 
 ## Rolling back
 
 `Down` restores the unique index. It refuses (`23514`) while any two audit rows share a revision,
-which happens after the first limits-only save, because the unique index cannot hold them. Pair a
-rollback with reverting the code.
+which happens after the first limits-only save, because the unique index cannot hold them. The
+audit is append-only, so those rows cannot be removed to make room.
+
+To roll back after that, revert the code only and leave this migration applied. The earlier code
+runs unchanged on the non-unique index: it rotates the revision on every save, so its own audit
+rows stay distinct.

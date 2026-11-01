@@ -159,6 +159,59 @@ public sealed partial class CategoryAssistanceAutoWriterTests
 			.Should().BeEquivalentTo(before, "a limits-only save does not retire results of the current revision");
 	}
 
+	[Theory]
+	[InlineData("provider")]
+	[InlineData("model")]
+	public async Task AProviderOrModelOnlySaveRotatesTheRevisionAndRetiresUndecidedAttempts(string field)
+	{
+		var seed = await SeedAsync(root: 0.95, leaf: 0.95);
+		Guid queued = await CloneAttemptAsync(seed, "queued");
+		// While enabled only the pinned jev selection is accepted, so a provider or model alone can change only
+		// while consent is off. Turn it off directly, keeping the revision the attempts were made under.
+		await using (var db = fixture.CreateDbContext())
+		{
+			await db.CategoryAssistanceSettings.ExecuteUpdateAsync(s => s.SetProperty(x => x.Enabled, false));
+		}
+		var store = new CategoryAssistanceSettingsStore(new Factory(fixture), TimeProvider.System);
+		var current = await store.GetAsync();
+		current.Should().Match<CategoryAssistanceSettings>(x => !x.Enabled && x.Provider == "jev" && x.Model == CategorySuggestionPolicy.Model);
+
+		var saved = await store.UpdateAsync(seed.Actor, current.Revision,
+			field == "provider" ? current with { Provider = null } : current with { Model = null });
+
+		saved.Revision.Should().NotBe(current.Revision);
+		(await store.GetAsync()).Should().Be(saved);
+		await using var verify = fixture.CreateDbContext();
+		(await verify.CategoryAssistanceAttempts.AsNoTracking().Where(x => x.Id == seed.Attempt || x.Id == queued)
+			.Select(x => x.State).ToListAsync()).Should().Equal("stale", "stale");
+		(await verify.CategoryAssistanceSettingsAudits.AsNoTracking().SingleAsync(x => x.Revision == saved.Revision))
+			.PreviousRevision.Should().Be(current.Revision);
+	}
+
+	[Fact]
+	public async Task ANoOpSaveKeepsTheRevisionAndAuditsItAgainstItself()
+	{
+		var seed = await SeedAsync(root: 0.95, leaf: 0.95);
+		var store = new CategoryAssistanceSettingsStore(new Factory(fixture), TimeProvider.System);
+		var current = await store.GetAsync();
+		CategoryAssistanceAttemptEntity before;
+		await using (var db = fixture.CreateDbContext())
+		{
+			before = await db.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == seed.Attempt);
+		}
+
+		var saved = await store.UpdateAsync(seed.Actor, current.Revision, current);
+
+		saved.Should().Be(current);
+		(await store.GetAsync()).Should().Be(current);
+		await using var verify = fixture.CreateDbContext();
+		var audit = await verify.CategoryAssistanceSettingsAudits.AsNoTracking().SingleAsync();
+		audit.Revision.Should().Be(current.Revision);
+		audit.PreviousRevision.Should().Be(current.Revision);
+		audit.Actor.Should().Be(seed.Actor);
+		(await verify.CategoryAssistanceAttempts.AsNoTracking().SingleAsync(x => x.Id == seed.Attempt)).Should().BeEquivalentTo(before);
+	}
+
 	[Fact]
 	public async Task AfterADecisionChangeASaveWithTheOldRevisionIsRefused()
 	{
