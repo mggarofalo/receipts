@@ -119,7 +119,9 @@ link to inspect it, then explicitly approve or merge it using the existing revie
 controls. The review queue also supports search. Return to the source after review
 to refresh its eligibility. If a proposed new name already belongs to a pending
 identity, the rejection provides the same review route. Navigation and model
-suggestions never approve identities automatically.
+suggestions never approve identities automatically. This also holds for Jev: unlike
+category assistance, strong Jev catalog matches are not applied automatically
+([decision](decisions/2026-11-01-no-automatic-jev-catalog-matches.md)).
 
 To approve many pending names at once, use **Promote Consistent Pending Names** on
 the Maintenance tab. It previews every pending name that has at least two purchases,

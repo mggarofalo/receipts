@@ -72,7 +72,8 @@ audit log. After a restore, promoted names stay Active, and their promotion can 
 ## Interaction with "never approve identities automatically"
 
 `docs/chatgpt-normalization.md` says navigation and model suggestions never approve identities
-automatically, and RECEIPTS-1093 is deciding whether strong Jev matches may apply automatically.
+automatically, and RECEIPTS-1093 decided that strong Jev matches may not apply automatically
+([decision](2026-11-01-no-automatic-jev-catalog-matches.md)).
 Promotion is neither. A signed-in administrator starts it after reading a preview, and it uses only
 deterministic facts about the owner's own links. It never runs in the background or on a model's
 advice.

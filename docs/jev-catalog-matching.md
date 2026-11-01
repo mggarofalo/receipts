@@ -20,7 +20,7 @@ production path calls Jev with them.
 | Response parser, validation and decision | `JevCatalogMatchingQuestions.ParseStage1`/`ParseStage2`, `CatalogMatchingPolicy.IsValidJudgment`/`TopCandidate`/`AsksStage2`/`Decide` | RECEIPTS-1091 |
 | Offline evaluation ([preregistration](normalization-evaluation/catalog-jev-1091-preregistration.md), [results](normalization-evaluation/catalog-jev-1091.md)) | `tools/Receipts.JevProductionParity` (`catalog-*` commands) | RECEIPTS-1091 |
 | Provider in the catalog source-run | API | RECEIPTS-1092 |
-| Whether strong matches may apply themselves | `docs/decisions/` | RECEIPTS-1093 |
+| Whether strong matches may apply themselves: **no** ([decision](decisions/2026-11-01-no-automatic-jev-catalog-matches.md)) | `docs/decisions/` | RECEIPTS-1093 |
 
 The evaluation tool and production must build requests with the same builder, as they do for category assistance, so
 an evaluated request is byte for byte the request production sends.
@@ -34,7 +34,7 @@ three outcomes: **match suggestion**, **review**, or **needs new name**.
   to the existing naming paths (manual naming, or the ChatGPT source-run's `different` + `newName`). Jev's answer never
   becomes a name.
 - **Jev never approves.** Every outcome is a suggestion. Approval still goes through the scoped historical preview.
-  Whether a strong match may apply itself is RECEIPTS-1093's decision, not this policy's.
+  Strong matches never apply themselves either ([RECEIPTS-1093 decision](decisions/2026-11-01-no-automatic-jev-catalog-matches.md)).
 - **Label-only sources are out of scope.** That mode asks for a clearer display label, which is naming. It stays with
   ChatGPT.
 - **An empty shortlist is not a request.** With no candidates there is nothing to choose from. The source goes to naming
