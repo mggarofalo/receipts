@@ -157,10 +157,9 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 
 	[HttpGet("item-descriptions")]
 	[EndpointSummary("Search item descriptions for autocomplete")]
-	[EndpointDescription("Returns distinct item descriptions with their category and occurrence count, filtered by a search term (minimum 2 characters).")]
+	[EndpointDescription("Returns distinct item descriptions with their occurrence count, filtered by a search term (minimum 2 characters).")]
 	public async Task<Results<Ok<ItemDescriptionsResponse>, BadRequestProblem>> GetItemDescriptions(
 		[FromQuery] string? search,
-		[FromQuery] bool? categoryOnly,
 		[FromQuery] int? limit,
 		CancellationToken cancellationToken)
 	{
@@ -175,7 +174,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			return ApiProblem.BadRequest("limit must be between 1 and 50");
 		}
 
-		GetItemDescriptionsQuery query = new(search, categoryOnly ?? false, lim);
+		GetItemDescriptionsQuery query = new(search, lim);
 		AppReports.ItemDescriptionResult result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new ItemDescriptionsResponse
@@ -183,7 +182,8 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			Items = result.Items.Select(i => new ItemDescriptionItem
 			{
 				Description = i.Description,
-				Category = i.Category,
+				// Retired legacy label; the contract keeps the field.
+				Category = "",
 				Occurrences = i.Occurrences
 			}).ToList()
 		});
@@ -191,10 +191,9 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 
 	[HttpGet("item-cost-over-time")]
 	[EndpointSummary("Get item cost over time")]
-	[EndpointDescription("Returns time-series cost data for a specific item description, normalized description, or category.")]
+	[EndpointDescription("Returns time-series cost data for a specific item description, normalized description, or item type.")]
 	public async Task<Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem>> GetItemCostOverTime(
 		[FromQuery] string? description,
-		[FromQuery] string? category,
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
 		[FromQuery] string? granularity,
@@ -205,9 +204,9 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			[FromQuery] string? knowledgeCutoff = null,
 			[FromQuery] Guid? capturedCurrentRevisionId = null)
 	{
-		if (string.IsNullOrEmpty(description) && string.IsNullOrEmpty(category) && string.IsNullOrEmpty(normalizedDescription) && !categoryId.HasValue)
+		if (string.IsNullOrEmpty(description) && string.IsNullOrEmpty(normalizedDescription) && !categoryId.HasValue)
 		{
-			return ApiProblem.BadRequest("One of description, normalizedDescription, categoryId, or category is required");
+			return ApiProblem.BadRequest("One of description, normalizedDescription, or categoryId is required");
 		}
 
 		string gran = granularity ?? "exact";
@@ -242,7 +241,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		{ return ApiProblem.BadRequest("categoryId and capturedCurrentRevisionId must be non-empty UUIDs"); }
 		if (capturedCurrentRevisionId.HasValue && view != AppReports.CategoryReportView.CurrentHierarchy)
 		{ return ApiProblem.BadRequest("capturedCurrentRevisionId requires currentHierarchy"); }
-		GetItemCostOverTimeQuery query = new(description, category, startDate, endDate, gran, normalizedDescription)
+		GetItemCostOverTimeQuery query = new(description, startDate, endDate, gran, normalizedDescription)
 		{ CategoryOptions = new(view, CategoryId: categoryId, KnowledgeCutoff: cutoff, CapturedCurrentRevisionId: capturedCurrentRevisionId) };
 		AppReports.ItemCostOverTimeResult result;
 		try { result = await mediator.Send(query, cancellationToken); }
@@ -615,8 +614,8 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 				Quantity = (double)i.Quantity,
 				UnitPrice = (double)i.UnitPrice,
 				TotalAmount = (double)i.TotalAmount,
-				Category = i.Category,
-				Subcategory = i.Subcategory,
+				// Retired legacy label; the contract keeps the field.
+				Category = "",
 				ClassificationState = i.ClassificationState,
 				AssignmentId = i.AssignmentId,
 				CategoryId = i.CategoryId,

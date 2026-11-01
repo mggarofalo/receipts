@@ -1,6 +1,8 @@
 using Application.Models;
 using FluentAssertions;
+using Infrastructure.Configurations;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Taxonomy;
 using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -231,15 +233,40 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture server) : Isol
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 		receipt.TaxAmount = 1.005m;
 
-		string[] categories = ["Snacks", "Bakery", "Produce", "Dairy", "  Bakery  ", "   "];
-		decimal[] itemAmounts = [1m, 2m, 3m, 4m, 0m, 0m];
-		List<ReceiptItemEntity> items = [.. categories.Select((category, index) =>
+		// Chips name each item's recorded item-type root; legacy labels are deliberately unrelated.
+		Guid revision = Guid.NewGuid(), snacks = Guid.NewGuid(), bakery = Guid.NewGuid(), bread = Guid.NewGuid(),
+			produce = Guid.NewGuid(), dairy = Guid.NewGuid();
+		(Guid Id, Guid? Parent, string Name)[] tree =
+			[(snacks, null, "Snacks"), (bakery, null, "Bakery"), (bread, bakery, "Bread"), (produce, null, "Produce"), (dairy, null, "Dairy")];
+		(Guid? CategoryId, bool Assigned, decimal Amount)[] rows =
+		[
+			(snacks, true, 1m), (bread, true, 2m), (produce, true, 3m), (dairy, true, 4m),
+			(bakery, true, 0m), // a second Bakery item yields one chip
+			(null, false, 0m),  // no assignment: no chip
+			(null, true, 0m),   // explicitly unclassified: no chip
+		];
+		List<ReceiptItemEntity> items = [];
+		List<PurchaseClassificationEntity> assignments = [];
+		List<CurrentClassificationEntity> pointers = [];
+		foreach ((Guid? categoryId, bool assigned, decimal amount) in rows)
 		{
 			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
-			item.Category = category;
-			item.TotalAmount = itemAmounts[index];
-			return item;
-		})];
+			item.Category = "Aardvark legacy";
+			item.TotalAmount = amount;
+			items.Add(item);
+			if (!assigned) { continue; }
+			PurchaseClassificationEntity assignment = new()
+			{
+				Id = Guid.NewGuid(),
+				ReceiptItemId = item.Id,
+				Sequence = 1,
+				CategoryId = categoryId,
+				TaxonomyRevisionId = revision,
+				RecordedAt = DateTimeOffset.UtcNow,
+			};
+			assignments.Add(assignment);
+			pointers.Add(new CurrentClassificationEntity { ReceiptItemId = item.Id, AssignmentId = assignment.Id });
+		}
 
 		AdjustmentEntity adjustment = AdjustmentEntityGenerator.Generate();
 		adjustment.ReceiptId = receipt.Id;
@@ -257,6 +284,17 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture server) : Isol
 		{
 			seed.AddRange(receipt, account, card, adjustment, transaction);
 			seed.ReceiptItems.AddRange(items);
+			seed.TaxonomyIdentities.AddRange(tree.Select(node => new TaxonomyIdentityEntity { Id = node.Id }));
+			seed.TaxonomyRevisions.Add(new TaxonomyRevisionEntity { Id = revision, Sequence = 1, PreviousRevisionId = TaxonomyConfiguration.GenesisId });
+			seed.TaxonomyNodes.AddRange(tree.Select(node => new TaxonomyNodeEntity
+			{
+				RevisionId = revision,
+				CategoryId = node.Id,
+				ParentId = node.Parent,
+				Name = node.Name,
+			}));
+			seed.Classifications.AddRange(assignments);
+			seed.CurrentClassifications.AddRange(pointers);
 			await seed.SaveChangesAsync();
 		}
 
@@ -272,7 +310,7 @@ public class ReceiptRepositoryLocationFilterTests(PostgresFixture server) : Isol
 		actual.ExpectedTotal.Should().Be(13.26m);
 		actual.TransactionTotal.Should().Be(13.26m);
 		actual.BalanceState.Should().Be("balanced");
-		actual.ItemCount.Should().Be(6);
+		actual.ItemCount.Should().Be(7);
 		actual.CategorySummary.Should().Be("Bakery, Dairy, Produce +1");
 		actual.PaymentSummary.Should().Be("Checking · Visa 4321");
 	}

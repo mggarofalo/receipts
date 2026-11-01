@@ -1,6 +1,7 @@
 using Application.Models;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Taxonomy;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using SampleData.Entities;
@@ -338,5 +339,115 @@ public class ReceiptItemRepositoryTests
 		count.Should().Be(1);
 
 		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetSuggestionsAsync_TakesItemTypeFromLatestItemsRecordedPath_NotLegacyLabels()
+	{
+		// Arrange
+		Guid revision = Guid.NewGuid(), food = Guid.NewGuid(), dairy = Guid.NewGuid(), household = Guid.NewGuid(),
+			cleaning = Guid.NewGuid(), sprays = Guid.NewGuid(), pets = Guid.NewGuid();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		ReceiptItemEntity older = SuggestionItem(receipt.Id, "00000000-0000-0000-0000-000000000001", "SKU-1", "Old name");
+		ReceiptItemEntity latest = SuggestionItem(receipt.Id, "00000000-0000-0000-0000-000000000002", "SKU-1", "New name");
+		ReceiptItemEntity rootOnly = SuggestionItem(receipt.Id, "00000000-0000-0000-0000-000000000003", "SKU-2", "Kibble");
+		ReceiptItemEntity untyped = SuggestionItem(receipt.Id, "00000000-0000-0000-0000-000000000004", "SKU-3", "Mystery");
+		ReceiptItemEntity unclassified = SuggestionItem(receipt.Id, "00000000-0000-0000-0000-000000000005", "SKU-4", "Cleared");
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.Receipts.Add(receipt);
+			context.ReceiptItems.AddRange(older, latest, rootOnly, untyped, unclassified);
+			context.TaxonomyNodes.AddRange(
+				new TaxonomyNodeEntity { RevisionId = revision, CategoryId = food, Name = "Food" },
+				new TaxonomyNodeEntity { RevisionId = revision, CategoryId = dairy, ParentId = food, Name = "Dairy" },
+				new TaxonomyNodeEntity { RevisionId = revision, CategoryId = household, Name = "Household" },
+				new TaxonomyNodeEntity { RevisionId = revision, CategoryId = cleaning, ParentId = household, Name = "Cleaning" },
+				new TaxonomyNodeEntity { RevisionId = revision, CategoryId = sprays, ParentId = cleaning, Name = "Sprays" },
+				new TaxonomyNodeEntity { RevisionId = revision, CategoryId = pets, Name = "Pets" });
+			AssignSuggestionItem(context, older, revision, dairy);
+			AssignSuggestionItem(context, latest, revision, sprays);
+			AssignSuggestionItem(context, rootOnly, revision, pets);
+			AssignSuggestionItem(context, unclassified, revision, null);
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptItemRepository repository = new(_contextFactory);
+
+		// Act
+		List<Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions.ReceiptItemSuggestion> actual =
+			await repository.GetSuggestionsAsync("sku", null, 10, CancellationToken.None);
+
+		// Assert — top two levels of the latest item's path; "" / null without an item type
+		actual.Should().HaveCount(4).And.OnlyContain(s => s.MatchType == "global");
+		var sku1 = actual.Single(s => s.ItemCode == "SKU-1");
+		sku1.Description.Should().Be("New name");
+		sku1.Category.Should().Be("Household");
+		sku1.Subcategory.Should().Be("Cleaning");
+		var sku2 = actual.Single(s => s.ItemCode == "SKU-2");
+		sku2.Category.Should().Be("Pets");
+		sku2.Subcategory.Should().BeNull();
+		foreach (string code in new[] { "SKU-3", "SKU-4" })
+		{
+			var none = actual.Single(s => s.ItemCode == code);
+			none.Category.Should().BeEmpty();
+			none.Subcategory.Should().BeNull();
+		}
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetSuggestionsAsync_LocationMatches_AlsoUseRecordedPath()
+	{
+		// Arrange
+		Guid revision = Guid.NewGuid(), pets = Guid.NewGuid();
+		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
+		receipt.Location = "Corner Market";
+		ReceiptItemEntity item = SuggestionItem(receipt.Id, "00000000-0000-0000-0000-000000000001", "SKU-9", "Kibble");
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.Receipts.Add(receipt);
+			context.ReceiptItems.Add(item);
+			context.TaxonomyNodes.Add(new TaxonomyNodeEntity { RevisionId = revision, CategoryId = pets, Name = "Pets" });
+			AssignSuggestionItem(context, item, revision, pets);
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptItemRepository repository = new(_contextFactory);
+
+		// Act
+		var actual = await repository.GetSuggestionsAsync("SKU-9", "corner market", 10, CancellationToken.None);
+
+		// Assert
+		var suggestion = actual.Should().ContainSingle().Subject;
+		suggestion.MatchType.Should().Be("location");
+		suggestion.Category.Should().Be("Pets");
+		suggestion.Subcategory.Should().BeNull();
+
+		_contextFactory.ResetDatabase();
+	}
+
+	private static ReceiptItemEntity SuggestionItem(Guid receiptId, string id, string code, string description)
+	{
+		ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receiptId);
+		item.Id = Guid.Parse(id);
+		item.ReceiptItemCode = code;
+		item.Description = description;
+		item.Category = "Legacy label";
+		item.Subcategory = "Legacy sub";
+		return item;
+	}
+
+	private static void AssignSuggestionItem(ApplicationDbContext context, ReceiptItemEntity item, Guid revision, Guid? category)
+	{
+		PurchaseClassificationEntity assignment = new()
+		{
+			Id = Guid.NewGuid(),
+			ReceiptItemId = item.Id,
+			CategoryId = category,
+			TaxonomyRevisionId = revision,
+		};
+		context.Classifications.Add(assignment);
+		context.CurrentClassifications.Add(new CurrentClassificationEntity { ReceiptItemId = item.Id, AssignmentId = assignment.Id });
 	}
 }

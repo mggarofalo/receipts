@@ -5773,7 +5773,7 @@ paths:
         - name: q
           in: query
           required: false
-          description: Case-insensitive substring filter applied across Description, ReceiptItemCode, Category, and Subcategory. Whitespace-only values are ignored. Ignored when receiptId is supplied.
+          description: Case-insensitive substring filter applied across Description, ReceiptItemCode, and the item type path (including ancestors). Whitespace-only values are ignored. Ignored when receiptId is supplied.
           schema:
             type: string
         - name: normalizedDescriptionId
@@ -7598,7 +7598,7 @@ paths:
       operationId: GetItemDescriptions
       tags: [Reports]
       summary: Search item descriptions for autocomplete
-      description: Returns distinct item descriptions with their category and occurrence count, filtered by a search term (minimum 2 characters). Results are sorted by occurrences descending.
+      description: Returns distinct item descriptions with their occurrence count, filtered by a search term (minimum 2 characters). Results are sorted by occurrences descending.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -7610,13 +7610,6 @@ paths:
             type: string
             minLength: 2
           description: Search term to filter item descriptions (minimum 2 characters).
-        - name: categoryOnly
-          in: query
-          required: false
-          schema:
-            type: boolean
-            default: false
-          description: When true, search and return categories instead of item descriptions.
         - name: limit
           in: query
           required: false
@@ -7655,20 +7648,20 @@ paths:
           required: false
           schema:
             type: string
-          description: Raw item description to filter by. Takes precedence over normalizedDescription, categoryId, and legacy category.
+          description: Raw item description to filter by. Takes precedence over normalizedDescription and categoryId.
         - name: normalizedDescription
           in: query
           required: false
           schema:
             type: string
-          description: Normalized description canonical name to filter by. Takes precedence over categoryId and legacy category.
+          description: Normalized description canonical name to filter by. Takes precedence over categoryId.
         - name: categoryId
           in: query
           required: false
           schema:
             type: string
             format: uuid
-          description: Stable taxonomy category ID. Includes descendants in the selected category view. Takes precedence over legacy category.
+          description: Stable taxonomy category ID. Includes descendants in the selected category view.
         - name: categoryView
           in: query
           required: false
@@ -7691,12 +7684,6 @@ paths:
             type: string
             format: uuid
           description: Captured taxonomy revision for currentHierarchy; rejected with asClassified.
-        - name: category
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Legacy category text filter retained for existing clients. Prefer categoryId.
         - name: startDate
           in: query
           required: false
@@ -12436,6 +12423,7 @@ components:
           type: string
         category:
           type: string
+          description: Deprecated; always empty. Item types come from the taxonomy.
         occurrences:
           type: integer
           format: int32
@@ -12759,8 +12747,10 @@ components:
           format: double
         category:
           type: string
+          description: Deprecated; always empty. The item type is categoryId.
         subcategory:
           type: ["string", "null"]
+          description: Deprecated; always null.
         classificationState:
           type: string
           description: One of missing_assignment, unclassified, unresolved_legacy.
@@ -13654,10 +13644,12 @@ components:
           type:
             - string
             - "null"
+          description: The template's default category; null for history matches
         defaultSubcategory:
           type:
             - string
             - "null"
+          description: The template's default subcategory; null for history matches
         defaultUnitPrice:
           type:
             - number
@@ -13687,12 +13679,12 @@ components:
           type:
             - string
             - "null"
-          description: Category from this description's most frequent (category, subcategory) combination
+          description: Deprecated; always null. Item types come from the taxonomy.
         suggestedSubcategory:
           type:
             - string
             - "null"
-          description: Subcategory from this description's most frequent (category, subcategory) combination
+          description: Deprecated; always null.
         suggestedUnitPrice:
           type:
             - number
@@ -14669,8 +14661,10 @@ components:
           format: double
         category:
           type: string
+          description: Legacy label kept only so an edit can send it back unchanged. Display currentClassification instead.
         subcategory:
           type: ["string", "null"]
+          description: Legacy label kept only so an edit can send it back unchanged. Display currentClassification instead.
         normalizedDescriptionId:
           type: ["string", "null"]
           format: uuid
@@ -14714,10 +14708,10 @@ components:
           description: Most recent description for this item code
         category:
           type: string
-          description: Most recent category for this item code
+          description: Top level of the most recent item's item type; empty when it has none
         subcategory:
           type: ["string", "null"]
-          description: Most recent subcategory for this item code
+          description: Second level of the most recent item's item type, if any
         unitPrice:
           type: number
           format: double

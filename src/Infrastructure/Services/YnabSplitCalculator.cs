@@ -27,12 +27,11 @@ public class YnabSplitCalculator : IYnabSplitCalculator
 		Dictionary<string, decimal> categoryPreTaxSums = new();
 		foreach (ReceiptItem item in items)
 		{
-			if (!categoryToYnabCategoryId.TryGetValue(YnabReceiptMappingResolver.ItemKey(item.Id), out string? ynabCategoryId)
-				&& !categoryToYnabCategoryId.TryGetValue(item.Category, out ynabCategoryId))
+			if (!categoryToYnabCategoryId.TryGetValue(YnabReceiptMappingResolver.ItemKey(item.Id), out string? ynabCategoryId))
 			{
 				throw new InvalidOperationException(
-					$"No YNAB category mapping found for item category '{item.Category}'. " +
-					$"Ensure all receipt item categories are mapped before computing splits.");
+					$"No YNAB category mapping found for item {item.Id}. " +
+					$"Ensure every item's envelope is mapped before computing splits.");
 			}
 			decimal amount = item.TotalAmount.Amount;
 			if (categoryPreTaxSums.TryGetValue(ynabCategoryId, out decimal existing))

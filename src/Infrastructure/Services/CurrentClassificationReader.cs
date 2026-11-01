@@ -14,7 +14,15 @@ internal static class CurrentClassificationReader
 		CancellationToken cancellationToken)
 	{
 		if (items.Count == 0) { return; }
-		Guid[] itemIds = items.Select(item => item.Id).ToArray();
+		Dictionary<Guid, CurrentClassification> byItem = await ReadAsync(context, [.. items.Select(item => item.Id)], cancellationToken);
+		foreach (ReceiptItemEntity item in items) { item.CurrentClassification = byItem.GetValueOrDefault(item.Id); }
+	}
+
+	/// <summary>Each item's current assignment with its recorded path; items without one are absent.</summary>
+	public static async Task<Dictionary<Guid, CurrentClassification>> ReadAsync(ApplicationDbContext context, Guid[] itemIds,
+		CancellationToken cancellationToken)
+	{
+		if (itemIds.Length == 0) { return []; }
 		List<AssignmentRow> assignments = await (
 			from current in context.CurrentClassifications.AsNoTracking()
 			join assignment in context.Classifications.AsNoTracking()
@@ -47,6 +55,6 @@ internal static class CurrentClassificationReader
 			path.Reverse();
 			byItem.Add(assignment.ReceiptItemId, new(assignment.Id, assignment.CategoryId, assignment.TaxonomyRevisionId, path.AsReadOnly()));
 		}
-		foreach (ReceiptItemEntity item in items) { item.CurrentClassification = byItem.GetValueOrDefault(item.Id); }
+		return byItem;
 	}
 }

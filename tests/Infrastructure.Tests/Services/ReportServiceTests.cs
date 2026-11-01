@@ -513,48 +513,11 @@ public class ReportServiceTests
 		ReportService service = new(contextFactory);
 
 		// Act
-		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("milk", false, 10, CancellationToken.None);
+		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("milk", 10, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().ContainSingle();
 		result.Items[0].Description.Should().Be("Milk");
-		result.Items[0].Category.Should().Be("Dairy");
-		result.Items[0].Occurrences.Should().Be(2);
-
-		contextFactory.ResetDatabase();
-	}
-
-	[Fact]
-	public async Task GetItemDescriptionsAsync_CategoryOnlyMode_ReturnsCategories()
-	{
-		// Arrange
-		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
-
-		Guid receiptId = Guid.NewGuid();
-
-		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
-		{
-			context.Receipts.Add(
-				new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 3, 1), TaxAmount = 0m });
-
-			context.ReceiptItems.AddRange(
-				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.00m, TotalAmount = 3.00m, Category = "Dairy" },
-				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Cheese", Quantity = 1, UnitPrice = 5.00m, TotalAmount = 5.00m, Category = "Dairy" },
-				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Bread", Quantity = 1, UnitPrice = 2.00m, TotalAmount = 2.00m, Category = "Bakery" });
-
-			SeedOriginatingCards(context);
-			await context.SaveChangesAsync();
-		}
-
-		ReportService service = new(contextFactory);
-
-		// Act
-		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("dairy", true, 10, CancellationToken.None);
-
-		// Assert
-		result.Items.Should().ContainSingle();
-		result.Items[0].Description.Should().Be("Dairy");
-		result.Items[0].Category.Should().Be("Dairy");
 		result.Items[0].Occurrences.Should().Be(2);
 
 		contextFactory.ResetDatabase();
@@ -584,7 +547,7 @@ public class ReportServiceTests
 		ReportService service = new(contextFactory);
 
 		// Act
-		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("milk", false, 10, CancellationToken.None);
+		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("milk", 10, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().ContainSingle();
@@ -618,7 +581,7 @@ public class ReportServiceTests
 		ReportService service = new(contextFactory);
 
 		// Act
-		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("item", false, 2, CancellationToken.None);
+		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("item", 2, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().HaveCount(2);
@@ -649,7 +612,7 @@ public class ReportServiceTests
 		ReportService service = new(contextFactory);
 
 		// Act
-		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("xyz", false, 10, CancellationToken.None);
+		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("xyz", 10, CancellationToken.None);
 
 		// Assert
 		result.Items.Should().BeEmpty();
@@ -658,7 +621,7 @@ public class ReportServiceTests
 	}
 
 	[Fact]
-	public async Task GetItemDescriptionsAsync_GroupsByDescriptionAndCategory()
+	public async Task GetItemDescriptionsAsync_GroupsByDescriptionOnly_IgnoringLegacyCategory()
 	{
 		// Arrange
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
@@ -670,7 +633,7 @@ public class ReportServiceTests
 			context.Receipts.Add(
 				new ReceiptEntity { Id = receiptId, Location = "Store", Date = new DateOnly(2025, 3, 1), TaxAmount = 0m });
 
-			// Same description, different categories => separate groups
+			// Same description, different legacy labels => one group: the label is no longer read
 			context.ReceiptItems.AddRange(
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 3.00m, TotalAmount = 3.00m, Category = "Dairy" },
 				new ReceiptItemEntity { Id = Guid.NewGuid(), ReceiptId = receiptId, Description = "Milk", Quantity = 1, UnitPrice = 4.00m, TotalAmount = 4.00m, Category = "Beverages" });
@@ -682,12 +645,12 @@ public class ReportServiceTests
 		ReportService service = new(contextFactory);
 
 		// Act
-		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("milk", false, 10, CancellationToken.None);
+		ItemDescriptionResult result = await service.GetItemDescriptionsAsync("milk", 10, CancellationToken.None);
 
 		// Assert
-		result.Items.Should().HaveCount(2);
-		result.Items.Should().Contain(x => x.Category == "Dairy");
-		result.Items.Should().Contain(x => x.Category == "Beverages");
+		result.Items.Should().ContainSingle();
+		result.Items[0].Description.Should().Be("Milk");
+		result.Items[0].Occurrences.Should().Be(2);
 
 		contextFactory.ResetDatabase();
 	}
@@ -732,7 +695,7 @@ public class ReportServiceTests
 
 		// Act
 		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
-			description: null, category: null, startDate: null, endDate: null, granularity: "exact",
+			description: null, startDate: null, endDate: null, granularity: "exact",
 			normalizedDescription: "Milk", CancellationToken.None);
 
 		// Assert — both raw descriptions are represented because they share the canonical name.
@@ -778,7 +741,7 @@ public class ReportServiceTests
 
 		// Act
 		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
-			description: null, category: null, startDate: null, endDate: null, granularity: "exact",
+			description: null, startDate: null, endDate: null, granularity: "exact",
 			normalizedDescription: "Milk", CancellationToken.None);
 
 		// Assert — only the linked item is included.
@@ -793,7 +756,7 @@ public class ReportServiceTests
 	{
 		// Arrange — an item matches `description` but belongs to a different normalized bucket than
 		// the one requested; another item matches only the normalizedDescription filter. Precedence
-		// (description > normalizedDescription > category) means only the description match returns.
+		// (description > normalizedDescription > categoryId) means only the description match returns.
 		IDbContextFactory<ApplicationDbContext> contextFactory = DbContextHelpers.CreateInMemoryContextFactory();
 
 		Guid milkNormalizedId = Guid.NewGuid();
@@ -826,7 +789,7 @@ public class ReportServiceTests
 
 		// Act — both description and normalizedDescription supplied; description must win.
 		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
-			description: "Oat Milk", category: null, startDate: null, endDate: null, granularity: "exact",
+			description: "Oat Milk", startDate: null, endDate: null, granularity: "exact",
 			normalizedDescription: "Milk", CancellationToken.None);
 
 		// Assert — only the description match is returned.

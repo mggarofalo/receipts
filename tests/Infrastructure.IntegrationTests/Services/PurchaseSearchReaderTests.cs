@@ -342,9 +342,8 @@ public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgre
 	[InlineData("50%", "50 percent")]
 	[InlineData("a_b", "axb")]
 	[InlineData("a\\b", "ab")]
-	public async Task ReceiptItemSearch_TreatsPatternCharactersLiterallyAcrossAllSearchableFields(string phrase, string decoy)
+	public async Task ReceiptItemSearch_TreatsPatternCharactersLiterally_AndIgnoresLegacyLabels(string phrase, string decoy)
 	{
-
 		ReceiptItemEntity description = Item(1, Id(1), phrase);
 		ReceiptItemEntity code = Item(2, Id(1)); code.ReceiptItemCode = phrase;
 		ReceiptItemEntity category = Item(3, Id(1)); category.Category = phrase;
@@ -352,8 +351,9 @@ public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgre
 		await SeedAsync(Receipt(1), description, code, category, subcategory, Item(5, Id(1), decoy));
 		ReceiptItemRepository repository = new(new ContextFactory(fixture));
 		var rows = await repository.GetAllAsync(0, 25, SortParams.Default, phrase, CancellationToken.None);
-		rows.Select(x => x.Id).Should().BeEquivalentTo([Id(1), Id(2), Id(3), Id(4)]);
-		(await repository.GetCountAsync(phrase, CancellationToken.None)).Should().Be(4);
+		// Legacy labels are no longer searched; only description and item code match here.
+		rows.Select(x => x.Id).Should().BeEquivalentTo([Id(1), Id(2)]);
+		(await repository.GetCountAsync(phrase, CancellationToken.None)).Should().Be(2);
 	}
 
 	private PurchaseSearchReader Reader() => new(new ContextFactory(fixture));

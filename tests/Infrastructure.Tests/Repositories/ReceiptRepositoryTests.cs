@@ -1,6 +1,7 @@
 using Application.Models;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.Entities.Taxonomy;
 using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -92,15 +93,45 @@ public class ReceiptRepositoryTests
 		ReceiptEntity receipt = ReceiptEntityGenerator.Generate();
 		receipt.TaxAmount = 1.005m;
 
-		string[] categories = ["Snacks", "Bakery", "Produce", "Dairy", "  Bakery  ", "   "];
-		decimal[] itemAmounts = [1m, 2m, 3m, 4m, 0m, 0m];
-		List<ReceiptItemEntity> items = [.. categories.Select((category, index) =>
+		// Chips come from each item's recorded item-type root; legacy labels are deliberately
+		// unrelated (and would sort first) so reading them would change the summary.
+		Guid revision = Guid.NewGuid(), snacks = Guid.NewGuid(), bakery = Guid.NewGuid(), bread = Guid.NewGuid(),
+			produce = Guid.NewGuid(), dairy = Guid.NewGuid();
+		List<TaxonomyNodeEntity> nodes =
+		[
+			new() { RevisionId = revision, CategoryId = snacks, Name = "Snacks" },
+			new() { RevisionId = revision, CategoryId = bakery, Name = "Bakery" },
+			new() { RevisionId = revision, CategoryId = bread, ParentId = bakery, Name = "Bread" },
+			new() { RevisionId = revision, CategoryId = produce, Name = "Produce" },
+			new() { RevisionId = revision, CategoryId = dairy, Name = "Dairy" },
+		];
+		(Guid? CategoryId, bool Assigned, decimal Amount)[] rows =
+		[
+			(snacks, true, 1m), (bread, true, 2m), (produce, true, 3m), (dairy, true, 4m),
+			(bakery, true, 0m), // a second Bakery item yields one chip
+			(null, false, 0m),  // no assignment: no chip
+			(null, true, 0m),   // explicitly unclassified: no chip
+		];
+		List<ReceiptItemEntity> items = [];
+		List<PurchaseClassificationEntity> assignments = [];
+		List<CurrentClassificationEntity> pointers = [];
+		foreach ((Guid? categoryId, bool assigned, decimal amount) in rows)
 		{
 			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receipt.Id);
-			item.Category = category;
-			item.TotalAmount = itemAmounts[index];
-			return item;
-		})];
+			item.Category = "Aardvark legacy";
+			item.TotalAmount = amount;
+			items.Add(item);
+			if (!assigned) { continue; }
+			PurchaseClassificationEntity assignment = new()
+			{
+				Id = Guid.NewGuid(),
+				ReceiptItemId = item.Id,
+				CategoryId = categoryId,
+				TaxonomyRevisionId = revision,
+			};
+			assignments.Add(assignment);
+			pointers.Add(new CurrentClassificationEntity { ReceiptItemId = item.Id, AssignmentId = assignment.Id });
+		}
 
 		AdjustmentEntity adjustment = AdjustmentEntityGenerator.Generate();
 		adjustment.ReceiptId = receipt.Id;
@@ -118,6 +149,9 @@ public class ReceiptRepositoryTests
 		{
 			context.AddRange(receipt, account, card, adjustment, transaction);
 			context.ReceiptItems.AddRange(items);
+			context.TaxonomyNodes.AddRange(nodes);
+			context.Classifications.AddRange(assignments);
+			context.CurrentClassifications.AddRange(pointers);
 			await context.SaveChangesAsync();
 		}
 
@@ -133,9 +167,37 @@ public class ReceiptRepositoryTests
 		actual.ExpectedTotal.Should().Be(13.26m, "money totals round midpoint values away from zero to two decimals");
 		actual.TransactionTotal.Should().Be(13.26m);
 		actual.BalanceState.Should().Be("balanced");
-		actual.ItemCount.Should().Be(6);
+		actual.ItemCount.Should().Be(7);
 		actual.CategorySummary.Should().Be("Bakery, Dairy, Produce +1");
 		actual.PaymentSummary.Should().Be("Checking · Visa 4321");
+
+		_contextFactory.ResetDatabase();
+	}
+
+	[Fact]
+	public async Task GetListAsync_ItemsWithOnlyLegacyLabels_HaveNoCategoryChips()
+	{
+		// Arrange
+		ReceiptEntity receipt = CreateReceipt("Legacy", 0m);
+		ReceiptItemEntity item = CreateItem(receipt.Id, 5m);
+		item.Category = "Groceries";
+		item.Subcategory = "Dairy";
+		using (ApplicationDbContext context = _contextFactory.CreateDbContext())
+		{
+			context.Receipts.Add(receipt);
+			context.ReceiptItems.Add(item);
+			await context.SaveChangesAsync();
+		}
+
+		ReceiptRepository repository = new(_contextFactory);
+
+		// Act
+		ReceiptListItem actual = (await repository.GetListAsync(
+			0, 50, SortParams.Default, null, null, null, null, CancellationToken.None)).Single();
+
+		// Assert
+		actual.ItemCount.Should().Be(1);
+		actual.CategorySummary.Should().BeEmpty();
 
 		_contextFactory.ResetDatabase();
 	}

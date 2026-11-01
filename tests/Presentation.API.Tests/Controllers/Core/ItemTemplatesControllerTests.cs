@@ -406,8 +406,6 @@ public class ItemTemplatesControllerTests
 				Name = "Whole Milk",
 				OccurrenceCount = 7,
 				LastPurchasedAt = new DateOnly(2026, 3, 4),
-				SuggestedCategory = "Groceries",
-				SuggestedSubcategory = "Dairy",
 				SuggestedUnitPrice = 3.99m,
 				SuggestedItemCode = "MILK-001",
 			},
@@ -416,8 +414,6 @@ public class ItemTemplatesControllerTests
 				Name = "Sourdough Bread",
 				OccurrenceCount = 3,
 				LastPurchasedAt = new DateOnly(2026, 2, 1),
-				SuggestedCategory = null,
-				SuggestedSubcategory = null,
 				SuggestedUnitPrice = null,
 				SuggestedItemCode = null,
 			},
@@ -443,14 +439,12 @@ public class ItemTemplatesControllerTests
 		first.Name.Should().Be("Whole Milk");
 		first.OccurrenceCount.Should().Be(7);
 		first.LastPurchasedAt.Should().Be(new DateOnly(2026, 3, 4));
-		first.SuggestedCategory.Should().Be("Groceries");
-		first.SuggestedSubcategory.Should().Be("Dairy");
+		first.SuggestedCategory.Should().BeNull("legacy labels are no longer returned");
+		first.SuggestedSubcategory.Should().BeNull();
 		first.SuggestedUnitPrice.Should().Be(3.99);
 		first.SuggestedItemCode.Should().Be("MILK-001");
 
 		ItemTemplateHistoryCandidateResponse second = actualReturn.Data.Last();
-		second.SuggestedCategory.Should().BeNull();
-		second.SuggestedSubcategory.Should().BeNull();
 		second.SuggestedUnitPrice.Should().BeNull();
 		second.SuggestedItemCode.Should().BeNull();
 	}

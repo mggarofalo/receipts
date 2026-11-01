@@ -678,11 +678,14 @@ it("normalizes persisted item text with the same draft rules", async () => {
   expect(onSubmit.mock.calls[0][0]).toMatchObject({
     receiptItemCode: "CODE",
     description: "Milk",
+    // The item type is unchanged, so the stored labels go back exactly as
+    // they were recorded rather than being re-derived from the draft.
     category: "Groceries",
-    subcategory: "Dairy",
+    subcategory: " Dairy ",
     quantity: 1,
     unitPrice: 0,
   });
+  expect(onSubmit.mock.calls[0][0].classification).toBeUndefined();
 });
 
 it.each(["description", "receiptItemCode"])(
@@ -735,7 +738,135 @@ const recorded = {
   ],
 };
 
+describe("category hint", () => {
+  it("asks for a category when editing an item with no category recorded", () => {
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={classificationDefaults}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "No category recorded yet. Choose one to classify this item.",
+      ),
+    ).toBeInTheDocument();
+    // The legacy labels are never shown as if they were a category.
+    expect(screen.queryByText(/Saved category/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Food \/ Produce/)).not.toBeInTheDocument();
+  });
+
+  it("does not show the hint when the item has a recorded category", () => {
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={classificationDefaults}
+        currentClassification={recorded}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByText(/No category recorded yet/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show the hint while creating an item", () => {
+    render(
+      <ReceiptItemForm mode="create" onSubmit={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect(
+      screen.queryByText(/No category recorded yet/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the hint once a category is chosen", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={classificationDefaults}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: /Category/ }));
+    await chooseCategoryOption(user, "Food / Produce");
+    expect(
+      screen.queryByText(/No category recorded yet/),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("classification submissions", () => {
+  const sameRevisionRecorded = {
+    assignmentId: "assignment-1",
+    categoryId: "produce",
+    taxonomyRevisionId: "revision-1",
+    recordedPath: [
+      { id: "root", name: "Food", archived: false },
+      { id: "produce", name: "Produce", parentId: "root", archived: false },
+    ],
+  };
+  const staleLabelDefaults = {
+    ...classificationDefaults,
+    category: "Old Root",
+    subcategory: "Old Sub",
+  };
+
+  it("sends the stored labels back untouched when the same category is re-picked", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={staleLabelDefaults}
+        currentClassification={sameRevisionRecorded}
+        onSubmit={submit}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: /Category/ }));
+    await chooseCategoryOption(user, "Food / Produce");
+    await user.click(screen.getByRole("button", { name: "Update Item" }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    const submitted = submit.mock.calls[0][0];
+    expect(submitted).toMatchObject({
+      category: "Old Root",
+      subcategory: "Old Sub",
+    });
+    expect(submitted.classification).toBeUndefined();
+  });
+
+  it("sends the picker's labels with a classification when a different category is picked", async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn();
+    render(
+      <ReceiptItemForm
+        mode="edit"
+        defaultValues={staleLabelDefaults}
+        currentClassification={sameRevisionRecorded}
+        onSubmit={submit}
+        onCancel={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole("combobox", { name: /Category/ }));
+    await chooseCategoryOption(user, "Food / Produce / Fruit");
+    await user.click(screen.getByRole("button", { name: "Update Item" }));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit.mock.calls[0][0]).toMatchObject({
+      category: "Food",
+      subcategory: "Produce",
+      classification: {
+        categoryId: "fruit",
+        taxonomyRevisionId: "revision-1",
+        expectedAssignmentId: "assignment-1",
+      },
+    });
+  });
+
   it("preserves a deep recorded path and omits untouched assignment mutation even when taxonomy is unavailable", async () => {
     const user = userEvent.setup();
     const submit = vi.fn();

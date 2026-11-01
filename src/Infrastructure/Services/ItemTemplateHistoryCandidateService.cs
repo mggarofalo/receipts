@@ -24,8 +24,6 @@ public class ItemTemplateHistoryCandidateService(IDbContextFactory<ApplicationDb
 		    SELECT
 		        LOWER(ri."Description") AS description_key,
 		        ri."Description"        AS description,
-		        ri."Category"           AS category,
-		        ri."Subcategory"        AS subcategory,
 		        ri."UnitPrice"          AS unit_price,
 		        ri."ReceiptItemCode"    AS item_code,
 		        r."Date"                AS purchased_at,
@@ -84,18 +82,6 @@ public class ItemTemplateHistoryCandidateService(IDbContextFactory<ApplicationDb
 			    FROM active_items
 			    ORDER BY description_key, purchased_at DESC, item_id DESC
 			),
-			category_counts AS (
-			    SELECT description_key, category, subcategory, COUNT(*) AS pair_count
-			    FROM active_items
-			    WHERE category <> ''
-			    GROUP BY description_key, category, subcategory
-			),
-			top_category AS (
-			    SELECT DISTINCT ON (description_key)
-			        description_key, category, subcategory
-			    FROM category_counts
-			    ORDER BY description_key, pair_count DESC, category ASC, subcategory ASC NULLS LAST
-			),
 			item_code_counts AS (
 			    SELECT description_key, item_code, COUNT(*) AS code_count
 			    FROM active_items
@@ -112,13 +98,10 @@ public class ItemTemplateHistoryCandidateService(IDbContextFactory<ApplicationDb
 			    l.name                       AS name,
 			    c.occurrence_count           AS occurrence_count,
 			    c.last_purchased_at          AS last_purchased_at,
-			    NULLIF(tc.category, '')      AS suggested_category,
-			    NULLIF(tc.subcategory, '')   AS suggested_subcategory,
 			    l.unit_price                 AS suggested_unit_price,
 			    NULLIF(ic.item_code, '')     AS suggested_item_code
 			FROM candidates c
 			INNER JOIN latest l ON l.description_key = c.description_key
-			LEFT JOIN top_category tc ON tc.description_key = c.description_key
 			LEFT JOIN top_item_code ic ON ic.description_key = c.description_key
 			ORDER BY c.occurrence_count DESC, l.name ASC
 			OFFSET {1} LIMIT {2}
@@ -133,8 +116,6 @@ public class ItemTemplateHistoryCandidateService(IDbContextFactory<ApplicationDb
 			Name = r.name,
 			OccurrenceCount = r.occurrence_count,
 			LastPurchasedAt = r.last_purchased_at,
-			SuggestedCategory = r.suggested_category,
-			SuggestedSubcategory = r.suggested_subcategory,
 			SuggestedUnitPrice = r.suggested_unit_price,
 			SuggestedItemCode = r.suggested_item_code,
 		})];
@@ -147,8 +128,6 @@ public class ItemTemplateHistoryCandidateService(IDbContextFactory<ApplicationDb
 		public string name { get; set; } = string.Empty;
 		public int occurrence_count { get; set; }
 		public DateOnly last_purchased_at { get; set; }
-		public string? suggested_category { get; set; }
-		public string? suggested_subcategory { get; set; }
 		public decimal? suggested_unit_price { get; set; }
 		public string? suggested_item_code { get; set; }
 	}

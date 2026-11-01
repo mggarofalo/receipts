@@ -91,8 +91,8 @@ public class ItemTemplateSimilarityService(
 			        ri."Description" AS name,
 			        similarity(ri."Description", {0}) AS trigram_similarity,
 			        'history' AS source,
-			        ri."Category" AS default_category,
-			        ri."Subcategory" AS default_subcategory,
+			        CAST(NULL AS text) AS default_category,
+			        CAST(NULL AS text) AS default_subcategory,
 			        ri."UnitPrice" AS default_unit_price,
 			        ri."ReceiptItemCode" AS default_item_code,
 			        'ReceiptItem' AS entity_type
@@ -162,8 +162,8 @@ public class ItemTemplateSimilarityService(
 			        CAST(NULL AS double precision) AS semantic_similarity,
 			        similarity("Description", {0}) AS combined_score,
 			        'history' AS source,
-			        "Category" AS default_category,
-			        "Subcategory" AS default_subcategory,
+			        CAST(NULL AS text) AS default_category,
+			        CAST(NULL AS text) AS default_subcategory,
 			        "UnitPrice" AS default_unit_price,
 			        "ReceiptItemCode" AS default_item_code
 			    FROM "receipts"."ReceiptItems"

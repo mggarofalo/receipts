@@ -223,49 +223,49 @@ public class ReportsControllerTests
 		// Arrange
 		AppReports.ItemDescriptionResult descResult = new(
 		[
-			new AppReports.ItemDescriptionItem("Milk", "Dairy", 10),
-			new AppReports.ItemDescriptionItem("Milk Chocolate", "Candy", 3),
+			new AppReports.ItemDescriptionItem("Milk", 10),
+			new AppReports.ItemDescriptionItem("Milk Chocolate", 3),
 		]);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetItemDescriptionsQuery>(q =>
-				q.Search == "mi" && !q.CategoryOnly && q.Limit == 20),
+				q.Search == "mi" && q.Limit == 20),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(descResult);
 
 		// Act
 		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
-			await _controller.GetItemDescriptions("mi", null, null, CancellationToken.None);
+			await _controller.GetItemDescriptions("mi", null, CancellationToken.None);
 
 		// Assert
 		Ok<ItemDescriptionsResponse> okResult = Assert.IsType<Ok<ItemDescriptionsResponse>>(result.Result);
 		okResult.Value!.Items.Should().HaveCount(2);
 		okResult.Value!.Items.First().Description.Should().Be("Milk");
-		okResult.Value!.Items.First().Category.Should().Be("Dairy");
 		okResult.Value!.Items.First().Occurrences.Should().Be(10);
+		okResult.Value!.Items.Should().OnlyContain(item => item.Category == "", "the legacy label is no longer read");
 	}
 
 	[Fact]
-	public async Task GetItemDescriptions_PassesCategoryOnlyAndLimit()
+	public async Task GetItemDescriptions_PassesLimit()
 	{
 		// Arrange
 		AppReports.ItemDescriptionResult descResult = new([]);
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetItemDescriptionsQuery>(q =>
-				q.Search == "da" && q.CategoryOnly && q.Limit == 10),
+				q.Search == "da" && q.Limit == 10),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(descResult);
 
 		// Act
 		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
-			await _controller.GetItemDescriptions("da", true, 10, CancellationToken.None);
+			await _controller.GetItemDescriptions("da", 10, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<ItemDescriptionsResponse>>(result.Result);
 		_mediatorMock.Verify(m => m.Send(
 			It.Is<GetItemDescriptionsQuery>(q =>
-				q.Search == "da" && q.CategoryOnly && q.Limit == 10),
+				q.Search == "da" && q.Limit == 10),
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
@@ -277,7 +277,7 @@ public class ReportsControllerTests
 	{
 		// Act
 		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
-			await _controller.GetItemDescriptions(search, null, null, CancellationToken.None);
+			await _controller.GetItemDescriptions(search, null, CancellationToken.None);
 
 		// Assert
 		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
@@ -292,7 +292,7 @@ public class ReportsControllerTests
 	{
 		// Act
 		Results<Ok<ItemDescriptionsResponse>, BadRequestProblem> result =
-			await _controller.GetItemDescriptions("milk", null, limit, CancellationToken.None);
+			await _controller.GetItemDescriptions("milk", limit, CancellationToken.None);
 
 		// Assert
 		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
@@ -313,13 +313,13 @@ public class ReportsControllerTests
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetItemCostOverTimeQuery>(q =>
-				q.Description == "Milk" && q.Category == null && q.Granularity == "exact"),
+				q.Description == "Milk" && q.Granularity == "exact"),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(costResult);
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime("Milk", null, null, null, null, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, null, null, null, CancellationToken.None);
 
 		// Assert
 		Ok<ItemCostOverTimeResponse> okResult = Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -340,7 +340,7 @@ public class ReportsControllerTests
 				It.IsAny<CancellationToken>()))
 				.ReturnsAsync(new AppReports.ItemCostOverTimeResult([new("2025-01", 4m, "USD")]));
 
-		var result = await _controller.GetItemCostOverTime(null, null, null, null, "monthly", null,
+		var result = await _controller.GetItemCostOverTime(null, null, null, "monthly", null,
 				CancellationToken.None, categoryId, "currentHierarchy", "2025-01-02T03:04:05Z", revisionId);
 
 		var ok = Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -350,45 +350,21 @@ public class ReportsControllerTests
 	[Fact]
 	public async Task GetItemCostOverTime_RejectsRevisionWithoutCurrentView()
 	{
-		var result = await _controller.GetItemCostOverTime(null, null, null, null, null, null,
+		var result = await _controller.GetItemCostOverTime(null, null, null, null, null,
 				CancellationToken.None, Guid.NewGuid(), "asClassified", null, Guid.NewGuid());
 		Assert.IsType<BadRequestProblem>(result.Result);
 	}
 
 	[Fact]
-	public async Task GetItemCostOverTime_ReturnsOkResult_WithCategory()
-	{
-		// Arrange
-		AppReports.ItemCostOverTimeResult costResult = new([]);
-
-		_mediatorMock.Setup(m => m.Send(
-			It.Is<GetItemCostOverTimeQuery>(q =>
-				q.Description == null && q.Category == "Dairy" && q.Granularity == "monthly"),
-			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(costResult);
-
-		// Act
-		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime(null, "Dairy", null, null, "monthly", null, CancellationToken.None);
-
-		// Assert
-		Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
-		_mediatorMock.Verify(m => m.Send(
-			It.Is<GetItemCostOverTimeQuery>(q =>
-				q.Category == "Dairy" && q.Granularity == "monthly"),
-			It.IsAny<CancellationToken>()), Times.Once);
-	}
-
-	[Fact]
-	public async Task GetItemCostOverTime_ReturnsBadRequest_WhenNoDescriptionCategoryOrNormalizedDescription()
+	public async Task GetItemCostOverTime_ReturnsBadRequest_WhenNoDescriptionNormalizedDescriptionOrCategoryId()
 	{
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime(null, null, null, null, null, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime(null, null, null, null, null, CancellationToken.None);
 
 		// Assert
 		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
-		badResult.Value!.Detail.Should().Contain("One of description, normalizedDescription, categoryId, or category is required");
+		badResult.Value!.Detail.Should().Contain("One of description, normalizedDescription, or categoryId is required");
 	}
 
 	[Fact]
@@ -402,13 +378,13 @@ public class ReportsControllerTests
 
 		_mediatorMock.Setup(m => m.Send(
 			It.Is<GetItemCostOverTimeQuery>(q =>
-				q.Description == null && q.Category == null && q.NormalizedDescription == "Milk"),
+				q.Description == null && q.NormalizedDescription == "Milk"),
 			It.IsAny<CancellationToken>()))
 			.ReturnsAsync(costResult);
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime(null, null, null, null, null, "Milk", CancellationToken.None);
+			await _controller.GetItemCostOverTime(null, null, null, null, "Milk", CancellationToken.None);
 
 		// Assert
 		Ok<ItemCostOverTimeResponse> okResult = Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -427,7 +403,7 @@ public class ReportsControllerTests
 			.ReturnsAsync(costResult);
 
 		// Act
-		await _controller.GetItemCostOverTime(null, null, null, null, null, "Organic Milk", CancellationToken.None);
+		await _controller.GetItemCostOverTime(null, null, null, null, "Organic Milk", CancellationToken.None);
 
 		// Assert
 		_mediatorMock.Verify(m => m.Send(
@@ -440,7 +416,7 @@ public class ReportsControllerTests
 	{
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime("Milk", null, null, null, "invalid", null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, null, "invalid", null, CancellationToken.None);
 
 		// Assert
 		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
@@ -463,7 +439,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime("Milk", null, null, null, granularity, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", null, null, granularity, null, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);
@@ -474,7 +450,7 @@ public class ReportsControllerTests
 	{
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime("Milk", null, new DateOnly(2025, 12, 31), new DateOnly(2025, 1, 1), null, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", new DateOnly(2025, 12, 31), new DateOnly(2025, 1, 1), null, null, CancellationToken.None);
 
 		// Assert
 		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
@@ -497,7 +473,7 @@ public class ReportsControllerTests
 
 		// Act
 		Results<Ok<ItemCostOverTimeResponse>, BadRequestProblem> result =
-			await _controller.GetItemCostOverTime("Milk", null, start, end, null, null, CancellationToken.None);
+			await _controller.GetItemCostOverTime("Milk", start, end, null, null, CancellationToken.None);
 
 		// Assert
 		Assert.IsType<Ok<ItemCostOverTimeResponse>>(result.Result);

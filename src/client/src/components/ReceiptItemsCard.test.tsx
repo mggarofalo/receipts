@@ -254,14 +254,22 @@ describe("ReceiptItemsCard", () => {
     expect(screen.getByText("Items (2)")).toBeInTheDocument();
     expect(screen.getByText("ITEM001")).toBeInTheDocument();
     expect(screen.getByText("Widget A")).toBeInTheDocument();
-    expect(
-      screen.getByText("Legacy: Hardware / Fasteners"),
-    ).toBeInTheDocument();
     expect(screen.getByText("ITEM002")).toBeInTheDocument();
     expect(screen.getByText("Widget B")).toBeInTheDocument();
-    expect(
-      screen.getByText("Legacy: Electronics / Components"),
-    ).toBeInTheDocument();
+  });
+
+  it("shows an item without a current classification as unresolved, never its legacy labels", () => {
+    renderWithQueryClient(
+      <ReceiptItemsCard
+        receiptId="receipt-1"
+        items={mockItems}
+        subtotal={46}
+      />,
+    );
+    expect(screen.getAllByText("Unresolved category")).toHaveLength(2);
+    expect(screen.queryByText(/Legacy:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hardware/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Electronics/)).not.toBeInTheDocument();
   });
 
   it("renders table headers when items exist", () => {
@@ -333,9 +341,7 @@ describe("ReceiptItemsCard", () => {
     expect(
       screen.getByText("Old Food (archived in recorded revision)"),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Legacy: Hardware / Fasteners"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Legacy:/)).not.toBeInTheDocument();
   });
 
   it("renders the subtotal in the footer", () => {

@@ -265,13 +265,22 @@ export function ReceiptItemForm({
     addDescriptionHistory(values.description);
     addItemCodeHistory(values.receiptItemCode);
 
+    const classification = classificationChange(
+      categoryChoice,
+      initialClassification,
+      categoryOperationId,
+    );
     onSubmit({
       ...values,
-      classification: classificationChange(
-        categoryChoice,
-        initialClassification,
-        categoryOperationId,
-      ),
+      // An edit that keeps the item type sends the stored labels back untouched;
+      // relabelled text without a classification is read as a legacy write.
+      ...(mode === "edit" && !classification
+        ? {
+            category: defaultValues?.category ?? values.category,
+            subcategory: defaultValues?.subcategory ?? values.subcategory,
+          }
+        : {}),
+      classification,
       normalizationIntent: currentNormalizationChoice(
         normalizationChoice,
         receiptNormalizationSource(resolvedLocation, values),
@@ -697,13 +706,9 @@ export function ReceiptItemForm({
                     }}
                   />
                 </FormControl>
-                {!categoryChoice && field.value && (
+                {mode === "edit" && !categoryChoice && (
                   <p className="text-sm text-muted-foreground">
-                    Saved category: {field.value}
-                    {form.getValues("subcategory")
-                      ? ` / ${form.getValues("subcategory")}`
-                      : ""}
-                    . Choose a category to classify this item.
+                    No category recorded yet. Choose one to classify this item.
                   </p>
                 )}
                 <FormMessage />

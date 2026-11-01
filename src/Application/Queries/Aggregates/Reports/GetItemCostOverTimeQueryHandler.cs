@@ -11,7 +11,6 @@ public class GetItemCostOverTimeQueryHandler(IReportService reportService)
 	{
 		return await reportService.GetItemCostOverTimeAsync(
 			request.Description,
-			request.Category,
 			request.StartDate,
 			request.EndDate,
 			request.Granularity,

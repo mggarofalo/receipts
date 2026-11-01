@@ -27,10 +27,10 @@ public sealed partial class NormalizationCatalogTests
 		bucket.CanonicalName.Should().Be("Beef franks, 8 count");
 		bucket.TotalAmount.Should().Be(6.80m);
 		var history = await reports.GetItemCostOverTimeAsync(
-			null, null, null, null, "monthly", bucket.CanonicalName, CancellationToken.None);
+			null, null, null, "monthly", bucket.CanonicalName, CancellationToken.None);
 		history.Buckets.Should().ContainSingle().Which.Amount.Should().Be(2.8456m);
 		var legacyLink = await reports.GetItemCostOverTimeAsync(
-			null, null, null, null, "monthly", target.CanonicalName, CancellationToken.None);
+			null, null, null, "monthly", target.CanonicalName, CancellationToken.None);
 		legacyLink.Should().BeEquivalentTo(history, "existing canonical-name report links must remain usable");
 		var search = await new PurchaseSearchReader(new Factory(fixture)).SearchAsync(
 			bucket.CanonicalName, 0, 25, new PurchaseSearchOptions(), CancellationToken.None);

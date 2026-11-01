@@ -10,8 +10,6 @@ public record UncategorizedItemRecord(
 	decimal Quantity,
 	decimal UnitPrice,
 	decimal TotalAmount,
-	string Category,
-		string? Subcategory,
 		string ClassificationState = "missing_assignment",
 		Guid? AssignmentId = null,
 		Guid? CategoryId = null,

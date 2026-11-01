@@ -3,7 +3,6 @@ import client from "@/lib/api-client";
 
 export interface ItemDescriptionsParams {
   search: string;
-  categoryOnly?: boolean;
   limit?: number;
 }
 
@@ -15,7 +14,6 @@ export function useItemDescriptions(params: ItemDescriptionsParams) {
       "reports",
       "item-descriptions",
       params.search,
-      params.categoryOnly,
       params.limit,
     ],
     enabled,
@@ -27,7 +25,6 @@ export function useItemDescriptions(params: ItemDescriptionsParams) {
           params: {
             query: {
               search: params.search,
-              categoryOnly: params.categoryOnly,
               limit: params.limit,
             },
           },
@@ -45,7 +42,6 @@ export interface ItemCostOverTimeParams {
   categoryView?: "asClassified" | "currentHierarchy";
   knowledgeCutoff?: string;
   capturedCurrentRevisionId?: string;
-  category?: string;
   /** Normalized description canonical name (RECEIPTS-841 drill-down target). */
   normalizedDescription?: string;
   startDate?: string;
@@ -57,7 +53,6 @@ export function useItemCostOverTime(params: ItemCostOverTimeParams) {
   const enabled = Boolean(
     params.description ||
     params.categoryId ||
-    params.category ||
     params.normalizedDescription,
   );
 
@@ -70,7 +65,6 @@ export function useItemCostOverTime(params: ItemCostOverTimeParams) {
       params.categoryView,
       params.knowledgeCutoff,
       params.capturedCurrentRevisionId,
-      params.category,
       params.normalizedDescription,
       params.startDate,
       params.endDate,
@@ -89,7 +83,6 @@ export function useItemCostOverTime(params: ItemCostOverTimeParams) {
               categoryView: params.categoryView,
               knowledgeCutoff: params.knowledgeCutoff,
               capturedCurrentRevisionId: params.capturedCurrentRevisionId,
-              category: params.category,
               normalizedDescription: params.normalizedDescription,
               startDate: params.startDate,
               endDate: params.endDate,

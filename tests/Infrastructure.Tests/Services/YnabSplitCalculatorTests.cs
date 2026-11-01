@@ -34,8 +34,10 @@ public class YnabSplitCalculatorTests
 	private static Receipt MakeReceipt(decimal tax)
 		=> new(Guid.NewGuid(), "TestStore", DateOnly.FromDateTime(DateTime.Today.AddDays(-1)), new Money(tax));
 
-	private static ReceiptItem MakeItem(string category, decimal amount)
-		=> new(Guid.NewGuid(), null, $"Item-{category}", 1, new Money(amount), new Money(amount), category, null);
+	// The envelope names the item's YNAB target; the legacy label is deliberately unrelated so a
+	// split that still read it could not succeed.
+	private static ReceiptItem MakeItem(string envelope, decimal amount)
+		=> new(Guid.NewGuid(), null, $"Item-{envelope}", 1, new Money(amount), new Money(amount), "Legacy label", null);
 
 	private static Adjustment MakeAdjustment(decimal amount, AdjustmentType type = AdjustmentType.Discount)
 		=> new(Guid.NewGuid(), type, new Money(amount));
@@ -43,15 +45,11 @@ public class YnabSplitCalculatorTests
 	private static Transaction MakeTransaction(decimal amount)
 		=> new(Guid.NewGuid(), Guid.NewGuid(), new Money(amount), DateOnly.FromDateTime(DateTime.Today.AddDays(-1)));
 
-	private static Dictionary<string, string> MakeMappings(params string[] categories)
-	{
-		Dictionary<string, string> map = new();
-		foreach (string cat in categories)
-		{
-			map[cat] = $"ynab-{cat}";
-		}
-		return map;
-	}
+	// Maps every item, by item key, to "ynab-{envelope}".
+	private static Dictionary<string, string> MakeMappings(ReceiptWithItems receipt)
+		=> receipt.Items.ToDictionary(
+			item => YnabReceiptMappingResolver.ItemKey(item.Id),
+			item => $"ynab-{item.Description["Item-".Length..]}");
 
 	// ── Category Allocation Tests ───────────────────
 
@@ -65,7 +63,7 @@ public class YnabSplitCalculatorTests
 			Items = [MakeItem("Groceries", 10.00m)],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		List<YnabCategoryAllocation> allocations = YnabSplitCalculator.ComputeCategoryAllocations(rwi, mappings);
@@ -93,7 +91,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries", "Gas");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		List<YnabCategoryAllocation> allocations = YnabSplitCalculator.ComputeCategoryAllocations(rwi, mappings);
@@ -125,7 +123,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("A", "B", "C");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		List<YnabCategoryAllocation> allocations = YnabSplitCalculator.ComputeCategoryAllocations(rwi, mappings);
@@ -158,7 +156,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [MakeAdjustment(-1.00m)],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries", "Gas");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		List<YnabCategoryAllocation> allocations = YnabSplitCalculator.ComputeCategoryAllocations(rwi, mappings);
@@ -190,7 +188,7 @@ public class YnabSplitCalculatorTests
 				MakeAdjustment(-1.00m, AdjustmentType.Discount),
 			],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		List<YnabCategoryAllocation> allocations = YnabSplitCalculator.ComputeCategoryAllocations(rwi, mappings);
@@ -215,7 +213,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		List<YnabCategoryAllocation> allocations = YnabSplitCalculator.ComputeCategoryAllocations(rwi, mappings);
@@ -386,7 +384,7 @@ public class YnabSplitCalculatorTests
 			Items = [MakeItem("Groceries", 15.00m)],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], mappings);
@@ -414,7 +412,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries", "Gas");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], mappings);
@@ -446,7 +444,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("A", "B", "C");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], mappings);
@@ -478,7 +476,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("Groceries", "Gas");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx1, tx2], mappings);
@@ -512,7 +510,7 @@ public class YnabSplitCalculatorTests
 		};
 
 		// Act
-		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], MakeMappings("A"));
+		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], MakeMappings(rwi));
 
 		// Assert: positive local = negative YNAB (outflow)
 		result.TransactionSplits[0].TotalMilliunits.Should().BeNegative();
@@ -532,7 +530,7 @@ public class YnabSplitCalculatorTests
 		};
 
 		// Act
-		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], MakeMappings("A"));
+		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], MakeMappings(rwi));
 
 		// Assert
 		result.TransactionSplits[0].SubTransactions[0].Milliunits.Should().Be(-10000);
@@ -551,7 +549,7 @@ public class YnabSplitCalculatorTests
 		};
 
 		// Act
-		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], MakeMappings("A"));
+		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], MakeMappings(rwi));
 
 		// Assert: total should be $9 (10 - 1)
 		result.TransactionSplits[0].SubTransactions[0].Milliunits.Should().Be(-9000);
@@ -574,7 +572,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("A", "B");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx1, tx2, tx3], mappings);
@@ -622,7 +620,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("A", "B");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], mappings);
@@ -649,7 +647,7 @@ public class YnabSplitCalculatorTests
 			],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("A", "B");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act
 		YnabSplitResult result = _calculator.ComputeWaterfallSplits(rwi, [tx], mappings);
@@ -672,7 +670,7 @@ public class YnabSplitCalculatorTests
 			Items = [MakeItem("A", 10.00m)],
 			Adjustments = [],
 		};
-		Dictionary<string, string> mappings = MakeMappings("A");
+		Dictionary<string, string> mappings = MakeMappings(rwi);
 
 		// Act & Assert
 		Action act = () => _calculator.ComputeWaterfallSplits(rwi, [tx1, tx2], mappings);
@@ -681,4 +679,24 @@ public class YnabSplitCalculatorTests
 			.WithMessage("*exhausted*");
 	}
 
+	[Fact]
+	public void ComputeCategoryAllocations_ItemWithoutItemKeyMapping_ThrowsEvenWhenItsLegacyLabelIsMapped()
+	{
+		// Arrange — the item's legacy label has a mapping, its item key does not
+		ReceiptItem item = MakeItem("Groceries", 10.00m);
+		ReceiptWithItems rwi = new()
+		{
+			Receipt = MakeReceipt(0.00m),
+			Items = [item],
+			Adjustments = [],
+		};
+		Dictionary<string, string> mappings = new() { [item.Category] = "ynab-legacy" };
+
+		// Act
+		Action act = () => YnabSplitCalculator.ComputeCategoryAllocations(rwi, mappings);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage($"*No YNAB category mapping found for item {item.Id}*");
+	}
 }

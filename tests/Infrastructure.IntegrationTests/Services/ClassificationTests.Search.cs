@@ -67,10 +67,11 @@ public sealed partial class ClassificationTests
 	}
 
 	[Fact]
-	public async Task ReceiptItemSearch_LegacyFallbackOnlyWithoutCurrentAssignment_AndEscapesWildcards()
+	public async Task ReceiptItemSearch_IgnoresLegacyLabelsOfUnassignedItems_AndEscapesWildcards()
 	{
 		var seed = await SeedAsync();
-		string label = "Legacy%_\\" + Guid.NewGuid().ToString("N");
+		string label = "Legacy-" + Guid.NewGuid().ToString("N");
+		string description = "Wild%_\\" + Guid.NewGuid().ToString("N");
 		Guid legacyItemId = Guid.NewGuid();
 		await using (ApplicationDbContext db = fixture.CreateDbContext())
 		{
@@ -78,10 +79,10 @@ public sealed partial class ClassificationTests
 				.Select(x => x.ReceiptId).SingleAsync();
 			ReceiptItemEntity item = ReceiptItemEntityGenerator.Generate(receiptId);
 			item.Id = legacyItemId;
-			item.Description = "Unrelated item";
+			item.Description = description;
 			item.ReceiptItemCode = null;
 			item.Category = label;
-			item.Subcategory = null;
+			item.Subcategory = label + "-sub";
 			db.ReceiptItems.Add(item);
 			await db.SaveChangesAsync();
 		}
@@ -89,16 +90,21 @@ public sealed partial class ClassificationTests
 		try
 		{
 			ReceiptItemRepository repository = new(new Factory(fixture));
+			// No current assignment: the legacy label is never searched.
 			(await repository.GetAllAsync(0, 20, SortParams.Default, label, default))
+					.Should().BeEmpty();
+			(await repository.GetCountAsync(label, default)).Should().Be(0);
+			(await repository.GetAllAsync(0, 20, SortParams.Default, label + "-sub", default))
+					.Should().BeEmpty();
+			(await repository.GetAllAsync(0, 20, SortParams.Default, description, default))
 					.Select(x => x.Id).Should().Equal(legacyItemId);
-			(await repository.GetCountAsync(label, default)).Should().Be(1);
-			(await repository.GetAllAsync(0, 20, SortParams.Default, "Legacy%X", default))
+			(await repository.GetAllAsync(0, 20, SortParams.Default, "Wild%X", default))
 					.Should().BeEmpty();
 		}
 		finally
 		{
 			// This fixture is shared by ClassificationTests. Do not leave an
-			// intentionally unassigned legacy item for later readiness checks.
+			// intentionally unassigned item for later readiness checks.
 			await using ApplicationDbContext db = fixture.CreateDbContext();
 			await db.ReceiptItems.Where(x => x.Id == legacyItemId).ExecuteDeleteAsync();
 		}

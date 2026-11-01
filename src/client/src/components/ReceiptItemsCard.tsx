@@ -96,10 +96,7 @@ function categoryLabel(item: ReceiptItem): string {
       ? `${path} (archived in recorded revision)`
       : path;
   }
-  const legacyPath = [item.category, item.subcategory]
-    .filter(Boolean)
-    .join(" / ");
-  return legacyPath ? `Legacy: ${legacyPath}` : "Unresolved category";
+  return "Unresolved category";
 }
 
 export function ReceiptItemsCard({

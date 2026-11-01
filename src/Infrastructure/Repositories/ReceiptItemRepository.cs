@@ -20,7 +20,6 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		["quantity"] = e => e.Quantity,
 		["unitPrice"] = e => e.UnitPrice,
 		["totalAmount"] = e => e.TotalAmount,
-		["category"] = e => e.Category,
 	};
 
 	public async Task<ReceiptItemEntity?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
@@ -199,10 +198,7 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		return query.Where(ri =>
 			EF.Functions.ILike(ri.Description, pattern, @"\")
 			|| (ri.ReceiptItemCode != null && EF.Functions.ILike(ri.ReceiptItemCode, pattern, @"\"))
-						|| recordedMatches.Contains(ri.Id)
-						|| (!context.CurrentClassifications.Any(current => current.ReceiptItemId == ri.Id)
-							&& (EF.Functions.ILike(ri.Category, pattern, @"\")
-								|| (ri.Subcategory != null && EF.Functions.ILike(ri.Subcategory, pattern, @"\")))));
+						|| recordedMatches.Contains(ri.Id));
 	}
 
 	public async Task<List<ReceiptItemEntity>> GetDeletedAsync(int offset, int limit, SortParams sort, CancellationToken cancellationToken)
@@ -505,24 +501,20 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		{
 			string lowerLocation = location.ToLowerInvariant();
 
-			List<ReceiptItemSuggestion> locationResults = await context.ReceiptItems
+			List<ReceiptItemSuggestion> locationResults = await WithItemTypesAsync(context, await context.ReceiptItems
 				.AsNoTracking()
 				.Where(ri => ri.ReceiptItemCode != null && ri.ReceiptItemCode != "")
 				.Where(ri => ri.Receipt != null && ri.Receipt.Location.ToLower() == lowerLocation)
 				.Where(ri => ri.ReceiptItemCode!.ToLower().Contains(lowerItemCode))
 				.GroupBy(ri => ri.ReceiptItemCode!.ToLower())
 				.OrderByDescending(g => g.Count())
-				.Select(g => new ReceiptItemSuggestion
-				{
-					ItemCode = g.OrderByDescending(ri => ri.Id).First().ReceiptItemCode!,
-					Description = g.OrderByDescending(ri => ri.Id).First().Description,
-					Category = g.OrderByDescending(ri => ri.Id).First().Category,
-					Subcategory = g.OrderByDescending(ri => ri.Id).First().Subcategory,
-					UnitPrice = g.OrderByDescending(ri => ri.Id).First().UnitPrice,
-					MatchType = "location",
-				})
+				.Select(g => new SuggestionRow(
+					g.OrderByDescending(ri => ri.Id).First().Id,
+					g.OrderByDescending(ri => ri.Id).First().ReceiptItemCode!,
+					g.OrderByDescending(ri => ri.Id).First().Description,
+					g.OrderByDescending(ri => ri.Id).First().UnitPrice))
 				.Take(limit)
-				.ToListAsync(cancellationToken);
+				.ToListAsync(cancellationToken), "location", cancellationToken);
 
 			if (locationResults.Count > 0)
 			{
@@ -531,24 +523,41 @@ public class ReceiptItemRepository(IDbContextFactory<ApplicationDbContext> conte
 		}
 
 		// Fall back to all-location matches
-		List<ReceiptItemSuggestion> globalResults = await context.ReceiptItems
+		return await WithItemTypesAsync(context, await context.ReceiptItems
 			.AsNoTracking()
 			.Where(ri => ri.ReceiptItemCode != null && ri.ReceiptItemCode != "")
 			.Where(ri => ri.ReceiptItemCode!.ToLower().Contains(lowerItemCode))
 			.GroupBy(ri => ri.ReceiptItemCode!.ToLower())
 			.OrderByDescending(g => g.Count())
-			.Select(g => new ReceiptItemSuggestion
-			{
-				ItemCode = g.OrderByDescending(ri => ri.Id).First().ReceiptItemCode!,
-				Description = g.OrderByDescending(ri => ri.Id).First().Description,
-				Category = g.OrderByDescending(ri => ri.Id).First().Category,
-				Subcategory = g.OrderByDescending(ri => ri.Id).First().Subcategory,
-				UnitPrice = g.OrderByDescending(ri => ri.Id).First().UnitPrice,
-				MatchType = "global",
-			})
+			.Select(g => new SuggestionRow(
+				g.OrderByDescending(ri => ri.Id).First().Id,
+				g.OrderByDescending(ri => ri.Id).First().ReceiptItemCode!,
+				g.OrderByDescending(ri => ri.Id).First().Description,
+				g.OrderByDescending(ri => ri.Id).First().UnitPrice))
 			.Take(limit)
-			.ToListAsync(cancellationToken);
+			.ToListAsync(cancellationToken), "global", cancellationToken);
+	}
 
-		return globalResults;
+	private sealed record SuggestionRow(Guid ItemId, string ItemCode, string Description, decimal UnitPrice);
+
+	// The suggested item type is the latest item's current assignment: its recorded top two levels.
+	private static async Task<List<ReceiptItemSuggestion>> WithItemTypesAsync(ApplicationDbContext context,
+		List<SuggestionRow> rows, string matchType, CancellationToken cancellationToken)
+	{
+		Dictionary<Guid, Domain.Taxonomy.CurrentClassification> types =
+			await CurrentClassificationReader.ReadAsync(context, [.. rows.Select(row => row.ItemId)], cancellationToken);
+		return [.. rows.Select(row =>
+		{
+			IReadOnlyList<Domain.Taxonomy.TaxonomyNode> path = types.GetValueOrDefault(row.ItemId)?.RecordedPath ?? [];
+			return new ReceiptItemSuggestion
+			{
+				ItemCode = row.ItemCode,
+				Description = row.Description,
+				Category = path.Count > 0 ? path[0].Name : "",
+				Subcategory = path.Count > 1 ? path[1].Name : null,
+				UnitPrice = row.UnitPrice,
+				MatchType = matchType,
+			};
+		})];
 	}
 }

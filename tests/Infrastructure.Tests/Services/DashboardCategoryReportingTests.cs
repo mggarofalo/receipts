@@ -1,3 +1,4 @@
+using Application.Models.Dashboard;
 using Application.Models.Reports;
 using Common;
 using FluentAssertions;
@@ -73,5 +74,84 @@ public class DashboardCategoryReportingTests
 			CancellationToken.None, new(CategoryReportView.CurrentHierarchy, CapturedCurrentRevisionId: Guid.NewGuid()));
 		await action.Should().ThrowAsync<ArgumentException>().WithParameterName("capturedCurrentRevisionId");
 	}
-}
 
+	[Fact]
+	public async Task Summary_MostUsedCategory_IsTopLevelItemTypeWithMostPurchases_IgnoringLegacyLabels()
+	{
+		var factory = DbContextHelpers.CreateInMemoryContextFactory();
+		await using var db = factory.CreateDbContext();
+		var receipt = ReceiptEntityGenerator.Generate();
+		receipt.Date = new(2020, 3, 1);
+		db.Receipts.Add(receipt);
+		Guid revision = Guid.NewGuid(), food = Guid.NewGuid(), dairy = Guid.NewGuid(), household = Guid.NewGuid();
+		db.TaxonomyHeads.Add(new() { Id = 1, RevisionId = revision });
+		db.TaxonomyNodes.AddRange(
+			new() { RevisionId = revision, CategoryId = food, Name = "Food" },
+			new() { RevisionId = revision, CategoryId = dairy, ParentId = food, Name = "Dairy" },
+			new() { RevisionId = revision, CategoryId = household, Name = "Household" });
+		// Food: two Dairy purchases roll up with one direct Food purchase; Household: two purchases.
+		foreach (Guid category in new[] { dairy, dairy, food, household, household })
+		{
+			Assign(db, AddItem(db, receipt.Id, "Household"), revision, category);
+		}
+		// The most frequent legacy label belongs to items with no item type, which never count.
+		for (int i = 0; i < 4; i++) { AddItem(db, receipt.Id, "Legacy favourite"); }
+		Assign(db, AddItem(db, receipt.Id, "Legacy favourite"), revision, null);
+		await db.SaveChangesAsync();
+
+		var summary = await new DashboardService(factory).GetSummaryAsync(receipt.Date, receipt.Date, CancellationToken.None);
+
+		summary.MostUsedCategory.Should().Be(new NameCountResult("Food", 3));
+	}
+
+	[Fact]
+	public async Task Summary_MostUsedCategory_BreaksTiesByNameAndIsEmptyWithoutItemTypes()
+	{
+		var factory = DbContextHelpers.CreateInMemoryContextFactory();
+		await using var db = factory.CreateDbContext();
+		var tied = ReceiptEntityGenerator.Generate();
+		tied.Date = new(2020, 3, 1);
+		var untyped = ReceiptEntityGenerator.Generate();
+		untyped.Date = new(2021, 3, 1);
+		db.Receipts.AddRange(tied, untyped);
+		Guid revision = Guid.NewGuid(), beta = Guid.NewGuid(), alpha = Guid.NewGuid();
+		db.TaxonomyHeads.Add(new() { Id = 1, RevisionId = revision });
+		db.TaxonomyNodes.AddRange(
+			new() { RevisionId = revision, CategoryId = beta, Name = "Beta" },
+			new() { RevisionId = revision, CategoryId = alpha, Name = "Alpha" });
+		Assign(db, AddItem(db, tied.Id, "Beta"), revision, beta);
+		Assign(db, AddItem(db, tied.Id, "Beta"), revision, alpha);
+		AddItem(db, untyped.Id, "Groceries");
+		await db.SaveChangesAsync();
+		DashboardService service = new(factory);
+
+		var tie = await service.GetSummaryAsync(tied.Date, tied.Date, CancellationToken.None);
+		var none = await service.GetSummaryAsync(untyped.Date, untyped.Date, CancellationToken.None);
+
+		tie.MostUsedCategory.Should().Be(new NameCountResult("Alpha", 1));
+		none.TotalReceipts.Should().Be(1);
+		none.MostUsedCategory.Should().Be(new NameCountResult(null, 0));
+	}
+
+	private static ReceiptItemEntity AddItem(ApplicationDbContext db, Guid receiptId, string legacyCategory)
+	{
+		var item = ReceiptItemEntityGenerator.Generate(receiptId);
+		item.Category = legacyCategory;
+		db.ReceiptItems.Add(item);
+		return item;
+	}
+
+	private static void Assign(ApplicationDbContext db, ReceiptItemEntity item, Guid revision, Guid? category)
+	{
+		var assignment = Guid.NewGuid();
+		db.Classifications.Add(new()
+		{
+			Id = assignment,
+			ReceiptItemId = item.Id,
+			CategoryId = category,
+			TaxonomyRevisionId = revision,
+			RecordedAt = DateTimeOffset.UtcNow
+		});
+		db.CurrentClassifications.Add(new() { ReceiptItemId = item.Id, AssignmentId = assignment });
+	}
+}

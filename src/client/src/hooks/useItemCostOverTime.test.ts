@@ -22,8 +22,8 @@ describe("useItemDescriptions", () => {
   it("fetches descriptions when search is at least 2 characters", async () => {
     const mockData = {
       items: [
-        { description: "Milk", category: "Dairy", occurrences: 10 },
-        { description: "Milk Chocolate", category: "Candy", occurrences: 3 },
+        { description: "Milk", category: "", occurrences: 10 },
+        { description: "Milk Chocolate", category: "", occurrences: 3 },
       ],
     };
     mockClient.GET.mockResolvedValue({
@@ -45,7 +45,6 @@ describe("useItemDescriptions", () => {
         params: {
           query: {
             search: "mi",
-            categoryOnly: undefined,
             limit: undefined,
           },
         },
@@ -61,7 +60,7 @@ describe("useItemDescriptions", () => {
     expect(mockClient.GET).not.toHaveBeenCalled();
   });
 
-  it("passes categoryOnly and limit parameters", async () => {
+  it("passes the limit parameter", async () => {
     const mockData = { items: [] };
     mockClient.GET.mockResolvedValue({
       data: mockData,
@@ -74,7 +73,6 @@ describe("useItemDescriptions", () => {
       () =>
         useItemDescriptions({
           search: "da",
-          categoryOnly: true,
           limit: 10,
         }),
       { wrapper: createQueryWrapper() },
@@ -87,8 +85,7 @@ describe("useItemDescriptions", () => {
         params: {
           query: {
             search: "da",
-            categoryOnly: true,
-            limit: 10,
+              limit: 10,
           },
         },
       },
@@ -178,7 +175,6 @@ describe("useItemCostOverTime", () => {
         params: {
           query: {
             description: "Milk",
-            category: undefined,
             startDate: undefined,
             endDate: undefined,
             granularity: undefined,
@@ -188,38 +184,7 @@ describe("useItemCostOverTime", () => {
     );
   });
 
-  it("fetches cost data when category is provided", async () => {
-    const mockData = { buckets: [] };
-    mockClient.GET.mockResolvedValue({
-      data: mockData,
-      error: undefined,
-      response: {} as Response,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
-
-    const { result } = renderHook(
-      () => useItemCostOverTime({ category: "Dairy" }),
-      { wrapper: createQueryWrapper() },
-    );
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockClient.GET).toHaveBeenCalledWith(
-      "/api/reports/item-cost-over-time",
-      {
-        params: {
-          query: {
-            description: undefined,
-            category: "Dairy",
-            startDate: undefined,
-            endDate: undefined,
-            granularity: undefined,
-          },
-        },
-      },
-    );
-  });
-
-  it("does not fetch when neither description nor category is provided", () => {
+  it("does not fetch when no item, category id, or normalized description is provided", () => {
     renderHook(() => useItemCostOverTime({}), {
       wrapper: createQueryWrapper(),
     });
@@ -254,7 +219,6 @@ describe("useItemCostOverTime", () => {
         params: {
           query: {
             description: "Milk",
-            category: undefined,
             startDate: "2025-01-01",
             endDate: "2025-12-31",
             granularity: "monthly",
@@ -304,7 +268,6 @@ describe("useItemCostOverTime", () => {
         params: {
           query: {
             description: undefined,
-            category: undefined,
             normalizedDescription: "Organic Milk",
             startDate: undefined,
             endDate: undefined,

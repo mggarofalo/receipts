@@ -48,18 +48,16 @@ public class DashboardService(IDbContextFactory<ApplicationDbContext> contextFac
 			? new NameCountResult(mostUsedAccountData.AccountName, mostUsedAccountData.Count)
 			: new NameCountResult(null, 0);
 
-		// Most-used category = category with the most receipt items in range
-		var mostUsedCategoryData = await context.ReceiptItems
-			.AsNoTracking()
-			.Where(ri => receiptIds.Contains(ri.ReceiptId))
-			.GroupBy(ri => ri.Category)
-			.Select(g => new { Category = g.Key, Count = g.Count() })
-			.OrderByDescending(g => g.Count)
-			.FirstOrDefaultAsync(cancellationToken);
-
-		NameCountResult mostUsedCategory = mostUsedCategoryData != null
-			? new NameCountResult(mostUsedCategoryData.Category, mostUsedCategoryData.Count)
-			: new NameCountResult(null, 0);
+		// Most-used category = the top-level item type with the most purchases in range, in today's tree
+		CategoryReportResult roots = await CategoryReportReader.ReadAsync(context, context.ReceiptItems,
+			startDate, endDate, CategoryReportView.CurrentHierarchy, CategoryReportRollup.Root,
+			cancellationToken: cancellationToken);
+		NameCountResult mostUsedCategory = roots.Buckets
+			.Where(bucket => bucket.State == CategoryReportState.Classified && bucket.Path.Count > 0)
+			.GroupBy(bucket => bucket.CategoryId)
+			.Select(group => new NameCountResult(group.First().Path[0].Name, group.Sum(bucket => bucket.PurchaseCount)))
+			.OrderByDescending(result => result.Count).ThenBy(result => result.Name, StringComparer.Ordinal)
+			.FirstOrDefault() ?? new NameCountResult(null, 0);
 
 		return new DashboardSummaryResult(totalReceipts, totalSpent, averageTripAmount, mostUsedAccount, mostUsedCategory);
 	}

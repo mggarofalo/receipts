@@ -167,7 +167,6 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 
 	public async Task<ItemDescriptionResult> GetItemDescriptionsAsync(
 		string search,
-		bool categoryOnly,
 		int limit,
 		CancellationToken cancellationToken)
 	{
@@ -175,35 +174,18 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 
 		string searchLower = search.ToLower();
 
-		if (categoryOnly)
-		{
-			var categoryResults = await context.ReceiptItems
-				.AsNoTracking()
-				.Where(ri => ri.DeletedAt == null && ri.Category.ToLower().Contains(searchLower))
-				.GroupBy(ri => ri.Category)
-				.Select(g => new { Category = g.Key, Count = g.Count() })
-				.OrderByDescending(x => x.Count)
-				.Take(limit)
-				.ToListAsync(cancellationToken);
-
-			List<ItemDescriptionItem> categories = categoryResults
-				.Select(x => new ItemDescriptionItem(x.Category, x.Category, x.Count))
-				.ToList();
-
-			return new ItemDescriptionResult(categories);
-		}
-
 		var results = await context.ReceiptItems
 			.AsNoTracking()
 			.Where(ri => ri.DeletedAt == null && ri.Description.ToLower().Contains(searchLower))
-			.GroupBy(ri => new { ri.Description, ri.Category })
-			.Select(g => new { g.Key.Description, g.Key.Category, Count = g.Count() })
+			.GroupBy(ri => ri.Description)
+			.Select(g => new { Description = g.Key, Count = g.Count() })
 			.OrderByDescending(x => x.Count)
+			.ThenBy(x => x.Description)
 			.Take(limit)
 			.ToListAsync(cancellationToken);
 
 		List<ItemDescriptionItem> items = results
-			.Select(x => new ItemDescriptionItem(x.Description, x.Category, x.Count))
+			.Select(x => new ItemDescriptionItem(x.Description, x.Count))
 			.ToList();
 
 		return new ItemDescriptionResult(items);
@@ -211,17 +193,16 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 
 	public async Task<ItemCostOverTimeResult> GetItemCostOverTimeAsync(
 		string? description,
-		string? category,
 		DateOnly? startDate,
 		DateOnly? endDate,
 		string granularity,
 		string? normalizedDescription,
 			CancellationToken cancellationToken) =>
-			await GetItemCostOverTimeAsync(description, category, startDate, endDate, granularity,
+			await GetItemCostOverTimeAsync(description, startDate, endDate, granularity,
 					normalizedDescription, cancellationToken, new());
 
 	public async Task<ItemCostOverTimeResult> GetItemCostOverTimeAsync(
-			string? description, string? category, DateOnly? startDate, DateOnly? endDate,
+			string? description, DateOnly? startDate, DateOnly? endDate,
 			string granularity, string? normalizedDescription, CancellationToken cancellationToken,
 			CategoryReportOptions options)
 	{
@@ -247,7 +228,6 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 					select new
 					{
 						ri.Description,
-						ri.Category,
 						ri.TotalAmount,
 						ri.Quantity,
 						ri.UnitPrice,
@@ -259,7 +239,7 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 						DisplayLabel = n.DisplayLabel,
 					};
 
-		// Text selections retain their historical precedence; stable category ID supersedes legacy text.
+		// Text selections retain their historical precedence over the category ID.
 		if (!string.IsNullOrEmpty(description))
 		{
 			string descLower = description.ToLower();
@@ -297,11 +277,6 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 							&& evidence.Resolution == "Unresolved")
 					&& eligible.Any(node => node.CategoryId == assignment.CategoryId
 							&& (!historical || node.RevisionId == assignment.TaxonomyRevisionId))));
-		}
-		else if (!string.IsNullOrEmpty(category))
-		{
-			string catLower = category.ToLower();
-			query = query.Where(x => x.Category.ToLower() == catLower);
 		}
 
 		if (startDate.HasValue)
@@ -667,8 +642,6 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 								  ri.Quantity,
 								  ri.UnitPrice,
 								  ri.TotalAmount,
-								  ri.Category,
-								  ri.Subcategory,
 								  ri.TotalAmountCurrency,
 								  receipt.Location,
 								  AssignmentId = assignment == null ? (Guid?)null : assignment.Id,
@@ -728,7 +701,7 @@ public class ReportService(IDbContextFactory<ApplicationDbContext> contextFactor
 		List<UncategorizedItemRecord> pagedItems = pageRows.Select(x =>
 				new UncategorizedItemRecord(x.Id, x.ReceiptId, x.ReceiptItemCode,
 						x.Description, x.Quantity, x.UnitPrice, x.TotalAmount,
-						x.Category, x.Subcategory, x.ClassificationState,
+						x.ClassificationState,
 						x.AssignmentId, x.CategoryId, x.TaxonomyRevisionId,
 						x.TotalAmountCurrency.ToString())
 				{
