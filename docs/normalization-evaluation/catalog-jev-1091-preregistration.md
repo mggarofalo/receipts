@@ -21,8 +21,12 @@ there with the reason, and the affected numbers are reported as exploratory.
    **legacy-link proxy** instead: purchases the retired resolver linked to an active name. These labels are **not
    human-approved**. A disagreement with a proxy label may be a proxy error, so every disagreement is inspected
    privately and reported in aggregate by cause.
-2. **Leave-one-out still runs.** Every request is built with `WithoutExamplesOf(case description)`. With no approved
-   mappings, the export is expected to find no examples, and the report states the number found.
+2. **Leave-one-out still runs** for every real (`proxy` and `not-in-shortlist`) request, which is built with
+   `WithoutExamplesOf(case description)`. With no approved mappings, the export is expected to find no examples, and the
+   report states the number found. *Amended 2026-11-01, after the packets were first built and before any request was
+   sent:* synthetic cases are exempt. Their examples are constructed evidence, not the case's own mapping, and the
+   `catalog.v2` paired controls (`ex-pasta-with`, `ho-coffee-with`, the scope controls) carry an example identical to
+   the description on purpose. Applying leave-one-out to them would turn each "with" case into its "without" twin.
 3. **No live ChatGPT baseline.** The local machine has no Receipts ChatGPT connection, and the only ChatGPT credential
    present is the desktop Codex one, which the deployment docs forbid reusing. A baseline would need a new connection,
    so it is skipped, as the orchestrator instructed. As a partial substitute, the 24 synthetic `catalog.v2` cases are in

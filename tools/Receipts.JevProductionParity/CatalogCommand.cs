@@ -209,7 +209,8 @@ public static class CatalogCommand
 			c.GetProperty("id").GetString()!, c.GetProperty("stratum").GetString()!, c.GetProperty("description").GetString()!,
 			c.GetProperty("store").GetString(),
 			c.GetProperty("candidates").Deserialize<CatalogMatchCandidate[]>(ProductionParity.JsonOptions)!,
-			c.GetProperty("expectedCandidateId").ValueKind == JsonValueKind.Null ? null : c.GetProperty("expectedCandidateId").GetGuid()))];
+			c.GetProperty("expectedCandidateId").ValueKind == JsonValueKind.Null ? null : c.GetProperty("expectedCandidateId").GetGuid(),
+			LeaveOneOut: true))];
 	}
 
 	private static IEnumerable<CatalogCase> Synthetic(string path)

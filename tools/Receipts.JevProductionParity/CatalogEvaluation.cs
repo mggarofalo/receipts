@@ -11,16 +11,19 @@ public sealed record CatalogInjection(string Kind, Guid? CandidateId);
 /// <summary>
 /// One evaluated source. Only Description, Store and Candidates are sent; the labels stay local. ExpectedCandidateId is
 /// the correct match or null when no match is correct. ExpectedDecision and the Baseline fields exist only for the
-/// catalog.v2 cases, whose 2026-10-20 harness answers are the indirect ChatGPT baseline.
+/// catalog.v2 cases, whose 2026-10-20 harness answers are the indirect ChatGPT baseline. LeaveOneOut is set for real
+/// sources, whose examples may include their own approved mapping; synthetic examples are constructed evidence and stay.
 /// </summary>
 public sealed record CatalogCase(string Id, string Stratum, string Description, string? Store,
 	IReadOnlyList<CatalogMatchCandidate> Candidates, Guid? ExpectedCandidateId, CatalogInjection? Injection = null,
-	string? ExpectedDecision = null, string? BaselineDecision = null, Guid? BaselineCandidateId = null)
+	string? ExpectedDecision = null, string? BaselineDecision = null, Guid? BaselineCandidateId = null, bool LeaveOneOut = false)
 {
 	public static readonly string[] Strata = ["proxy", "not-in-shortlist", "hard-negative", "injection"];
 
-	/// <summary>The production request, with the evaluated source removed from its own evidence (leave-one-out).</summary>
-	public CatalogMatchRequest Request => new CatalogMatchRequest(Description, Store, Candidates).WithoutExamplesOf(Description);
+	/// <summary>The production request; a real source is removed from its own evidence (leave-one-out).</summary>
+	public CatalogMatchRequest Request => LeaveOneOut
+		? new CatalogMatchRequest(Description, Store, Candidates).WithoutExamplesOf(Description)
+		: new CatalogMatchRequest(Description, Store, Candidates);
 }
 
 /// <summary>
