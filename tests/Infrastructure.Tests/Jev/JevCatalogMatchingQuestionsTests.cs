@@ -5,7 +5,7 @@ using Infrastructure.Jev;
 
 namespace Infrastructure.Tests.Jev;
 
-/// <summary>The catalog-matching wire format: exact request bytes, input rules, payload fit and leave-one-out. Synthetic data only.</summary>
+/// <summary>The catalog-matching wire format: exact request bytes, input rules, payload fit, leave-one-out and strict response structure. Synthetic data only.</summary>
 public class JevCatalogMatchingQuestionsTests
 {
 	private static readonly Guid TwoPercentId = new("00000000-0000-0000-0000-000000000001");
@@ -260,6 +260,173 @@ public class JevCatalogMatchingQuestionsTests
 	[Fact]
 	public void StageTwoRejectsACandidateNotInTheRequest() =>
 		Assert.Throws<InvalidOperationException>(() => JevCatalogMatchingQuestions.Stage2(Request, Guid.NewGuid()));
+
+	private const string ValidStage1 = """{"model":"jev-1.14.0","answers":{"candidate":{"type":"choice","choice":"Whole Milk","confidence":0.8,"probabilities":{"2% Milk":0.1,"Oat Milk":0.05,"Whole Milk":0.8,"almond milk":0.05}},"fits":{"type":"noul","noul":0.9}},"usage":{"input_tokens":120,"output_tokens":7}}""";
+
+	private const string ValidStage2 = """{"model":"jev-1.14.0","answers":{"same":{"type":"noul","noul":0.75}},"usage":{"input_tokens":80,"output_tokens":3}}""";
+
+	[Fact]
+	public void ParsesAValidStageOneAnswerToCandidateIds()
+	{
+		CatalogStage1Judgment judgment = JevCatalogMatchingQuestions.ParseStage1(Encoding.UTF8.GetBytes(ValidStage1), Request)!;
+
+		Assert.Equal("jev-1.14.0", judgment.Model);
+		Assert.Equal(WholeId, judgment.ChosenCandidateId);
+		Assert.Equal(0.8, judgment.Confidence);
+		Assert.Equal(new Dictionary<Guid, double> { [TwoPercentId] = 0.1, [OatId] = 0.05, [WholeId] = 0.8, [AlmondId] = 0.05 }, judgment.Probabilities);
+		Assert.Equal(0.9, judgment.Fit);
+		Assert.Equal(120, judgment.InputTokens);
+		Assert.Equal(7, judgment.OutputTokens);
+	}
+
+	[Fact]
+	public void ParsesAValidStageTwoAnswer()
+	{
+		CatalogStage2Judgment judgment = JevCatalogMatchingQuestions.ParseStage2(Encoding.UTF8.GetBytes(ValidStage2))!;
+
+		Assert.Equal(new CatalogStage2Judgment("jev-1.14.0", 0.75, 80, 3), judgment);
+	}
+
+	[Fact]
+	public void ParsersCheckStructureAndLeaveNumbersToThePolicy()
+	{
+		// Each body is well-formed but carries values CatalogMatchingPolicy.IsValidJudgment rejects.
+		string[] stage1 =
+		[
+			ValidStage1.Replace("\"Whole Milk\":0.8", "\"Whole Milk\":0.95", StringComparison.Ordinal),
+			ValidStage1.Replace("\"choice\":\"Whole Milk\"", "\"choice\":\"Oat Milk\"", StringComparison.Ordinal),
+			ValidStage1.Replace("\"noul\":0.9", "\"noul\":1.5", StringComparison.Ordinal),
+			ValidStage1.Replace("\"model\":\"jev-1.14.0\"", "\"model\":\"jev-0.0.1\"", StringComparison.Ordinal)
+		];
+		string[] stage2 =
+		[
+			ValidStage2.Replace("\"noul\":0.75", "\"noul\":-0.5", StringComparison.Ordinal),
+			ValidStage2.Replace("\"model\":\"jev-1.14.0\"", "\"model\":\"jev-0.0.1\"", StringComparison.Ordinal)
+		];
+
+		Assert.All(stage1, body =>
+		{
+			CatalogStage1Judgment? judgment = JevCatalogMatchingQuestions.ParseStage1(Encoding.UTF8.GetBytes(body), Request);
+			Assert.NotNull(judgment);
+			Assert.False(CatalogMatchingPolicy.IsValidJudgment(Request, judgment));
+		});
+		Assert.All(stage2, body =>
+		{
+			CatalogStage2Judgment? judgment = JevCatalogMatchingQuestions.ParseStage2(Encoding.UTF8.GetBytes(body));
+			Assert.NotNull(judgment);
+			Assert.False(CatalogMatchingPolicy.IsValidJudgment(judgment));
+		});
+	}
+
+	public static TheoryData<string, string> InvalidStage1Bodies() => new()
+	{
+		{ "extra answer", ValidStage1.Replace("\"fits\":", "\"extra\":{\"type\":\"noul\",\"noul\":0.5},\"fits\":") },
+		{ "missing answer", ValidStage1.Replace(",\"fits\":{\"type\":\"noul\",\"noul\":0.9}", "") },
+		{ "stage two answer", ValidStage1.Replace("\"fits\":", "\"same\":") },
+		{ "extra probability", ValidStage1.Replace("\"almond milk\":0.05", "\"almond milk\":0.05,\"Soy Milk\":0") },
+		{ "missing probability", ValidStage1.Replace(",\"almond milk\":0.05", "") },
+		{ "probability key differs in case", ValidStage1.Replace("\"almond milk\":0.05", "\"Almond Milk\":0.05") },
+		{ "duplicate probability", ValidStage1.Replace("\"Oat Milk\":0.05,", "\"Oat Milk\":0.05,\"Oat Milk\":0.05,") },
+		{ "unknown choice", ValidStage1.Replace("\"choice\":\"Whole Milk\"", "\"choice\":\"Soy Milk\"") },
+		{ "choice differs in case", ValidStage1.Replace("\"choice\":\"Whole Milk\"", "\"choice\":\"whole milk\"") },
+		{ "null choice", ValidStage1.Replace("\"choice\":\"Whole Milk\"", "\"choice\":null") },
+		{ "numeric choice", ValidStage1.Replace("\"choice\":\"Whole Milk\"", "\"choice\":3") },
+		{ "missing choice", ValidStage1.Replace("\"choice\":\"Whole Milk\",", "") },
+		{ "wrong choice type", ValidStage1.Replace("\"type\":\"choice\"", "\"type\":\"noul\"") },
+		{ "wrong fit type", ValidStage1.Replace("\"type\":\"noul\"", "\"type\":\"choice\"") },
+		{ "string confidence", ValidStage1.Replace("\"confidence\":0.8", "\"confidence\":\"0.8\"") },
+		{ "string probability", ValidStage1.Replace("\"Whole Milk\":0.8", "\"Whole Milk\":\"0.8\"") },
+		{ "null probability", ValidStage1.Replace("\"Whole Milk\":0.8", "\"Whole Milk\":null") },
+		{ "string fit", ValidStage1.Replace("\"noul\":0.9", "\"noul\":\"0.9\"") },
+		{ "extra fit property", ValidStage1.Replace("\"noul\":0.9", "\"noul\":0.9,\"confidence\":0.9") },
+		{ "probabilities array", ValidStage1.Replace("{\"2% Milk\":0.1,\"Oat Milk\":0.05,\"Whole Milk\":0.8,\"almond milk\":0.05}", "[0.1,0.05,0.8,0.05]") },
+		{ "fractional tokens", ValidStage1.Replace("\"input_tokens\":120", "\"input_tokens\":1.5") },
+		{ "string tokens", ValidStage1.Replace("\"input_tokens\":120", "\"input_tokens\":\"120\"") },
+		{ "negative input tokens", ValidStage1.Replace("\"input_tokens\":120", "\"input_tokens\":-1") },
+		{ "negative output tokens", ValidStage1.Replace("\"output_tokens\":7", "\"output_tokens\":-1") },
+		{ "tokens above safe integer", ValidStage1.Replace("\"input_tokens\":120", "\"input_tokens\":9007199254740992") },
+		{ "missing usage", ValidStage1.Replace(",\"usage\":{\"input_tokens\":120,\"output_tokens\":7}", "") },
+		{ "missing output tokens", ValidStage1.Replace(",\"output_tokens\":7", "") },
+		{ "extra usage property", ValidStage1.Replace("\"output_tokens\":7", "\"output_tokens\":7,\"total_tokens\":127") },
+		{ "extra top-level property", ValidStage1.Replace("{\"model\":", "{\"id\":\"x\",\"model\":") },
+		{ "duplicate top-level property", ValidStage1.Replace("{\"model\":\"jev-1.14.0\",", "{\"model\":\"jev-1.14.0\",\"model\":\"jev-1.14.0\",") },
+		{ "the stage two body", ValidStage2 },
+		{ "not an object", "[]" },
+		{ "not json", "not-json" },
+		{ "empty object", "{}" }
+	};
+
+	[Theory]
+	[MemberData(nameof(InvalidStage1Bodies))]
+	public void RejectsAnythingButTheExactStageOneStructure(string defect, string body)
+	{
+		Assert.NotEqual(ValidStage1, body);
+		Assert.NotNull(defect);
+		Assert.Null(JevCatalogMatchingQuestions.ParseStage1(Encoding.UTF8.GetBytes(body), Request));
+	}
+
+	public static TheoryData<string, string> InvalidStage2Bodies() => new()
+	{
+		{ "extra answer", ValidStage2.Replace("}},\"usage\"", "},\"fits\":{\"type\":\"noul\",\"noul\":0.9}},\"usage\"") },
+		{ "missing answer", ValidStage2.Replace("{\"same\":{\"type\":\"noul\",\"noul\":0.75}}", "{}") },
+		{ "stage one answer id", ValidStage2.Replace("\"same\":", "\"fits\":") },
+		{ "wrong type", ValidStage2.Replace("\"type\":\"noul\"", "\"type\":\"choice\"") },
+		{ "missing type", ValidStage2.Replace("\"type\":\"noul\",", "") },
+		{ "string noul", ValidStage2.Replace("\"noul\":0.75", "\"noul\":\"0.75\"") },
+		{ "null noul", ValidStage2.Replace("\"noul\":0.75", "\"noul\":null") },
+		{ "missing noul", ValidStage2.Replace(",\"noul\":0.75", "") },
+		{ "extra noul property", ValidStage2.Replace("\"noul\":0.75", "\"noul\":0.75,\"choice\":\"true\"") },
+		{ "fractional tokens", ValidStage2.Replace("\"output_tokens\":3", "\"output_tokens\":3.5") },
+		{ "negative input tokens", ValidStage2.Replace("\"input_tokens\":80", "\"input_tokens\":-1") },
+		{ "negative output tokens", ValidStage2.Replace("\"output_tokens\":3", "\"output_tokens\":-1") },
+		{ "tokens above safe integer", ValidStage2.Replace("\"output_tokens\":3", "\"output_tokens\":9007199254740992") },
+		{ "missing usage", ValidStage2.Replace(",\"usage\":{\"input_tokens\":80,\"output_tokens\":3}", "") },
+		{ "missing input tokens", ValidStage2.Replace("\"input_tokens\":80,", "") },
+		{ "extra top-level property", ValidStage2.Replace("{\"model\":", "{\"id\":\"x\",\"model\":") },
+		{ "missing model", ValidStage2.Replace("\"model\":\"jev-1.14.0\",", "") },
+		{ "the stage one body", ValidStage1 },
+		{ "not an object", "[]" },
+		{ "not json", "not-json" },
+		{ "empty object", "{}" }
+	};
+
+	[Theory]
+	[MemberData(nameof(InvalidStage2Bodies))]
+	public void RejectsAnythingButTheExactStageTwoStructure(string defect, string body)
+	{
+		Assert.NotEqual(ValidStage2, body);
+		Assert.NotNull(defect);
+		Assert.Null(JevCatalogMatchingQuestions.ParseStage2(Encoding.UTF8.GetBytes(body)));
+	}
+
+	[Fact]
+	public void ResponseBodiesAreLimitedToOneMebibyte()
+	{
+		static (byte[] AtLimit, byte[] OverLimit) Padded(string body)
+		{
+			byte[] valid = Encoding.UTF8.GetBytes(body);
+			byte[] atLimit = [.. valid, .. Enumerable.Repeat((byte)' ', JevCatalogMatchingQuestions.MaximumResponseBytes - valid.Length)];
+			return (atLimit, [.. atLimit, (byte)' ']);
+		}
+		(byte[] stage1AtLimit, byte[] stage1OverLimit) = Padded(ValidStage1);
+		(byte[] stage2AtLimit, byte[] stage2OverLimit) = Padded(ValidStage2);
+
+		Assert.Equal(1024 * 1024, JevCatalogMatchingQuestions.MaximumResponseBytes);
+		Assert.NotNull(JevCatalogMatchingQuestions.ParseStage1(stage1AtLimit, Request));
+		Assert.Null(JevCatalogMatchingQuestions.ParseStage1(stage1OverLimit, Request));
+		Assert.Null(JevCatalogMatchingQuestions.ParseStage1(null!, Request));
+		Assert.NotNull(JevCatalogMatchingQuestions.ParseStage2(stage2AtLimit));
+		Assert.Null(JevCatalogMatchingQuestions.ParseStage2(stage2OverLimit));
+		Assert.Null(JevCatalogMatchingQuestions.ParseStage2(null!));
+	}
+
+	[Fact]
+	public void StageOneKeysAreTheRequestsOwn()
+	{
+		// The same body against a shortlist that lacks "almond milk" no longer has the exact key set.
+		CatalogMatchRequest withoutAlmond = Request with { Candidates = [.. Request.Candidates.Where(c => c.Id != AlmondId)] };
+		Assert.Null(JevCatalogMatchingQuestions.ParseStage1(Encoding.UTF8.GetBytes(ValidStage1), withoutAlmond));
+	}
 
 	private static CatalogMatchCandidate[] Numbered(int count) =>
 		[.. Enumerable.Range(1, count).Select(i => new CatalogMatchCandidate(new Guid(i, 0, 0, new byte[8]), $"c{i:D3}", []))];

@@ -83,14 +83,15 @@ public static class LiveCommand
 				throw new ArgumentException("Use the single packet journal.");
 			}
 
-			// Round 4 is the only live protocol; earlier rounds were bound to a retired production policy.
-			if (OfflineCommand.PacketKindOf(packet) != TwoStagePolicy.PacketKind)
+			// Round 4 and catalog matching are the live protocols; earlier rounds were bound to a retired production policy.
+			return OfflineCommand.PacketKindOf(packet) switch
 			{
-				throw new ArgumentException("Unsupported packet.");
-			}
-
-			return await RunTwoStageAsync(packet, repository, approvalPath, journalPath, outputPath, dryRun, apiUserSecrets,
-				environment, isWindows);
+				TwoStagePolicy.PacketKind => await RunTwoStageAsync(packet, repository, approvalPath, journalPath, outputPath, dryRun,
+					apiUserSecrets, environment, isWindows),
+				CatalogPolicy.PacketKind => await RunCatalogAsync(packet, repository, approvalPath, journalPath, outputPath, dryRun,
+					apiUserSecrets, environment, isWindows),
+				_ => throw new ArgumentException("Unsupported packet.")
+			};
 		}
 		catch (Exception)
 		{
@@ -114,24 +115,92 @@ public static class LiveCommand
 			return 0;
 		}
 
+		TwoStageReplay result = await SendJournalledAsync(new TwoStageProtocol(twoStage), r => r.Stopped,
+			approvalHash => TwoStageCommand.Identity(freezeHash, approvalHash), approvalPath, journalPath, outputPath,
+			repository, apiUserSecrets, environment, isWindows, key, latencyPath: null,
+			approval => TwoStageCommand.ApprovalProblem(approval, twoStage, freezeHash, DateTimeOffset.UtcNow));
+		return result.Stopped ? 3 : 0;
+	}
+
+	/// <summary>
+	/// RECEIPTS-1091: the same credential, approval, journal and transport safeguards around the catalog replay. Each
+	/// response's latency goes to a private side file, since the journal format is shared with round 4.
+	/// </summary>
+	private static async Task<int> RunCatalogAsync(string packet, string repository, string approvalPath, string journalPath,
+		string outputPath, bool dryRun, bool apiUserSecrets, Func<string, string?> environment, bool isWindows)
+	{
+		CatalogPacket catalog = CatalogPacket.Load(packet);
+		string freezeHash = Hashing.Hash(File.ReadAllBytes(Path.Combine(packet, "freeze.private.json")));
+		string? key = ApiCredential.Resolve(repository, apiUserSecrets, environment, isWindows);
+		string? Problem(LiveApproval approval) => ApprovalProblem(approval, freezeHash, catalog.Policy.PriorCarryNanodollars,
+			catalog.Policy.CeilingNanodollars, catalog.MaximumReservationNanodollars, DateTimeOffset.UtcNow);
+		if (dryRun)
+		{
+			(string? approvalHash, string approvalStatus) = ReadApprovalStatus(approvalPath, Problem);
+			(string journalStatus, int completedExchanges, bool? identityMatches) = ReadJournalStatus(journalPath,
+				approvalHash is not null && key is not null ? BindCredential(CatalogIdentity(freezeHash, approvalHash), key) : null);
+			using FileStream report = PrivateEvidence.CreateNew(outputPath);
+			await JsonSerializer.SerializeAsync(report, new
+			{
+				mode = "dry-run-no-dispatch",
+				numbers = CatalogCommand.Numbers(catalog),
+				credentialPresent = key is not null,
+				approval = new { present = approvalHash is not null, valid = approvalStatus == "valid", status = approvalStatus },
+				journal = new { status = journalStatus, completedExchanges, identityMatches }
+			}, ProductionParity.JsonOptions);
+			Console.WriteLine("Dry run report created. No provider request was sent.");
+			return 0;
+		}
+
+		CatalogReplay result = await SendJournalledAsync(new CatalogProtocol(catalog), r => r.Stopped,
+			approvalHash => CatalogIdentity(freezeHash, approvalHash), approvalPath, journalPath, outputPath,
+			repository, apiUserSecrets, environment, isWindows, key, Path.Combine(packet, "latency.private.jsonl"), Problem);
+		return result.Stopped ? 3 : 0;
+	}
+
+	/// <summary>Journal identity of a catalog packet: the frozen packet, the exact approval, and this tool's build.</summary>
+	private static string CatalogIdentity(string freezeHash, string approvalHash) => "catalog:" + TwoStageCommand.Identity(freezeHash, approvalHash);
+
+	/// <summary>Authorizes, then runs the shared journalled loop with fresh-connection transport, and saves the result.</summary>
+	private static async Task<TResult> SendJournalledAsync<TResult>(IJournalProtocol<TResult> protocol, Func<TResult, bool> stopped,
+		Func<string, string> identity, string approvalPath,
+		string journalPath, string outputPath, string repository, bool apiUserSecrets, Func<string, string?> environment, bool isWindows,
+		string? key, string? latencyPath, Func<LiveApproval, string?> problem)
+	{
 		if (key is null)
 		{
 			throw new InvalidOperationException("Missing key.");
 		}
 
 		string approvalHash = Hashing.Hash(File.ReadAllBytes(approvalPath));
-		Action authorize = Authorizer(approvalPath, approvalHash, repository, apiUserSecrets, environment, isWindows, key,
-			approval => TwoStageCommand.ApprovalProblem(approval, twoStage, freezeHash, DateTimeOffset.UtcNow));
+		Action authorize = Authorizer(approvalPath, approvalHash, repository, apiUserSecrets, environment, isWindows, key, problem);
 		authorize();
 		using SocketsHttpHandler handler = new() { AllowAutoRedirect = false, UseCookies = false, PooledConnectionLifetime = TimeSpan.Zero };
 		using HttpClient client = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
-		TwoStageReplay result = await JournalledRun.RunAsync(new TwoStageProtocol(twoStage), journalPath,
-			BindCredential(TwoStageCommand.Identity(freezeHash, approvalHash), key), (payload, ct) => SendAsync(client, payload, key, ct), authorize);
+		async Task<ReplayExchange> Send(byte[] payload, CancellationToken ct)
+		{
+			long started = System.Diagnostics.Stopwatch.GetTimestamp();
+			ReplayExchange exchange = await SendAsync(client, payload, key, ct);
+			if (latencyPath is not null)
+			{
+				using FileStream latency = PrivateEvidence.Open(latencyPath, FileMode.Append, FileAccess.Write);
+				latency.Write(JsonSerializer.SerializeToUtf8Bytes(new
+				{
+					requestSha256 = Hashing.Hash(payload),
+					milliseconds = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds
+				}));
+				latency.WriteByte((byte)'\n');
+			}
+
+			return exchange;
+		}
+
+		TResult result = await JournalledRun.RunAsync(protocol, journalPath, BindCredential(identity(approvalHash), key), Send, authorize);
 		using FileStream output = PrivateEvidence.CreateNew(outputPath);
 		await JsonSerializer.SerializeAsync(output, result, ProductionParity.JsonOptions);
 		output.Flush(flushToDisk: true);
-		Console.WriteLine(result.Stopped ? "Evaluation stopped. Inspect private evidence." : "Evaluation completed. Private evidence saved.");
-		return result.Stopped ? 3 : 0;
+		Console.WriteLine(stopped(result) ? "Evaluation stopped. Inspect private evidence." : "Evaluation completed. Private evidence saved.");
+		return result;
 	}
 
 	/// <summary>
