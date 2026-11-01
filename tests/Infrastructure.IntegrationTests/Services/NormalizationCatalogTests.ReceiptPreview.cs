@@ -67,4 +67,66 @@ public sealed partial class NormalizationCatalogTests
 		(await after.Receipts.CountAsync()).Should().Be(0);
 		(await after.NormalizationReviewWork.CountAsync()).Should().Be(0);
 	}
+
+	[Fact]
+	public async Task ReceiptPreview_RanksWholeWordScoreThenSimilarityWithinTheLiteralPhraseFilter()
+	{
+		await ResetAsync();
+		await CanonicalAsync("Chicken thighs");
+		var rotisserie = await CanonicalAsync("Rotisserie chicken breast");
+		var exact = await CanonicalAsync("Chicken breast");
+		await CanonicalAsync("Chickenbreast wrap");
+		var pending = await CanonicalAsync("Chicken breast pending");
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.NormalizedDescriptions.SingleAsync(x => x.Id == pending.Id)).Status = NormalizedDescriptionStatus.PendingReview;
+			await db.SaveChangesAsync();
+		}
+		var service = new ReceiptNormalizationPreviewService(new Factory(fixture));
+
+		var page = await service.PreviewAsync(Source, "chicken breast", 0, 50, CancellationToken.None);
+
+		// Both names hold "chicken" and "breast" as whole words (score 2); the exact name is more similar.
+		page.Candidates.Select(x => x.Id).Should().Equal(exact.Id, rotisserie.Id);
+		page.Total.Should().Be(2);
+	}
+
+	[Fact]
+	public async Task ReceiptPreview_WholeWordMatchOutranksSubstringMatch()
+	{
+		await ResetAsync();
+		var milkshake = await CanonicalAsync("Milkshake");
+		var oatMilk = await CanonicalAsync("Oat milk");
+		var service = new ReceiptNormalizationPreviewService(new Factory(fixture));
+
+		var page = await service.PreviewAsync(Source, "milk", 0, 50, CancellationToken.None);
+
+		page.Candidates.Select(x => x.Id).Should().Equal(oatMilk.Id, milkshake.Id);
+	}
+
+	[Fact]
+	public async Task ReceiptPreview_TiedRelevancePagesWithoutDuplicatesOrGaps()
+	{
+		await ResetAsync();
+		var ids = new List<Guid>();
+		foreach (var n in new[] { 4, 1, 7, 3, 6, 2, 5 })
+		{
+			ids.Add((await CanonicalAsync($"Ab test {n}")).Id);
+		}
+		var service = new ReceiptNormalizationPreviewService(new Factory(fixture));
+
+		var all = await service.PreviewAsync(Source, "test", 0, 50, CancellationToken.None);
+		var paged = new List<Guid>();
+		foreach (var offset in new[] { 0, 2, 4, 6 })
+		{
+			var page = await service.PreviewAsync(Source, "test", offset, 2, CancellationToken.None);
+			page.Total.Should().Be(7);
+			paged.AddRange(page.Candidates.Select(x => x.Id));
+		}
+
+		all.Total.Should().Be(7);
+		all.Candidates.Select(x => x.Name).Should().Equal(Enumerable.Range(1, 7).Select(n => $"Ab test {n}"));
+		paged.Should().Equal(all.Candidates.Select(x => x.Id));
+		paged.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(ids);
+	}
 }
