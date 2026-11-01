@@ -164,10 +164,9 @@ public sealed partial class NormalizationCatalogTests
 		await using (var db = fixture.CreateDbContext())
 		{
 			// A reviewed purchase, written the way the review path prepares it past the evidence guard.
-			string prepared = $",{items[0]},";
 			await using var transaction = await db.Database.BeginTransactionAsync();
+			await db.PrepareReviewEvidenceAsync([items[0]], CancellationToken.None);
 			await db.Database.ExecuteSqlInterpolatedAsync($"""
-				SELECT set_config('receipts.review_prepared', {prepared}, true);
 				UPDATE receipts."ReceiptItems" SET "NormalizationReviewState" = 'Verified', "ReviewedTargetId" = {name.Id},
 					"ReviewedBy" = {Actor}, "ReviewedAt" = now() WHERE "Id" = {items[0]};
 				""");

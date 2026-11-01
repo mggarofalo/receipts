@@ -292,11 +292,19 @@ public partial class ApplicationDbContext
 		}
 		if (Database.IsNpgsql())
 		{
-			// The downgrade-only SQL guards recognize exactly these locally validated rows.
-			// Transaction-local scope expires on commit/rollback and is replaced at each save.
-			string prepared = "," + string.Join(',', entries.Select(entry => entry.Entity.Id)) + ",";
-			await Database.ExecuteSqlInterpolatedAsync($"SELECT set_config('receipts.review_prepared', {prepared}, true)", ct).ConfigureAwait(false);
+			await PrepareReviewEvidenceAsync([.. entries.Select(entry => entry.Entity.Id)], ct).ConfigureAwait(false);
 		}
+	}
+
+	/// <summary>
+	/// Marks exactly these locally validated items for the downgrade-only SQL guards
+	/// (<c>matching.review_item_prepared</c>), so their review evidence survives this transaction's writes.
+	/// Transaction-local scope expires on commit or rollback and is replaced at each save.
+	/// </summary>
+	internal Task PrepareReviewEvidenceAsync(Guid[] ids, CancellationToken ct)
+	{
+		string prepared = "," + string.Join(',', ids) + ",";
+		return Database.ExecuteSqlInterpolatedAsync($"SELECT set_config('receipts.review_prepared', {prepared}, true)", ct);
 	}
 
 	/// <summary>
