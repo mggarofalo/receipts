@@ -258,8 +258,6 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
         pendingDescriptionCount: 0,
         pendingFingerprint: "fixture",
         linkedItemCount: 0,
-        estimatedResolverCycles: 0,
-        estimatedCatchUpSeconds: 0,
       }),
     ),
   );

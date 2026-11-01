@@ -14013,8 +14013,6 @@ components:
           pendingDescriptionCount,
           pendingFingerprint,
           linkedItemCount,
-          estimatedResolverCycles,
-          estimatedCatchUpSeconds,
         ]
       properties:
         pendingDescriptionCount:
@@ -14028,14 +14026,6 @@ components:
           type: integer
           format: int32
           description: Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here â€” the same convention the merge endpoint uses.
-        estimatedResolverCycles:
-          type: integer
-          format: int32
-          description: Legacy compatibility field, always zero. Pending cleanup requires reviewed normalization; no automatic similarity rematching is scheduled.
-        estimatedCatchUpSeconds:
-          type: integer
-          format: int32
-          description: Legacy compatibility field, always zero. No automatic similarity rematching completion time is estimated.
 
     RequeuePendingResponse:
       type: object

@@ -175,7 +175,7 @@ public sealed partial class NormalizationAiService
 				if (decision.Action == "reuse")
 				{
 					NormalizationAiTarget target = JsonSerializer.Deserialize<List<NormalizationAiTarget>>(proposal.CandidatesJson)!.Single(value => value.Id == decision.TargetId);
-					proposal.TargetRevision = target.Revision; proposal.MatchScore = target.Score; proposal.CanonicalName = target.Name; proposal.DisplayLabel = target.DisplayLabel;
+					proposal.TargetRevision = target.Revision; proposal.CanonicalName = target.Name; proposal.DisplayLabel = target.DisplayLabel;
 					if (proposal.LabelOnly && (decision.SuggestedDisplayLabel is null
 						|| string.Equals(decision.SuggestedDisplayLabel, target.DisplayLabel ?? target.Name, StringComparison.OrdinalIgnoreCase)))
 					{ proposal.State = "no_change"; }

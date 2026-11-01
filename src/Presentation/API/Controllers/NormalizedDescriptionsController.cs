@@ -395,8 +395,6 @@ public class NormalizedDescriptionsController(IMediator mediator) : ControllerBa
 			PendingDescriptionCount = preview.PendingDescriptionCount,
 			PendingFingerprint = preview.PendingFingerprint,
 			LinkedItemCount = preview.LinkedItemCount,
-			EstimatedResolverCycles = preview.EstimatedResolverCycles,
-			EstimatedCatchUpSeconds = preview.EstimatedCatchUpSeconds,
 		});
 	}
 

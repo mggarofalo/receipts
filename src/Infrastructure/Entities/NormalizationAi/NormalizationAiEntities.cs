@@ -48,7 +48,6 @@ public sealed class NormalizationAiProposalEntity
 	public string Action { get; set; } = "pending";
 	public Guid? TargetId { get; set; }
 	public Guid? TargetRevision { get; set; }
-	public double? MatchScore { get; set; }
 	public string? CanonicalName { get; set; }
 	public string? DisplayLabel { get; set; }
 	public string? Reason { get; set; }

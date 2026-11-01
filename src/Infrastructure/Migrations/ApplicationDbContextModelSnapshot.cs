@@ -2335,9 +2335,6 @@ namespace Infrastructure.Migrations
                     b.Property<bool>("LabelOnly")
                         .HasColumnType("boolean");
 
-                    b.Property<double?>("MatchScore")
-                        .HasColumnType("double precision");
-
                     b.Property<string>("Reason")
                         .HasColumnType("text");
 

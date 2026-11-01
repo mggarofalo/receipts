@@ -1062,17 +1062,10 @@ public class NormalizedDescriptionService(
 			.IgnoreAutoIncludes()
 			.CountAsync(r => r.NormalizedDescription!.Status == NormalizedDescriptionStatus.PendingReview, cancellationToken);
 
-		// Retained numeric response fields are deprecated compatibility fields. Automatic
-		// similarity rematching is retired; zero indicates no scheduled rematch estimate.
-		const int cycles = 0;
-		const int seconds = 0;
-
 		return new RequeuePendingPreview(
 			pendingIds.Count,
 			ComputePendingFingerprint(pendingIds),
-			linkedItemCount,
-			cycles,
-			seconds);
+			linkedItemCount);
 	}
 
 	public async Task<RequeuePendingResult?> RequeuePendingAsync(string expectedFingerprint, CancellationToken cancellationToken)

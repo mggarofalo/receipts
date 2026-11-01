@@ -6244,16 +6244,6 @@ export interface components {
              * @description Number of live (non-trashed) ReceiptItems that would be unlinked. Trashed items pointing at a pending row are unlinked too, for integrity, but are deliberately not counted here â€” the same convention the merge endpoint uses.
              */
             linkedItemCount: number;
-            /**
-             * Format: int32
-             * @description Legacy compatibility field, always zero. Pending cleanup requires reviewed normalization; no automatic similarity rematching is scheduled.
-             */
-            estimatedResolverCycles: number;
-            /**
-             * Format: int32
-             * @description Legacy compatibility field, always zero. No automatic similarity rematching completion time is estimated.
-             */
-            estimatedCatchUpSeconds: number;
         };
         RequeuePendingResponse: {
             /**

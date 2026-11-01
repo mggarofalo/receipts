@@ -1005,15 +1005,13 @@ public class NormalizedDescriptionsControllerTests
 	{
 		_mediatorMock
 			.Setup(m => m.Send(It.IsAny<PreviewRequeuePendingQuery>(), It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RequeuePendingPreview(4, "digest-abc", 120, 3, 90));
+			.ReturnsAsync(new RequeuePendingPreview(4, "digest-abc", 120));
 
 		Ok<RequeuePendingPreviewResponse> result = await _controller.PreviewRequeuePending(CancellationToken.None);
 
 		result.Value!.PendingDescriptionCount.Should().Be(4);
 		result.Value.PendingFingerprint.Should().Be("digest-abc");
 		result.Value.LinkedItemCount.Should().Be(120);
-		result.Value.EstimatedResolverCycles.Should().Be(3);
-		result.Value.EstimatedCatchUpSeconds.Should().Be(90);
 	}
 
 	[Fact]
