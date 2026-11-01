@@ -95,7 +95,7 @@ public class BackupFormatRestoreTests(PostgresFixture server) : IClassFixture<Po
 
 		int processed = await worker.ProcessPendingEmbeddingsAsync(CancellationToken.None);
 
-		processed.Should().Be(1);
+		processed.Should().Be(2, "the canonical name and its display label each get a vector (RECEIPTS-1096)");
 		await using ApplicationDbContext rebuilt = new(options);
 		NormalizedDescriptionEntity stored = await rebuilt.NormalizedDescriptions.SingleAsync();
 		stored.Id.Should().Be(id);

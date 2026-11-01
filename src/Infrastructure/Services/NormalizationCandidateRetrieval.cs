@@ -124,12 +124,8 @@ internal static class NormalizationCandidateRetrieval
 			if (vector is { Length: > 0 })
 			{
 				Vector embedding = new(vector);
-				List<SemanticNeighbour> neighbours = await NearestNeighbourSearch.ToListAsync(context.Database, context.Database.SqlQuery<SemanticNeighbour>($"""
-					SELECT "Id", 1 - ("Embedding" <=> {embedding}::vector) AS "Similarity" FROM matching."NormalizedDescriptions"
-					WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL
-					AND "EmbeddingModelVersion" = {OnnxEmbeddingService.EmbeddingSpaceFingerprint}
-					ORDER BY "Embedding" <=> {embedding}::vector, "Id" LIMIT 20
-					"""), logger ?? NullLogger.Instance, cancellationToken);
+				List<CatalogNeighbour> neighbours = await NearestNeighbourSearch.ToListAsync(context.Database,
+					CatalogSemanticNeighbours.Nearest(context.Database, embedding, 20), logger ?? NullLogger.Instance, cancellationToken);
 				for (int rank = 0; rank < neighbours.Count; rank++)
 				{
 					semanticRanks[neighbours[rank].Id] = rank;
@@ -258,12 +254,6 @@ internal static class NormalizationCandidateRetrieval
 	{
 		public Guid Id { get; set; }
 		public int Score { get; set; }
-		public double Similarity { get; set; }
-	}
-
-	private sealed class SemanticNeighbour
-	{
-		public Guid Id { get; set; }
 		public double Similarity { get; set; }
 	}
 }

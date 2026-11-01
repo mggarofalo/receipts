@@ -92,7 +92,8 @@ public partial class BackupCurationImportTests
 		using EmbeddingGenerationService rebuild = new(
 			rebuildProvider.GetRequiredService<IServiceScopeFactory>(),
 			NullLogger<EmbeddingGenerationService>.Instance);
-		(await rebuild.ProcessPendingEmbeddingsAsync(CancellationToken.None)).Should().Be(1);
+		(await rebuild.ProcessPendingEmbeddingsAsync(CancellationToken.None)).Should().Be(2,
+			"the imported canonical name and its label each get a vector (RECEIPTS-1096)");
 		await using ApplicationDbContext verify = target.CreateDbContext();
 		NormalizedDescriptionEntity rebuilt = await verify.NormalizedDescriptions
 			.AsNoTracking().SingleAsync(row => row.Id == canonicalId);
