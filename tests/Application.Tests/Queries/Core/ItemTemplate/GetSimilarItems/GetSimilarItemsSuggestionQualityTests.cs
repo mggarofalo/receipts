@@ -1,4 +1,5 @@
 using Application.Interfaces.Services;
+using Application.Normalization;
 using Application.Queries.Core.ItemTemplate.GetSimilarItems;
 using FluentAssertions;
 using Moq;
@@ -72,6 +73,35 @@ public sealed class GetSimilarItemsSuggestionQualityTests
 		results.Should().ContainSingle().Which.Should().BeSameAs(useful);
 		service.Verify(value => value.GetSimilarItemsAsync("Beans 12 oz", 5, .3, true,
 			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData(ReceiptSuggestionEvidence.SemanticFloor, true)]
+	[InlineData(ReceiptSuggestionEvidence.SemanticFloor - 0.01, false)]
+	[InlineData(null, false)]
+	public async Task Handle_SemanticOnlyNeighbour_NeedsTheSemanticFloorInsteadOfACompletion(double? semantic, bool offered)
+	{
+		// RECEIPTS-1098: "chicken br" completes nothing in "KS CHKN BRST"; only its vector can offer it.
+		var neighbour = Result("KS CHKN BRST", "history", .1);
+		neighbour.SemanticSimilarity = semantic;
+		neighbour.AdmittedBySemanticSearchOnly = true;
+		var handler = HandlerReturning(neighbour);
+
+		var results = await handler.Handle(new("chicken br", 5, .3), CancellationToken.None);
+
+		results.Should().HaveCount(offered ? 1 : 0);
+	}
+
+	[Fact]
+	public async Task Handle_TrigramAdmittedRow_StillNeedsACompletionDespiteHighSimilarity()
+	{
+		var unrelated = Result("Acme mallet", "history", .95);
+		unrelated.SemanticSimilarity = .99;
+		var handler = HandlerReturning(unrelated);
+
+		var results = await handler.Handle(new("Acme beans", 5, .3), CancellationToken.None);
+
+		results.Should().BeEmpty("the semantic bypass is only for rows the trigram threshold did not admit");
 	}
 
 	private static GetSimilarItemsQueryHandler HandlerReturning(params SimilarItemResult[] rows)

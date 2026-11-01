@@ -19,11 +19,11 @@ namespace Infrastructure.IntegrationTests.Services;
 public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : IsolatedPostgresTest(server)
 {
 	[Theory]
-	[InlineData(false, 0.0)]
+	[InlineData(false, null)]
 	[InlineData(true, 1.0)]
 	public async Task GetSimilarItemsAsync_HybridSearch_UsesOnlyCurrentFingerprint(
 		bool currentFingerprint,
-		double expectedSemanticSimilarity)
+		double? expectedSemanticSimilarity)
 	{
 		await SeededTemplateCleanup.RemoveFromFreshDatabaseAsync(fixture);
 
@@ -55,7 +55,16 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : Isol
 			await service.GetSimilarItemsAsync("Organic Milk", 5, 0, true, CancellationToken.None);
 
 		results.Should().ContainSingle();
-		results[0].SemanticSimilarity.Should().BeApproximately(expectedSemanticSimilarity, 0.0001);
+		if (expectedSemanticSimilarity is null)
+		{
+			// RECEIPTS-1098: no current vector means no semantic score, not a score of zero.
+			results[0].SemanticSimilarity.Should().BeNull();
+			results[0].CombinedScore.Should().Be(results[0].Similarity);
+		}
+		else
+		{
+			results[0].SemanticSimilarity.Should().BeApproximately(expectedSemanticSimilarity.Value, 0.0001);
+		}
 	}
 
 	[Fact]
@@ -88,7 +97,7 @@ public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : Isol
 			await service.GetSimilarItemsAsync("Renamed Milk", 5, 0, true, CancellationToken.None);
 
 		results.Should().ContainSingle();
-		results[0].SemanticSimilarity.Should().Be(0,
+		results[0].SemanticSimilarity.Should().BeNull(
 			"a current-space vector for an old source name is still a stale projection");
 	}
 
