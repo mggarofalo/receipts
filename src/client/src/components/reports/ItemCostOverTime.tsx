@@ -42,7 +42,6 @@ import {
   parseSelectedItemParam,
   serializeDateRangeParam,
   serializeSelectedItemParam,
-  type SelectedItemUrlValue,
 } from "@/lib/report-params";
 import { ChevronsUpDown } from "lucide-react";
 
@@ -84,10 +83,9 @@ function localDateTime(iso?: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-type SelectedItem = SelectedItemUrlValue;
-
 interface ItemCostOverTimeUrlParams {
-  selectedItem: SelectedItem | null;
+  /** The chosen item description. */
+  selectedItem: string | null;
   /**
    * Canonical name drilled in from Spending by Normalized Description
    * (RECEIPTS-841). Picking an item or category path clears it.
@@ -97,8 +95,6 @@ interface ItemCostOverTimeUrlParams {
   categoryView: "asClassified" | "currentHierarchy";
   knowledgeCutoff?: string;
   capturedCurrentRevisionId?: string;
-  /** Existing category-only links remain readable until migrated. */
-  legacyCategory: string | null;
   dateRange: DateRange;
   granularity: Granularity;
   showTrendline: boolean;
@@ -108,7 +104,7 @@ interface ItemCostOverTimeUrlParams {
 function parseItemCostOverTimeParams(
   searchParams: URLSearchParams,
 ): ItemCostOverTimeUrlParams {
-  const { selectedItem, categoryOnly } = parseSelectedItemParam(searchParams);
+  const selectedItem = parseSelectedItemParam(searchParams);
   const categoryParams = parseCategoryReportParams(searchParams);
   return {
     selectedItem,
@@ -117,7 +113,6 @@ function parseItemCostOverTimeParams(
     categoryView: categoryParams.categoryView,
     knowledgeCutoff: categoryParams.knowledgeCutoff,
     capturedCurrentRevisionId: categoryParams.capturedCurrentRevisionId,
-    legacyCategory: categoryOnly ? (selectedItem?.category ?? null) : null,
     dateRange: parseDateRangeParam(searchParams),
     granularity: parseEnumParam(
       searchParams.get("granularity"),
@@ -146,7 +141,6 @@ export default function ItemCostOverTime() {
     categoryView,
     knowledgeCutoff,
     capturedCurrentRevisionId,
-    legacyCategory,
     dateRange,
     granularity,
     showTrendline,
@@ -175,16 +169,7 @@ export default function ItemCostOverTime() {
     useItemDescriptions({
       search: debouncedSearch,
     });
-  const itemChoices = useMemo(
-    () =>
-      (descriptionsData?.items ?? []).filter(
-        (item, index, items) =>
-          items.findIndex(
-            (candidate) => candidate.description === item.description,
-          ) === index,
-      ),
-    [descriptionsData?.items],
-  );
+  const itemChoices = descriptionsData?.items ?? [];
 
   // A normalized-description drill-down replaces the item/category selection
   // entirely: it spans every raw description linked to that canonical name, so
@@ -195,9 +180,7 @@ export default function ItemCostOverTime() {
         ? { normalizedDescription }
         : categoryId
           ? { categoryId }
-          : legacyCategory
-            ? { category: legacyCategory }
-            : { description: selectedItem?.description }),
+          : { description: selectedItem ?? undefined }),
       categoryView,
       knowledgeCutoff,
       capturedCurrentRevisionId,
@@ -211,7 +194,6 @@ export default function ItemCostOverTime() {
       categoryView,
       knowledgeCutoff,
       capturedCurrentRevisionId,
-      legacyCategory,
       selectedItem,
       dateRange,
       granularity,
@@ -236,9 +218,9 @@ export default function ItemCostOverTime() {
   }, [costData?.buckets]);
 
   const handleSelect = useCallback(
-    (description: string, category: string) => {
+    (description: string) => {
       updateParams({
-        ...serializeSelectedItemParam({ description, category }, false),
+        ...serializeSelectedItemParam(description),
         // A fresh pick supersedes any normalized-description drill-down.
         normalized: undefined,
         categoryId: undefined,
@@ -274,29 +256,21 @@ export default function ItemCostOverTime() {
     [updateParams],
   );
 
-  const displayLabel = normalizedDescription
-    ? normalizedDescription
-    : legacyCategory
-      ? "Search items..."
-      : selectedItem
-        ? selectedItem.description
-        : "Search items...";
+  const displayLabel = normalizedDescription ?? selectedItem ?? "Search items...";
 
   const hasSelection = Boolean(
-    normalizedDescription || categoryId || legacyCategory || selectedItem,
+    normalizedDescription || categoryId || selectedItem,
   );
 
   const chartTitle = normalizedDescription
     ? `Normalized: ${normalizedDescription}`
     : categoryId
       ? `Category: ${selectedPath?.label ?? categoryId}`
-      : legacyCategory
-        ? `Category: ${legacyCategory}`
-        : (selectedItem?.description ?? "");
+      : (selectedItem ?? "");
 
   const chartSubtitle = normalizedDescription
     ? "Unit price over time across every item with this normalized description"
-    : categoryId || legacyCategory
+    : categoryId
       ? "Average unit price over time"
       : "Unit price over time";
   const displaySeries: Array<[string, { period: string; amount: number }[]]> =
@@ -337,11 +311,9 @@ export default function ItemCostOverTime() {
                     <CommandGroup>
                       {itemChoices.map((item) => (
                         <CommandItem
-                          key={`${item.description}-${item.category}`}
-                          value={`${item.description}-${item.category}`}
-                          onSelect={() =>
-                            handleSelect(item.description, item.category)
-                          }
+                          key={item.description}
+                          value={item.description}
+                          onSelect={() => handleSelect(item.description)}
                         >
                           <div className="flex w-full items-center justify-between">
                             <div className="flex flex-col">
@@ -382,7 +354,7 @@ export default function ItemCostOverTime() {
             }
           />
         </div>
-        {(categoryId || legacyCategory) && (
+        {categoryId && (
           <Button
             variant="ghost"
             size="sm"

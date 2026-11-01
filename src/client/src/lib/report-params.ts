@@ -188,46 +188,27 @@ export function parseBoolParam(
   return fallback;
 }
 
-export interface SelectedItemUrlValue {
-  description: string;
-  category: string;
-}
-
 /**
- * Parses the Item Cost Over Time item selector (`item` + `category` +
- * `categoryOnly`). Both `item` and `category` must be present together —
- * matching the component's invariant that a picked search result always
- * carries both fields — otherwise the selection is treated as absent.
+ * Parses the Item Cost Over Time item selector (`item`). Older links in the
+ * retired category-text mode (`categoryOnly=true`) name a legacy category, not
+ * an item, so they open with nothing selected.
  */
-export function parseSelectedItemParam(searchParams: URLSearchParams): {
-  selectedItem: SelectedItemUrlValue | null;
-  categoryOnly: boolean;
-} {
-  const description = searchParams.get("item");
-  const category = searchParams.get("category");
-  const categoryOnly = parseBoolParam(searchParams.get("categoryOnly"), false);
-
-  // `categoryOnly` is a standalone mode toggle — it's valid (and expected)
-  // to be true before any item/category has been picked, so it must not be
-  // coupled to whether a full selection is present.
-  if (!description || !category) {
-    return { selectedItem: null, categoryOnly };
-  }
-  return { selectedItem: { description, category }, categoryOnly };
+export function parseSelectedItemParam(
+  searchParams: URLSearchParams,
+): string | null {
+  if (parseBoolParam(searchParams.get("categoryOnly"), false)) return null;
+  return searchParams.get("item") || null;
 }
 
 /** Serializes the Item Cost Over Time item selector for an `update()` call. */
 export function serializeSelectedItemParam(
-  selectedItem: SelectedItemUrlValue | null,
-  categoryOnly: boolean,
+  description: string | null,
 ): Record<string, string | undefined> {
-  if (!selectedItem) {
-    return { item: undefined, category: undefined, categoryOnly: undefined };
-  }
+  // Older links carried a legacy category beside the item; drop it on write.
   return {
-    item: selectedItem.description,
-    category: selectedItem.category,
-    categoryOnly: categoryOnly ? "true" : undefined,
+    item: description ?? undefined,
+    category: undefined,
+    categoryOnly: undefined,
   };
 }
 

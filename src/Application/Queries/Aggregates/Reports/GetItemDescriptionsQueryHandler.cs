@@ -11,7 +11,6 @@ public class GetItemDescriptionsQueryHandler(IReportService reportService)
 	{
 		return await reportService.GetItemDescriptionsAsync(
 			request.Search,
-			request.CategoryOnly,
 			request.Limit,
 			cancellationToken);
 	}

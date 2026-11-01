@@ -42,7 +42,7 @@ describe("SummaryStats", () => {
     expect(screen.getByText("$1,234.56")).toBeInTheDocument();
     expect(screen.getByText("$29.39")).toBeInTheDocument();
     expect(screen.getByText("Food")).toBeInTheDocument();
-    expect(screen.getByText("15 receipts")).toBeInTheDocument();
+    expect(screen.getByText("15 purchases")).toBeInTheDocument();
   });
 
   it("renders dash when no category data", () => {

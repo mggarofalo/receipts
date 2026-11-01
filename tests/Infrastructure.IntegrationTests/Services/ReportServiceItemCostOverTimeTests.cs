@@ -17,7 +17,7 @@ namespace Infrastructure.IntegrationTests.Services;
 // (`from n in normalizedJoin.DefaultIfEmpty()`, projecting CanonicalName = n.CanonicalName) so the
 // new normalizedDescription filter has something to match on. The InMemory provider cannot prove
 // this translates to SQL, and — more importantly — cannot prove the added LEFT JOIN doesn't
-// duplicate or drop rows for the pre-existing description/category paths. Only a real Postgres
+// duplicate or drop rows for the pre-existing description path. Only a real Postgres
 // connection can catch that regression.
 [Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
@@ -88,21 +88,21 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : Isolat
 			await transaction.CommitAsync();
 		}
 		ReportService service = new(new FixtureDbContextFactory(fixture));
-		var historical = await service.GetItemCostOverTimeAsync(null, null, null, null, "monthly", null,
+		var historical = await service.GetItemCostOverTimeAsync(null, null, null, "monthly", null,
 				CancellationToken.None, new(CategoryId: root, KnowledgeCutoff: first));
 		historical.Buckets.Should().BeEquivalentTo(new[]
 		{
 					new ItemCostBucket("2025-02", 3m, "USD"),
 					new ItemCostBucket("2025-02", 10m, "1"),
 			});
-		var corrected = await service.GetItemCostOverTimeAsync(null, null, null, null, "monthly", null,
+		var corrected = await service.GetItemCostOverTimeAsync(null, null, null, "monthly", null,
 				CancellationToken.None, new(CategoryId: root));
 		corrected.Buckets.Should().BeEquivalentTo(new[]
 		{
 					new ItemCostBucket("2025-02", 2m, "USD"),
 					new ItemCostBucket("2025-02", 10m, "1"),
 			});
-		var currentView = await service.GetItemCostOverTimeAsync(null, null, null, null, "monthly", null,
+		var currentView = await service.GetItemCostOverTimeAsync(null, null, null, "monthly", null,
 				CancellationToken.None, new(CategoryReportView.CurrentHierarchy, CategoryId: root,
 						CapturedCurrentRevisionId: current));
 		currentView.Buckets.Should().BeEmpty();
@@ -151,7 +151,7 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : Isolat
 
 		// Act
 		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
-			description: null, category: null, startDate: null, endDate: null, granularity: "exact",
+			description: null, startDate: null, endDate: null, granularity: "exact",
 			normalizedDescription: "Milk", CancellationToken.None);
 
 		// Assert — both raw descriptions represented because they share the canonical name.
@@ -201,7 +201,7 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : Isolat
 
 		// Act
 		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
-			description: null, category: null, startDate: null, endDate: null, granularity: "exact",
+			description: null, startDate: null, endDate: null, granularity: "exact",
 			normalizedDescription: "Milk", CancellationToken.None);
 
 		// Assert — the unlinked item never matches, regardless of how close its description is.
@@ -255,77 +255,13 @@ public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : Isolat
 
 		// Act
 		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
-			description: "Milk", category: null, startDate: null, endDate: null, granularity: "exact",
+			description: "Milk", startDate: null, endDate: null, granularity: "exact",
 			normalizedDescription: null, CancellationToken.None);
 
 		// Assert — exactly the two "Milk" items, no duplication and no drops from the added join.
 		result.Buckets.Should().HaveCount(2);
 		result.Buckets.Select(b => b.Amount).Should().BeEquivalentTo([3.49m, 3.29m]);
 	}
-
-	[Fact]
-	public async Task GetItemCostOverTimeAsync_CategoryFilter_StillReturnsExactPreLeftJoinResults()
-	{
-		// Arrange — same regression guard as the description case, but for the category path, which
-		// sits behind both description and normalizedDescription in the precedence chain.
-
-		Guid normalizedId = Guid.NewGuid();
-		ReceiptEntity receipt1 = ReceiptEntityGenerator.Generate();
-		receipt1.Date = new DateOnly(2025, 1, 10);
-		ReceiptEntity receipt2 = ReceiptEntityGenerator.Generate();
-		receipt2.Date = new DateOnly(2025, 2, 15);
-		ReceiptEntity receipt3 = ReceiptEntityGenerator.Generate();
-		receipt3.Date = new DateOnly(2025, 3, 20);
-
-		await using (ApplicationDbContext setup = fixture.CreateDbContext())
-		{
-			setup.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
-			{
-				Id = normalizedId,
-				CanonicalName = "Milk",
-				Status = NormalizedDescriptionStatus.Active,
-				CreatedAt = DateTimeOffset.UtcNow,
-			});
-			setup.Receipts.AddRange(receipt1, receipt2, receipt3);
-
-			ReceiptItemEntity dairyLinked = ReceiptItemEntityGenerator.Generate(receipt1.Id);
-			dairyLinked.Description = "Milk";
-			dairyLinked.Category = "Dairy";
-			dairyLinked.TotalAmount = 3.49m;
-			dairyLinked.UnitPrice = 3.49m;
-			dairyLinked.NormalizedDescriptionId = normalizedId;
-
-			ReceiptItemEntity dairyUnlinked = ReceiptItemEntityGenerator.Generate(receipt2.Id);
-			dairyUnlinked.Description = "Cheese";
-			dairyUnlinked.Category = "Dairy";
-			dairyUnlinked.TotalAmount = 5.99m;
-			dairyUnlinked.UnitPrice = 5.99m;
-			dairyUnlinked.NormalizedDescriptionId = null;
-
-			// Different category entirely — must never appear in a "Dairy" result.
-			ReceiptItemEntity produce = ReceiptItemEntityGenerator.Generate(receipt3.Id);
-			produce.Description = "Bananas";
-			produce.Category = "Produce";
-			produce.TotalAmount = 1.50m;
-			produce.UnitPrice = 1.50m;
-			produce.NormalizedDescriptionId = null;
-
-			setup.ReceiptItems.AddRange(dairyLinked, dairyUnlinked, produce);
-			await setup.SaveChangesAsync();
-		}
-
-		ReportService service = new(new FixtureDbContextFactory(fixture));
-
-		// Act
-		ItemCostOverTimeResult result = await service.GetItemCostOverTimeAsync(
-			description: null, category: "Dairy", startDate: null, endDate: null, granularity: "exact",
-			normalizedDescription: null, CancellationToken.None);
-
-		// Assert — both Dairy items, none duplicated, Produce excluded.
-		result.Buckets.Should().HaveCount(2);
-		result.Buckets.Select(b => b.Amount).Should().BeEquivalentTo([3.49m, 5.99m]);
-	}
-
 
 	private sealed class FixtureDbContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

@@ -12,7 +12,7 @@ namespace Infrastructure.IntegrationTests.Services;
 /// <summary>
 /// Pins the history-candidate aggregation SQL against a real Postgres instance: case-insensitive
 /// grouping, exclusion of descriptions that already have a template, the minCount floor, and the
-/// selection rules for each suggested field. The SQL uses DISTINCT ON and schema-qualified tables,
+/// selection rules for each suggested field. Legacy category labels are not read (RECEIPTS-1085). The SQL uses DISTINCT ON and schema-qualified tables,
 /// so none of it is exercisable through the InMemory provider.
 /// </summary>
 [Collection(PostgresCollection.Name)]
@@ -161,7 +161,7 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture server) : 
 	}
 
 	[Fact]
-	public async Task GetHistoryCandidatesAsync_SuggestsMostFrequentCategoryPairAndItemCode()
+	public async Task GetHistoryCandidatesAsync_SuggestsMostFrequentItemCode()
 	{
 		// Arrange
 
@@ -179,8 +179,6 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture server) : 
 		ItemTemplateHistoryCandidate candidate = (await CreateService().GetHistoryCandidatesAsync(0, 50, 2, CancellationToken.None)).Data.Single();
 
 		// Assert
-		candidate.SuggestedCategory.Should().Be("Groceries");
-		candidate.SuggestedSubcategory.Should().Be("Dairy");
 		candidate.SuggestedItemCode.Should().Be("MILK-001");
 	}
 
@@ -249,18 +247,13 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture server) : 
 
 		// Assert
 		candidate.SuggestedItemCode.Should().BeNull();
-		candidate.SuggestedCategory.Should().BeNull();
-		candidate.SuggestedSubcategory.Should().BeNull();
 	}
 
 	[Fact]
-	public async Task GetHistoryCandidatesAsync_PrefersARealCodeAndCategoryOverAMoreFrequentEmptyOne()
+	public async Task GetHistoryCandidatesAsync_PrefersARealCodeOverAMoreFrequentEmptyOne()
 	{
 		// Arrange — an empty string is not the same "no value" signal as a null column, and it
-		// must not out-vote a real value just by appearing more often. Category is non-nullable
-		// on ReceiptItemEntity (empty strings reach it only via legacy/imported data, since the
-		// domain layer rejects them for entered items), so it is seeded directly here rather than
-		// through the domain's own validation.
+		// must not out-vote a real value just by appearing more often.
 
 		ReceiptEntity receipt = Receipt(new DateOnly(2026, 2, 1));
 
@@ -279,8 +272,6 @@ public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture server) : 
 
 		// Assert — the real values win despite the empty ones having a higher raw count
 		candidate.SuggestedItemCode.Should().Be("MILK-001");
-		candidate.SuggestedCategory.Should().Be("Groceries");
-		candidate.SuggestedSubcategory.Should().Be("Dairy");
 	}
 
 	[Fact]

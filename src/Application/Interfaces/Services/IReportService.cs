@@ -22,20 +22,18 @@ public interface IReportService
 
 	Task<ItemDescriptionResult> GetItemDescriptionsAsync(
 		string search,
-		bool categoryOnly,
 		int limit,
 		CancellationToken cancellationToken);
 
 	Task<ItemCostOverTimeResult> GetItemCostOverTimeAsync(
 		string? description,
-		string? category,
 		DateOnly? startDate,
 		DateOnly? endDate,
 		string granularity,
 		string? normalizedDescription,
 		CancellationToken cancellationToken);
 	Task<ItemCostOverTimeResult> GetItemCostOverTimeAsync(
-			string? description, string? category, DateOnly? startDate, DateOnly? endDate,
+			string? description, DateOnly? startDate, DateOnly? endDate,
 			string granularity, string? normalizedDescription, CancellationToken cancellationToken,
 			CategoryReportOptions options);
 

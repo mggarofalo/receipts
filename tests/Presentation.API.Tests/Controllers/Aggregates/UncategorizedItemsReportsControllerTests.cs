@@ -29,7 +29,7 @@ public class UncategorizedItemsReportsControllerTests
 		[
 			new AppReports.UncategorizedItemRecord(
 				Guid.NewGuid(), Guid.NewGuid(), "ABC",
-				"Test Item", 1m, 5.00m, 5.00m, "Uncategorized", null),
+				"Test Item", 1m, 5.00m, 5.00m),
 		], 1);
 
 		_mediatorMock.Setup(m => m.Send(
@@ -174,7 +174,7 @@ public class UncategorizedItemsReportsControllerTests
 		[
 			new AppReports.UncategorizedItemRecord(
 				itemId, receiptId, "ITM-001",
-				"Test Description", 2m, 3.50m, 7.00m, "Uncategorized", "SomeSub"),
+				"Test Description", 2m, 3.50m, 7.00m),
 		], 1);
 
 		_mediatorMock.Setup(m => m.Send(
@@ -196,8 +196,8 @@ public class UncategorizedItemsReportsControllerTests
 		item.Quantity.Should().Be(2.0);
 		item.UnitPrice.Should().Be(3.50);
 		item.TotalAmount.Should().Be(7.00);
-		item.Category.Should().Be("Uncategorized");
-		item.Subcategory.Should().Be("SomeSub");
+		item.Category.Should().BeEmpty("the legacy label is no longer read");
+		item.Subcategory.Should().BeNull();
 	}
 
 	[Fact]
@@ -208,7 +208,7 @@ public class UncategorizedItemsReportsControllerTests
 		AppReports.UncategorizedItemsResult reportResult = new(
 		[
 			new AppReports.UncategorizedItemRecord(
-				Guid.NewGuid(), Guid.NewGuid(), null, "With answer", 1m, 1m, 1m, "Uncategorized", null)
+				Guid.NewGuid(), Guid.NewGuid(), null, "With answer", 1m, 1m, 1m)
 			{
 				Location = "Corner Market",
 				Suggestion = new AppReports.UncategorizedItemSuggestion(attemptId, "stale", leaf, 0.82, null,
@@ -216,7 +216,7 @@ public class UncategorizedItemsReportsControllerTests
 					[new Application.Classification.CategoryAssistanceCandidateRead(leaf, 0.8)]),
 			},
 			new AppReports.UncategorizedItemRecord(
-				Guid.NewGuid(), Guid.NewGuid(), null, "Without answer", 1m, 1m, 1m, "Uncategorized", null)
+				Guid.NewGuid(), Guid.NewGuid(), null, "Without answer", 1m, 1m, 1m)
 			{
 				Location = "Other Store",
 			},

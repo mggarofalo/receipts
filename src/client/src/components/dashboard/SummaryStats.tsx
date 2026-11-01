@@ -40,7 +40,7 @@ export function SummaryStats({ dateRange, className }: SummaryStatsProps) {
         value={data?.mostUsedCategory?.name ?? "—"}
         subtitle={
           data?.mostUsedCategory?.count
-            ? `${Number(data.mostUsedCategory.count)} receipts`
+            ? `${Number(data.mostUsedCategory.count)} purchases`
             : undefined
         }
         loading={isLoading}

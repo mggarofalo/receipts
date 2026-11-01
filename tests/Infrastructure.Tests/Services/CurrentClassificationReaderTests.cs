@@ -117,6 +117,33 @@ public class CurrentClassificationReaderTests
 		resolution.AncestorDistance.Should().Be(1);
 	}
 
+	[Fact]
+	public async Task ReadAsync_ReturnsRecordedPathsKeyedByItem_OmittingItemsWithoutAssignment()
+	{
+		Guid assigned = Guid.NewGuid(), cleared = Guid.NewGuid(), missing = Guid.NewGuid();
+		Guid revisionId = Guid.NewGuid(), rootId = Guid.NewGuid(), leafId = Guid.NewGuid();
+		Guid assignedAssignment = Guid.NewGuid(), clearedAssignment = Guid.NewGuid();
+		await using ApplicationDbContext db = CreateContext();
+		db.Classifications.AddRange(
+			new PurchaseClassificationEntity { Id = assignedAssignment, ReceiptItemId = assigned, CategoryId = leafId, TaxonomyRevisionId = revisionId },
+			new PurchaseClassificationEntity { Id = clearedAssignment, ReceiptItemId = cleared, TaxonomyRevisionId = revisionId });
+		db.CurrentClassifications.AddRange(
+			new CurrentClassificationEntity { ReceiptItemId = assigned, AssignmentId = assignedAssignment },
+			new CurrentClassificationEntity { ReceiptItemId = cleared, AssignmentId = clearedAssignment });
+		db.TaxonomyNodes.AddRange(
+			new TaxonomyNodeEntity { RevisionId = revisionId, CategoryId = rootId, Name = "Root" },
+			new TaxonomyNodeEntity { RevisionId = revisionId, CategoryId = leafId, ParentId = rootId, Name = "Leaf" });
+		await db.SaveChangesAsync();
+
+		var byItem = await CurrentClassificationReader.ReadAsync(db, [assigned, cleared, missing], CancellationToken.None);
+
+		byItem.Keys.Should().BeEquivalentTo([assigned, cleared]);
+		byItem[assigned].RecordedPath.Select(node => node.Name).Should().Equal("Root", "Leaf");
+		byItem[cleared].CategoryId.Should().BeNull();
+		byItem[cleared].RecordedPath.Should().BeEmpty();
+		(await CurrentClassificationReader.ReadAsync(db, [], CancellationToken.None)).Should().BeEmpty();
+	}
+
 	private static ApplicationDbContext CreateContext() => new(
 		new DbContextOptionsBuilder<ApplicationDbContext>()
 			.UseInMemoryDatabase($"classification-reader-{Guid.NewGuid():N}").Options);

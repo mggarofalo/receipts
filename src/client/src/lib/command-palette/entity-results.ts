@@ -63,8 +63,6 @@ interface ReceiptItemLike {
   receiptId: string;
   description: string;
   receiptItemCode?: string | null;
-  category?: string | null;
-  subcategory?: string | null;
   currentClassification?: CurrentClassification | null;
 }
 interface UserLike {
@@ -88,10 +86,7 @@ function itemCategoryLabel(item: ReceiptItemLike): string {
     if (!classification.recordedPath.length) return "Unresolved category path";
     return classification.recordedPath.map((node) => node.name).join(" / ");
   }
-  const legacyPath = [item.category, item.subcategory]
-    .filter(Boolean)
-    .join(" / ");
-  return legacyPath ? `Legacy: ${legacyPath}` : "Unresolved category";
+  return "Unresolved category";
 }
 
 export function useEntityResults({

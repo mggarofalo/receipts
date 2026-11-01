@@ -257,8 +257,6 @@ public class ItemTemplatesController(IMediator mediator, ItemTemplateMapper mapp
 				Name = c.Name,
 				OccurrenceCount = c.OccurrenceCount,
 				LastPurchasedAt = c.LastPurchasedAt,
-				SuggestedCategory = c.SuggestedCategory,
-				SuggestedSubcategory = c.SuggestedSubcategory,
 				SuggestedUnitPrice = c.SuggestedUnitPrice.HasValue ? (double)c.SuggestedUnitPrice.Value : null,
 				SuggestedItemCode = c.SuggestedItemCode,
 			})],

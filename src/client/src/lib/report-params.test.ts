@@ -243,83 +243,61 @@ describe("parseBoolParam", () => {
 });
 
 describe("parseSelectedItemParam", () => {
-  it("returns no selection when both item and category are absent", () => {
-    expect(parseSelectedItemParam(paramsFrom(""))).toEqual({
-      selectedItem: null,
-      categoryOnly: false,
-    });
+  it("returns no selection when item is absent", () => {
+    expect(parseSelectedItemParam(paramsFrom(""))).toBeNull();
   });
 
-  it("returns no selection when only item is present (malformed)", () => {
-    expect(parseSelectedItemParam(paramsFrom("item=Milk"))).toEqual({
-      selectedItem: null,
-      categoryOnly: false,
-    });
+  it("returns no selection for an empty item", () => {
+    expect(parseSelectedItemParam(paramsFrom("item="))).toBeNull();
   });
 
-  it("returns no selection when only category is present (malformed)", () => {
-    expect(parseSelectedItemParam(paramsFrom("category=Dairy"))).toEqual({
-      selectedItem: null,
-      categoryOnly: false,
-    });
+  it("selects the description from an item-only link", () => {
+    expect(parseSelectedItemParam(paramsFrom("item=Milk"))).toBe("Milk");
   });
 
-  it("keeps categoryOnly independent of whether an item is selected", () => {
-    // A user can toggle into category mode before picking anything — the
-    // mode flag must not collapse to false just because there's no
-    // description/category pair yet.
-    expect(parseSelectedItemParam(paramsFrom("categoryOnly=true"))).toEqual({
-      selectedItem: null,
-      categoryOnly: true,
-    });
-  });
-
-  it("returns the selected item when both fields are present", () => {
+  it("ignores a legacy category carried beside the item", () => {
     expect(
       parseSelectedItemParam(paramsFrom("item=Milk&category=Dairy")),
-    ).toEqual({
-      selectedItem: { description: "Milk", category: "Dairy" },
-      categoryOnly: false,
-    });
+    ).toBe("Milk");
   });
 
-  it("returns categoryOnly true when set alongside a full selection", () => {
+  it("does not treat a category alone as a selection", () => {
+    expect(parseSelectedItemParam(paramsFrom("category=Dairy"))).toBeNull();
+  });
+
+  it("opens an old category-only link with nothing selected", () => {
+    // In the retired category-text mode `item` named a legacy category, not
+    // an item description, so it must not be read as one.
     expect(
       parseSelectedItemParam(
-        paramsFrom("item=Milk&category=Dairy&categoryOnly=true"),
+        paramsFrom("item=Dairy&category=Dairy&categoryOnly=true"),
       ),
-    ).toEqual({
-      selectedItem: { description: "Milk", category: "Dairy" },
-      categoryOnly: true,
-    });
+    ).toBeNull();
+    expect(parseSelectedItemParam(paramsFrom("categoryOnly=true"))).toBeNull();
+  });
+
+  it("keeps the item when categoryOnly is explicitly false", () => {
+    expect(
+      parseSelectedItemParam(paramsFrom("item=Milk&categoryOnly=false")),
+    ).toBe("Milk");
   });
 });
 
 describe("serializeSelectedItemParam", () => {
   it("clears all keys when there is no selection", () => {
-    expect(serializeSelectedItemParam(null, false)).toEqual({
+    expect(serializeSelectedItemParam(null)).toEqual({
       item: undefined,
       category: undefined,
       categoryOnly: undefined,
     });
   });
 
-  it("writes item and category, omitting categoryOnly when false", () => {
-    expect(
-      serializeSelectedItemParam(
-        { description: "Milk", category: "Dairy" },
-        false,
-      ),
-    ).toEqual({ item: "Milk", category: "Dairy", categoryOnly: undefined });
-  });
-
-  it("writes categoryOnly as the literal string 'true' when set", () => {
-    expect(
-      serializeSelectedItemParam(
-        { description: "Milk", category: "Dairy" },
-        true,
-      ),
-    ).toEqual({ item: "Milk", category: "Dairy", categoryOnly: "true" });
+  it("writes item and clears the legacy category and categoryOnly keys", () => {
+    expect(serializeSelectedItemParam("Milk")).toEqual({
+      item: "Milk",
+      category: undefined,
+      categoryOnly: undefined,
+    });
   });
 });
 

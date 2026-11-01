@@ -158,7 +158,11 @@ describe("useEntityResults", () => {
     expect(items[0].meta).toBe("MILK · Recorded Food / Dairy / Milk");
     expect(items[0].searchValue).toContain("recorded food / dairy / milk");
     expect(items[0].searchValue).not.toContain("stale category");
-    expect(items[1].meta).toBe("Legacy: Bakery / Loaves");
+    // Legacy label text is never shown; an item without a classification is
+    // simply unresolved.
+    expect(items[1].meta).toBe("Unresolved category");
+    expect(items[1].searchValue).not.toContain("bakery");
+    expect(items[1].searchValue).not.toContain("loaves");
     expect(items[2].meta).toBe("Unresolved category path");
   });
 

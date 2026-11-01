@@ -2932,7 +2932,7 @@ export interface paths {
         };
         /**
          * Search item descriptions for autocomplete
-         * @description Returns distinct item descriptions with their category and occurrence count, filtered by a search term (minimum 2 characters). Results are sorted by occurrences descending.
+         * @description Returns distinct item descriptions with their occurrence count, filtered by a search term (minimum 2 characters). Results are sorted by occurrences descending.
          */
         get: operations["GetItemDescriptions"];
         put?: never;
@@ -5268,6 +5268,7 @@ export interface components {
         };
         ItemDescriptionItem: {
             description: string;
+            /** @description Deprecated; always empty. Item types come from the taxonomy. */
             category: string;
             /** Format: int32 */
             occurrences: number;
@@ -5425,7 +5426,9 @@ export interface components {
             unitPrice: number;
             /** Format: double */
             totalAmount: number;
+            /** @description Deprecated; always empty. The item type is categoryId. */
             category: string;
+            /** @description Deprecated; always null. */
             subcategory?: string | null;
             /** @description One of missing_assignment, unclassified, unresolved_legacy. */
             classificationState: string;
@@ -5900,7 +5903,9 @@ export interface components {
              */
             combinedScore: number;
             source: components["schemas"]["SimilarItemResponseSource"];
+            /** @description The template's default category; null for history matches */
             defaultCategory?: string | null;
+            /** @description The template's default subcategory; null for history matches */
             defaultSubcategory?: string | null;
             /** Format: double */
             defaultUnitPrice?: number | null;
@@ -5919,9 +5924,9 @@ export interface components {
              * @description Date of the most recent receipt containing this description
              */
             lastPurchasedAt: string;
-            /** @description Category from this description's most frequent (category, subcategory) combination */
+            /** @description Deprecated; always null. Item types come from the taxonomy. */
             suggestedCategory?: string | null;
-            /** @description Subcategory from this description's most frequent (category, subcategory) combination */
+            /** @description Deprecated; always null. */
             suggestedSubcategory?: string | null;
             /**
              * Format: double
@@ -6489,7 +6494,9 @@ export interface components {
             quantity: number;
             /** Format: double */
             unitPrice: number;
+            /** @description Legacy label kept only so an edit can send it back unchanged. Display currentClassification instead. */
             category: string;
+            /** @description Legacy label kept only so an edit can send it back unchanged. Display currentClassification instead. */
             subcategory?: string | null;
             /**
              * Format: uuid
@@ -6518,9 +6525,9 @@ export interface components {
             itemCode: string;
             /** @description Most recent description for this item code */
             description: string;
-            /** @description Most recent category for this item code */
+            /** @description Top level of the most recent item's item type; empty when it has none */
             category: string;
-            /** @description Most recent subcategory for this item code */
+            /** @description Second level of the most recent item's item type, if any */
             subcategory?: string | null;
             /**
              * Format: double
@@ -13619,7 +13626,7 @@ export interface operations {
                 /** @description Column name to sort by. Allowed values depend on the entity type. */
                 sortBy?: components["parameters"]["SortBy"];
                 sortDirection?: components["parameters"]["SortDirection"];
-                /** @description Case-insensitive substring filter applied across Description, ReceiptItemCode, Category, and Subcategory. Whitespace-only values are ignored. Ignored when receiptId is supplied. */
+                /** @description Case-insensitive substring filter applied across Description, ReceiptItemCode, and the item type path (including ancestors). Whitespace-only values are ignored. Ignored when receiptId is supplied. */
                 q?: string;
                 /**
                  * @description Restricts the page to receipt items linked to this canonical NormalizedDescription.
@@ -15577,8 +15584,6 @@ export interface operations {
             query: {
                 /** @description Search term to filter item descriptions (minimum 2 characters). */
                 search: string;
-                /** @description When true, search and return categories instead of item descriptions. */
-                categoryOnly?: boolean;
                 /** @description Maximum number of results to return. */
                 limit?: number;
             };
@@ -15611,11 +15616,11 @@ export interface operations {
     GetItemCostOverTime: {
         parameters: {
             query?: {
-                /** @description Raw item description to filter by. Takes precedence over normalizedDescription, categoryId, and legacy category. */
+                /** @description Raw item description to filter by. Takes precedence over normalizedDescription and categoryId. */
                 description?: string;
-                /** @description Normalized description canonical name to filter by. Takes precedence over categoryId and legacy category. */
+                /** @description Normalized description canonical name to filter by. Takes precedence over categoryId. */
                 normalizedDescription?: string;
-                /** @description Stable taxonomy category ID. Includes descendants in the selected category view. Takes precedence over legacy category. */
+                /** @description Stable taxonomy category ID. Includes descendants in the selected category view. */
                 categoryId?: string;
                 /** @description Historical assignment hierarchy or hierarchy at capturedCurrentRevisionId (current head when omitted). */
                 categoryView?: "asClassified" | "currentHierarchy";
@@ -15623,8 +15628,6 @@ export interface operations {
                 knowledgeCutoff?: string;
                 /** @description Captured taxonomy revision for currentHierarchy; rejected with asClassified. */
                 capturedCurrentRevisionId?: string;
-                /** @description Legacy category text filter retained for existing clients. Prefer categoryId. */
-                category?: string;
                 /** @description Start date (ISO date string). Defaults to no lower bound. */
                 startDate?: string;
                 /** @description End date (ISO date string). Defaults to no upper bound. */

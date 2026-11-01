@@ -1,8 +1,17 @@
 import { screen, waitFor } from "@testing-library/react";
 import "@/test/setup-combobox-polyfills";
 import userEvent from "@testing-library/user-event";
+import { useLocation } from "react-router";
 import { renderWithQueryClient } from "@/test/test-utils";
 import ItemCostOverTime from "./ItemCostOverTime";
+
+function UrlProbe() {
+  return <output data-testid="url">{useLocation().search}</output>;
+}
+
+function urlParams(): URLSearchParams {
+  return new URLSearchParams(screen.getByTestId("url").textContent ?? "");
+}
 
 vi.mock("@/hooks/useItemCostOverTime", () => ({
   useItemDescriptions: vi.fn(),
@@ -134,32 +143,83 @@ describe("ItemCostOverTime", () => {
     expect(screen.queryByTestId("chart-card")).not.toBeInTheDocument();
   });
 
-  it("reads the selected item and category from the URL on load", () => {
+  it("selects the item from an item-only URL", () => {
+    setupMocks();
+    renderWithQueryClient(<ItemCostOverTime />, {
+      route: "/?item=Milk",
+    });
+
+    expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
+    const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
+    expect(lastCall).toMatchObject({ description: "Milk" });
+    expect(lastCall).not.toHaveProperty("category");
+  });
+
+  it("reads an older item link carrying a legacy category without filtering by it", () => {
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
       route: "/?item=Milk&category=Dairy",
     });
 
     expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
-    expect(mockCostHook).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        description: "Milk",
-      }),
-    );
+    const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
+    expect(lastCall).toMatchObject({ description: "Milk" });
+    expect(lastCall).not.toHaveProperty("category");
   });
 
-  it("renders category-only mode from the URL", () => {
+  it("opens an old category-only link with nothing selected", () => {
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk&category=Dairy&categoryOnly=true",
+      route: "/?item=Dairy&category=Dairy&categoryOnly=true",
     });
 
-    expect(screen.getByText("Category: Dairy")).toBeInTheDocument();
-    expect(mockCostHook).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        category: "Dairy",
-      }),
+    expect(
+      screen.getByText(/choose an item or category above/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("chart-card")).not.toBeInTheDocument();
+    expect(screen.queryByText("Category: Dairy")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /clear category/i }),
+    ).not.toBeInTheDocument();
+    const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
+    expect(lastCall?.description).toBeUndefined();
+    expect(lastCall?.categoryId).toBeUndefined();
+    expect(lastCall).not.toHaveProperty("category");
+  });
+
+  it("writes only the item when a search result is picked, clearing legacy category params", async () => {
+    const user = userEvent.setup();
+    setupMocks();
+    mockDescriptionsHook.mockReturnValue({
+      data: {
+        items: [{ description: "Milk", category: "", occurrences: 5 }],
+      },
+      isLoading: false,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    renderWithQueryClient(
+      <>
+        <ItemCostOverTime />
+        <UrlProbe />
+      </>,
+      { route: "/?item=Dairy&category=Dairy&categoryOnly=true" },
     );
+
+    await user.click(screen.getByRole("combobox", { name: "Search items" }));
+    await user.type(
+      screen.getByPlaceholderText("Type to search items..."),
+      "Mi",
+    );
+    await user.click(await screen.findByText("Milk"));
+
+    expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
+    const params = urlParams();
+    expect(params.get("item")).toBe("Milk");
+    expect(params.has("category")).toBe(false);
+    expect(params.has("categoryOnly")).toBe(false);
+    const lastCall = mockCostHook.mock.calls.at(-1)?.[0];
+    expect(lastCall).toMatchObject({ description: "Milk" });
+    expect(lastCall).not.toHaveProperty("category");
   });
 
   it("loads stable category URLs with hierarchy, cutoff, and captured revision", () => {
@@ -190,28 +250,18 @@ describe("ItemCostOverTime", () => {
       },
     });
     renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk&category=Dairy",
+      route: "/?item=Milk",
     });
     expect(screen.getAllByTestId("area-chart")).toHaveLength(2);
     expect(screen.getByLabelText("Milk · USD")).toHaveTextContent("$2.00");
     expect(screen.getByLabelText("Milk · EUR")).toHaveTextContent("€3.00");
   });
 
-  it("falls back to no selection when category is missing (malformed item params)", () => {
-    setupMocks();
-    renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk",
-    });
-
-    expect(screen.getByText("Item Cost Over Time")).toBeInTheDocument();
-    expect(screen.queryByTestId("chart-card")).not.toBeInTheDocument();
-  });
-
   it("falls back to defaults for malformed range, granularity, and window size", () => {
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
       route:
-        "/?item=Milk&category=Dairy&startDate=garbage&endDate=garbage&granularity=bogus&trendline=maybe&windowSize=99",
+        "/?item=Milk&startDate=garbage&endDate=garbage&granularity=bogus&trendline=maybe&windowSize=99",
     });
 
     expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
@@ -228,7 +278,7 @@ describe("ItemCostOverTime", () => {
     const user = userEvent.setup();
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk&category=Dairy",
+      route: "/?item=Milk",
     });
 
     expect(screen.getByRole("heading", { name: "Milk" })).toBeInTheDocument();
@@ -273,7 +323,7 @@ describe("ItemCostOverTime", () => {
     const user = userEvent.setup();
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk&category=Dairy",
+      route: "/?item=Milk",
     });
 
     await user.click(screen.getByRole("button", { name: "Monthly" }));
@@ -291,7 +341,7 @@ describe("ItemCostOverTime", () => {
     const user = userEvent.setup();
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk&category=Dairy",
+      route: "/?item=Milk",
     });
 
     expect(screen.getByTestId("area-chart")).toHaveAttribute(
@@ -317,7 +367,7 @@ describe("ItemCostOverTime", () => {
     const user = userEvent.setup();
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk&category=Dairy",
+      route: "/?item=Milk",
     });
 
     await user.click(screen.getByTestId("date-range-selector"));
@@ -333,7 +383,7 @@ describe("ItemCostOverTime", () => {
   it("treats the 'all' sentinel as an open-ended range", () => {
     setupMocks();
     renderWithQueryClient(<ItemCostOverTime />, {
-      route: "/?item=Milk&category=Dairy&startDate=all",
+      route: "/?item=Milk&startDate=all",
     });
 
     expect(mockCostHook).toHaveBeenLastCalledWith(
@@ -378,7 +428,7 @@ describe("ItemCostOverTime", () => {
 
       mockDescriptionsHook.mockReturnValue({
         data: {
-          items: [{ description: "Milk", category: "Dairy", occurrences: 5 }],
+          items: [{ description: "Milk", category: "", occurrences: 5 }],
         },
         isLoading: false,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

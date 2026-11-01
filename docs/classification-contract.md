@@ -162,6 +162,51 @@ Ambiguous mappings stop automatic linkage and remain visible in the exception
 report. Immutable original strings remain available even after compatibility
 columns eventually retire.
 
+### Legacy label strings: reads retired (RECEIPTS-1085)
+
+`ReceiptItem.Category`/`Subcategory` are no longer read to show, search, sort,
+group or report anything. Every reader uses the item's current assignment:
+
+- Receipt list chips name the top level of each item's recorded path.
+- Item search matches the recorded path (including ancestors); there is no
+  string fallback, and `sortBy=category` is gone.
+- Dashboard "Top category" is the top-level item type (today's tree) with the
+  most purchases.
+- Item code suggestions name the latest item's recorded top two levels (empty
+  when it has no item type).
+- Item Cost Over Time filters by `categoryId` only; the `category` and
+  `categoryOnly` parameters were removed. Item descriptions group by
+  description alone.
+- YNAB splits key only by item envelope mapping.
+- `UncategorizedItem.category` and `ItemDescriptionItem.category` are always
+  empty, and `UncategorizedItem.subcategory`,
+  `ItemTemplateHistoryCandidateResponse.suggestedCategory/suggestedSubcategory`
+  and history rows' `SimilarItemResponse.defaultCategory/defaultSubcategory`
+  are null. The fields stay so the contract does not break.
+
+What still touches the strings, by design, until the writes are retired:
+
+- `ReceiptItemResponse.category/subcategory` are echoed only so an edit can
+  send them back unchanged; `ClassificationService.ProtectLegacyEditAsync`
+  treats a changed label without a classification intent as a legacy write.
+  The edit form therefore resends the stored labels whenever the item type is
+  unchanged, even after the picker was reopened.
+- The write path (`ClassificationService` legacy resolution, write
+  fingerprints, the initial backfill) and backups.
+- Eligibility guards that treat non-blank labels as an earlier human choice:
+  category assistance enrolment, dispatch, read and decision stores, historical
+  approved mappings and organization discovery. Moving them to the
+  assignment's `LegacyCategory`/`LegacySubcategory` evidence belongs with
+  retiring the writes.
+- Item templates keep their own default category strings (no taxonomy field).
+- The legacy category and subcategory suggestion tables (`/api/categories`,
+  `/api/subcategories`) still guard deletes by counting items with a matching
+  label. They go with those tables.
+
+Chips, search and suggestions name the item type as recorded on the
+assignment (its own revision), like the item rows; the dashboard's top category
+uses today's tree, like the other reports.
+
 ## Spec-first endpoint/schema plan
 
 Names are planned and must be reconciled with existing routes in the implementing

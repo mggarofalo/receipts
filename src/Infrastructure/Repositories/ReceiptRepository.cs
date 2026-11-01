@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Application.Interfaces.Services;
 using Application.Models;
 using Domain.NormalizedDescriptions;
+using Domain.Taxonomy;
 using Infrastructure.Entities.Core;
 using Infrastructure.Extensions;
 using Infrastructure.Interfaces.Repositories;
@@ -102,14 +103,18 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 
 		if (receiptIds.Length > 0)
 		{
-			var categories = await context.ReceiptItems
-				.Where(i => receiptIds.Contains(i.ReceiptId) && i.Category.Trim() != "")
-				.Select(i => new { i.ReceiptId, Category = i.Category.Trim() })
-				.Distinct()
+			// Chips name each item's top-level item type, as recorded on its current assignment.
+			var items = await context.ReceiptItems
+				.Where(i => receiptIds.Contains(i.ReceiptId))
+				.Select(i => new { i.Id, i.ReceiptId })
 				.ToListAsync(cancellationToken);
-			categoriesByReceipt = categories
+			Dictionary<Guid, CurrentClassification> classifications =
+				await CurrentClassificationReader.ReadAsync(context, [.. items.Select(i => i.Id)], cancellationToken);
+			categoriesByReceipt = items
+				.Select(i => new { i.ReceiptId, Root = classifications.GetValueOrDefault(i.Id)?.RecordedPath.FirstOrDefault()?.Name })
+				.Where(i => !string.IsNullOrWhiteSpace(i.Root))
 				.GroupBy(i => i.ReceiptId)
-				.ToDictionary(g => g.Key, g => g.Select(i => i.Category).OrderBy(x => x).ToList());
+				.ToDictionary(g => g.Key, g => g.Select(i => i.Root!).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList());
 
 			var payments = await context.Transactions
 				.Where(t => receiptIds.Contains(t.ReceiptId) && t.Card != null)

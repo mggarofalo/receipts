@@ -21,8 +21,6 @@ public class GetItemTemplateHistoryCandidatesQueryHandlerTests
 				Name = "Whole Milk",
 				OccurrenceCount = 5,
 				LastPurchasedAt = new DateOnly(2026, 1, 15),
-				SuggestedCategory = "Groceries",
-				SuggestedSubcategory = "Dairy",
 				SuggestedUnitPrice = 3.99m,
 				SuggestedItemCode = "MILK-001",
 			},

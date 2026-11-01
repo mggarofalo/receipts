@@ -75,7 +75,7 @@ public class GetUncategorizedItemsReportQueryHandlerTests
 		UncategorizedItemsResult expectedResult = new(
 		[
 			new UncategorizedItemRecord(Guid.NewGuid(), Guid.NewGuid(), "ABC",
-				"Test Item", 1m, 5.00m, 5.00m, "Uncategorized", null),
+				"Test Item", 1m, 5.00m, 5.00m),
 		], 1);
 
 		_reportServiceMock.Setup(s => s.GetUncategorizedItemsAsync(

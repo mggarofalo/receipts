@@ -137,6 +137,20 @@ public class ReceiptItemsControllerTests
 	}
 
 	[Theory]
+	[InlineData("category")]
+	[InlineData("Category")]
+	public async Task GetAllReceiptItems_ReturnsBadRequest_WhenSortingByRetiredLegacyCategory(string sortBy)
+	{
+		// Act
+		Results<Ok<ReceiptItemListResponse>, BadRequestProblem> result = await _controller.GetAllReceiptItems(null, 0, 50, sortBy, null);
+
+		// Assert
+		BadRequestProblem badRequestResult = Assert.IsType<BadRequestProblem>(result.Result);
+		badRequestResult.Value!.Detail.Should().StartWith($"Invalid sortBy '{sortBy}'");
+		_mediatorMock.VerifyNoOtherCalls();
+	}
+
+	[Theory]
 	[InlineData(0, 0)]
 	[InlineData(0, -1)]
 	[InlineData(0, 501)]

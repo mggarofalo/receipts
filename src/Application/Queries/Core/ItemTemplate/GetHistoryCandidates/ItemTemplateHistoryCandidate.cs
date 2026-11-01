@@ -15,12 +15,6 @@ public class ItemTemplateHistoryCandidate
 	/// <summary>Date of the most recent receipt containing this description.</summary>
 	public DateOnly LastPurchasedAt { get; set; }
 
-	/// <summary>Category from this description's most frequent (category, subcategory) combination.</summary>
-	public string? SuggestedCategory { get; set; }
-
-	/// <summary>Subcategory from this description's most frequent (category, subcategory) combination.</summary>
-	public string? SuggestedSubcategory { get; set; }
-
 	/// <summary>Unit price from the most recent receipt containing this description.</summary>
 	public decimal? SuggestedUnitPrice { get; set; }
 
