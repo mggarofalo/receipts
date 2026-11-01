@@ -64,8 +64,9 @@ export function AreaTimeChart({
           </tr>
         </thead>
         <tbody>
-          {mergedData.map((row) => (
-            <tr key={row.period}>
+          {mergedData.map((row, index) => (
+            // Exact granularity repeats a period for several purchases on one day.
+            <tr key={`${row.period}-${index}`}>
               <td>{row.period}</td>
               <td>{formatValue(row.amount)}</td>
               {hasTrendline && (

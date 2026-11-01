@@ -77,3 +77,29 @@ export function classificationChange(
     reason: "Category selected during receipt entry",
   };
 }
+
+// One path index per taxonomy revision, shared by every caller.
+const pathIndexes = new WeakMap<
+  CategoryRevision["nodes"],
+  Map<string, CategoryPath>
+>();
+
+/** A choice of a category in the given tree, or undefined when it is not selectable there. */
+export function currentCategoryChoice(
+  revision: CategoryRevision | undefined,
+  categoryId: string | null | undefined,
+): CategoryChoice | undefined {
+  if (!revision || !categoryId) return undefined;
+  let index = pathIndexes.get(revision.nodes);
+  if (!index) {
+    // categoryPaths leaves out archived categories and their descendants.
+    index = new Map(
+      categoryPaths(revision.nodes).map((row) => [row.node.id, row]),
+    );
+    pathIndexes.set(revision.nodes, index);
+  }
+  const row = index.get(categoryId);
+  return row
+    ? { categoryId, taxonomyRevisionId: revision.id, path: row.path }
+    : undefined;
+}

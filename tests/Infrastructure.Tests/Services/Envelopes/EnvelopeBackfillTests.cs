@@ -183,6 +183,49 @@ public class EnvelopeBackfillTests
 		actual.Mismatches.Should().Be(1);
 	}
 
+	[Fact]
+	public async Task ParityReader_RoutesAsync_RoutesEveryItemThroughItsEnvelope_IncludingDeletedItems()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		ReceiptItemEntity food = ReceiptItemEntityGenerator.Generate(receipt.Id);
+		food.EnvelopeId = world.Food;
+		ReceiptItemEntity car = ReceiptItemEntityGenerator.Generate(receipt.Id);
+		car.EnvelopeId = world.Car;
+		ReceiptItemEntity deleted = ReceiptItemEntityGenerator.Generate(receipt.Id);
+		deleted.EnvelopeId = world.Food;
+		deleted.DeletedAt = Now;
+		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
+		{
+			db.ReceiptItems.AddRange(food, car, deleted);
+			db.YnabEnvelopeMappings.Add(new YnabEnvelopeMappingEntity
+			{
+				Id = Guid.NewGuid(),
+				EnvelopeId = world.Food,
+				YnabBudgetId = Budget,
+				YnabCategoryId = "ynab-food",
+				YnabCategoryName = "Food",
+				YnabCategoryGroupName = "Needs",
+				CreatedAt = Now,
+				UpdatedAt = Now,
+			});
+			await db.SaveChangesAsync();
+		}
+
+		// Act
+		await using ApplicationDbContext verify = world.Factory.CreateDbContext();
+		IReadOnlyList<EnvelopeYnabRoute> routes = await EnvelopeParityReader.RoutesAsync(verify, CancellationToken.None);
+
+		// Assert
+		routes.Should().BeEquivalentTo(new[]
+		{
+			new EnvelopeYnabRoute(food.Id, Budget, "ynab-food"),
+			new EnvelopeYnabRoute(car.Id, Budget, null),
+			new EnvelopeYnabRoute(deleted.Id, Budget, "ynab-food"),
+		});
+	}
+
 	private static async Task<Guid> AddItemAsync(EnvelopeWorld world, EnvelopeSource source)
 	{
 		ReceiptEntity receipt = await world.AddReceiptAsync();

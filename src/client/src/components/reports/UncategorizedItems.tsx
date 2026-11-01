@@ -2,7 +2,7 @@ import { Pagination } from "@/components/Pagination";
 import { usePersistedTablePageSize } from "@/hooks/usePersistedTablePageSize";
 import { isPageSize } from "@/lib/page-size";
 import { RequestFailure } from "@/components/RequestFailure";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useCategorizeReceiptItems } from "@/hooks/useCategorizeReceiptItems";
 import {
@@ -167,6 +167,23 @@ export default function UncategorizedItems() {
     onSuccess: () => toast.success("Item categorized"),
   });
   const rowBusy = rowUpdateMutation.isPending || bulkUpdateMutation.isPending;
+
+  // A corrected row leaves the list; once the refetch lands, focus the row that takes its place
+  // (the same row again if the write failed), or the table when the page is empty.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const focusRowAfterWrite = useRef<number | null>(null);
+  useEffect(() => {
+    const index = focusRowAfterWrite.current;
+    if (index === null || rowBusy) return;
+    focusRowAfterWrite.current = null;
+    const cells =
+      tableRef.current?.querySelectorAll<HTMLElement>(
+        "[data-item-type-cell]",
+      ) ?? [];
+    const cell = cells[Math.min(index, cells.length - 1)];
+    (cell?.querySelector<HTMLElement>("button") ?? tableRef.current)?.focus();
+    // submittedAt changes on every write, so a write that settles before a pending render still lands here.
+  }, [data, rowBusy, rowUpdateMutation.submittedAt]);
 
   function handleSort(column: string) {
     const nextColumn = column as SortColumn;
@@ -374,98 +391,101 @@ export default function UncategorizedItems() {
         </div>
       )}
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10">
-              <Checkbox
-                checked={!!allOnPageSelected}
-                onCheckedChange={handleToggleAll}
-                aria-label="Select all items on this page"
-              />
-            </TableHead>
-            <SortableTableHead
-              column="description"
-              label="Description"
-              currentSortBy={sortBy}
-              currentSortDirection={sortDirection}
-              onToggleSort={handleSort}
-            />
-            <SortableTableHead
-              column="itemCode"
-              label="Item Code"
-              currentSortBy={sortBy}
-              currentSortDirection={sortDirection}
-              onToggleSort={handleSort}
-            />
-            <TableHead>Receipt</TableHead>
-            <SortableTableHead
-              column="total"
-              label="Total"
-              currentSortBy={sortBy}
-              currentSortDirection={sortDirection}
-              onToggleSort={handleSort}
-              className="text-right"
-              align="right"
-            />
-            <TableHead>Item type</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.items.map((item) => (
-            <TableRow key={item.id}>
-              <TableCell>
+      <div ref={tableRef} tabIndex={-1} className="outline-none">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
                 <Checkbox
-                  checked={selectedIds.has(item.id)}
-                  onCheckedChange={() => handleToggleItem(item.id)}
-                  aria-label={`Select ${item.description}`}
+                  checked={!!allOnPageSelected}
+                  onCheckedChange={handleToggleAll}
+                  aria-label="Select all items on this page"
                 />
-              </TableCell>
-              <TableCell>
-                <div>{item.description}</div>
-                <div className="text-xs text-muted-foreground">
-                  {item.location}
-                </div>
-              </TableCell>
-              <TableCell>{item.receiptItemCode ?? "-"}</TableCell>
-              <TableCell>
-                <button
-                  type="button"
-                  className="text-primary underline-offset-4 hover:underline"
-                  onClick={(e) => handleReceiptClick(e, item.receiptId)}
-                >
-                  View
-                </button>
-              </TableCell>
-              <TableCell className="text-right money">
-                {formatCurrency(
-                  Number(item.totalAmount ?? 0),
-                  item.totalAmountCurrency,
-                )}
-              </TableCell>
-              <TableCell>
-                <ItemTypeCorrection
-                  description={item.description}
-                  suggestion={item.suggestion}
-                  revision={taxonomy.data}
-                  loading={taxonomy.isLoading}
-                  error={taxonomy.isError}
-                  busy={rowBusy}
-                  onChoose={(next, fromSuggestion) =>
-                    rowUpdateMutation.mutate({
-                      items: [item],
-                      choice: next,
-                      reason: fromSuggestion
-                        ? "Jev's suggestion accepted from unclassified items report"
-                        : undefined,
-                    })
-                  }
-                />
-              </TableCell>
+              </TableHead>
+              <SortableTableHead
+                column="description"
+                label="Description"
+                currentSortBy={sortBy}
+                currentSortDirection={sortDirection}
+                onToggleSort={handleSort}
+              />
+              <SortableTableHead
+                column="itemCode"
+                label="Item Code"
+                currentSortBy={sortBy}
+                currentSortDirection={sortDirection}
+                onToggleSort={handleSort}
+              />
+              <TableHead>Receipt</TableHead>
+              <SortableTableHead
+                column="total"
+                label="Total"
+                currentSortBy={sortBy}
+                currentSortDirection={sortDirection}
+                onToggleSort={handleSort}
+                className="text-right"
+                align="right"
+              />
+              <TableHead>Item type</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((item, index) => (
+              <TableRow key={item.id}>
+                <TableCell>
+                  <Checkbox
+                    checked={selectedIds.has(item.id)}
+                    onCheckedChange={() => handleToggleItem(item.id)}
+                    aria-label={`Select ${item.description}`}
+                  />
+                </TableCell>
+                <TableCell>
+                  <div>{item.description}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {item.location}
+                  </div>
+                </TableCell>
+                <TableCell>{item.receiptItemCode ?? "-"}</TableCell>
+                <TableCell>
+                  <button
+                    type="button"
+                    className="text-primary underline-offset-4 hover:underline"
+                    onClick={(e) => handleReceiptClick(e, item.receiptId)}
+                  >
+                    View
+                  </button>
+                </TableCell>
+                <TableCell className="text-right money">
+                  {formatCurrency(
+                    Number(item.totalAmount ?? 0),
+                    item.totalAmountCurrency,
+                  )}
+                </TableCell>
+                <TableCell data-item-type-cell>
+                  <ItemTypeCorrection
+                    description={item.description}
+                    suggestion={item.suggestion}
+                    revision={taxonomy.data}
+                    loading={taxonomy.isLoading}
+                    error={taxonomy.isError}
+                    busy={rowBusy}
+                    onChoose={(next, fromSuggestion) => {
+                      focusRowAfterWrite.current = index;
+                      rowUpdateMutation.mutate({
+                        items: [item],
+                        choice: next,
+                        reason: fromSuggestion
+                          ? "Jev's suggestion accepted from unclassified items report"
+                          : undefined,
+                      });
+                    }}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
 
       <Pagination
         currentPage={page}

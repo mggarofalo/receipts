@@ -18,6 +18,25 @@ public class BackupImportResultTests
 	}
 
 	[Fact]
+	public void Totals_IncludeEnvelopeTables()
+	{
+		BackupImportResult result = new(5, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+		{
+			EnvelopesCreated = 1,
+			EnvelopesUpdated = 2,
+			OccasionsCreated = 3,
+			OccasionsUpdated = 4,
+			ItemTypeEnvelopeDefaultsCreated = 5,
+			ItemTypeEnvelopeDefaultsUpdated = 6,
+			YnabEnvelopeMappingsCreated = 7,
+			YnabEnvelopeMappingsUpdated = 8,
+		};
+
+		result.TotalCreated.Should().Be(5 + 1 + 3 + 5 + 7);
+		result.TotalUpdated.Should().Be(7 + 2 + 4 + 6 + 8);
+	}
+
+	[Fact]
 	public void LegacyCallers_OmitNewOptionalCounts_WithoutChangingTotals()
 	{
 		BackupImportResult result = new(5, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);

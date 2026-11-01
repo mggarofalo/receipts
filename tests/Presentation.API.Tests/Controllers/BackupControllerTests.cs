@@ -296,6 +296,46 @@ public class BackupControllerTests : IDisposable
 		response.TotalUpdated.Should().Be(30);
 	}
 
+	[Fact]
+	public async Task ImportBackup_ValidFile_MapsEnvelopeCountsAndIncludesThemInTotals()
+	{
+		// Arrange
+		BackupImportResult importResult = new(1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+		{
+			EnvelopesCreated = 3,
+			EnvelopesUpdated = 4,
+			OccasionsCreated = 5,
+			OccasionsUpdated = 6,
+			ItemTypeEnvelopeDefaultsCreated = 7,
+			ItemTypeEnvelopeDefaultsUpdated = 8,
+			YnabEnvelopeMappingsCreated = 9,
+			YnabEnvelopeMappingsUpdated = 10,
+		};
+		_importServiceMock
+			.Setup(s => s.ImportFromSqliteAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(importResult);
+		Mock<IFormFile> fileMock = new();
+		fileMock.Setup(f => f.Length).Returns(1024);
+		fileMock.Setup(f => f.FileName).Returns("backup.db");
+		fileMock.Setup(f => f.OpenReadStream()).Returns(new MemoryStream());
+
+		// Act
+		Results<Ok<BackupImportResponse>, BadRequestProblem, ConflictProblem> result = await _controller.ImportBackup(fileMock.Object);
+
+		// Assert
+		BackupImportResponse response = Assert.IsType<Ok<BackupImportResponse>>(result.Result).Value!;
+		response.EnvelopesCreated.Should().Be(3);
+		response.EnvelopesUpdated.Should().Be(4);
+		response.OccasionsCreated.Should().Be(5);
+		response.OccasionsUpdated.Should().Be(6);
+		response.ItemTypeEnvelopeDefaultsCreated.Should().Be(7);
+		response.ItemTypeEnvelopeDefaultsUpdated.Should().Be(8);
+		response.YnabEnvelopeMappingsCreated.Should().Be(9);
+		response.YnabEnvelopeMappingsUpdated.Should().Be(10);
+		response.TotalCreated.Should().Be(1 + 3 + 5 + 7 + 9);
+		response.TotalUpdated.Should().Be(2 + 4 + 6 + 8 + 10);
+	}
+
 	public void Dispose()
 	{
 		foreach (string path in _tempFiles)

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod/v4";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,6 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Form,
   FormControl,
@@ -112,6 +122,8 @@ interface NamedLibrarySectionProps {
   onCreate: (name: string) => Promise<unknown>;
   onUpdate: (item: NamedLibraryItem) => Promise<unknown>;
   onDelete: (id: string) => Promise<unknown>;
+  /** A secondary line under an item's name, such as its YNAB link. */
+  detail?: (item: NamedLibraryItem) => ReactNode;
 }
 
 /** Create, rename, archive and delete for a small named library list. */
@@ -126,8 +138,12 @@ export function NamedLibrarySection({
   onCreate,
   onUpdate,
   onDelete,
+  detail,
 }: NamedLibrarySectionProps) {
   const [renamingId, setRenamingId] = useState<string>();
+  // The item outlives the open flag so the dialog keeps its text while it fades out.
+  const [deleting, setDeleting] = useState<NamedLibraryItem>();
+  const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <Card>
       <CardHeader>
@@ -167,14 +183,21 @@ export function NamedLibrarySection({
                   />
                 ) : (
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <span className="min-w-0 flex-1 break-words text-sm font-medium">
-                      {item.name}
-                      {!item.isActive && (
-                        <Badge variant="outline" className="ml-2">
-                          Archived
-                        </Badge>
+                    <div className="min-w-0 flex-1">
+                      <span className="break-words text-sm font-medium">
+                        {item.name}
+                        {!item.isActive && (
+                          <Badge variant="outline" className="ml-2">
+                            Archived
+                          </Badge>
+                        )}
+                      </span>
+                      {detail && (
+                        <p className="break-words text-xs text-muted-foreground">
+                          {detail(item)}
+                        </p>
                       )}
-                    </span>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         variant="ghost"
@@ -200,9 +223,10 @@ export function NamedLibrarySection({
                         variant="ghost"
                         size="sm"
                         disabled={busy}
-                        onClick={() =>
-                          onDelete(item.id).catch(ignoreHandledFailure)
-                        }
+                        onClick={() => {
+                          setDeleting(item);
+                          setConfirmOpen(true);
+                        }}
                         aria-label={`Delete ${item.name}`}
                       >
                         Delete
@@ -215,6 +239,28 @@ export function NamedLibrarySection({
           </ul>
         )}
       </CardContent>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {noun}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete &ldquo;{deleting?.name}&rdquo;? An unused {noun} is removed
+              for good. One that purchases still use cannot be deleted; archive
+              it instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleting) onDelete(deleting.id).catch(ignoreHandledFailure);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

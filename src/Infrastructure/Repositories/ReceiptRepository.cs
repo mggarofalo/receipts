@@ -273,7 +273,13 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 	public async Task UpdateAsync(List<ReceiptEntity> entities, CancellationToken cancellationToken)
 	{
 		using ApplicationDbContext context = contextFactory.CreateDbContext();
-		IEnumerable<Guid> ids = entities.Select(e => e.Id);
+		Guid[] ids = [.. entities.Select(e => e.Id)];
+		// The choice cascade rewrites item envelopes; lock the receipts as the budget-choice endpoints do, so a
+		// concurrent classification or choice write cannot interleave. Gate first, then row locks, like DeleteAsync.
+		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = context.Database.IsRelational()
+			? await context.Database.BeginTransactionAsync(cancellationToken) : null;
+		await Infrastructure.Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(context, cancellationToken);
+		await ReceiptFactLock.AcquireAsync(context, ids, cancellationToken);
 		List<ReceiptEntity> existingEntities = await context.Receipts
 			.Where(e => ids.Contains(e.Id))
 			.ToListAsync(cancellationToken);
@@ -293,6 +299,7 @@ public class ReceiptRepository(IDbContextFactory<ApplicationDbContext> contextFa
 		}
 
 		await context.SaveChangesAsync(cancellationToken);
+		if (transaction != null) { await transaction.CommitAsync(cancellationToken); }
 	}
 
 	public async Task<CascadeMutationResult> DeleteAsync(List<Guid> ids, CancellationToken cancellationToken)

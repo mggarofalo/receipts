@@ -78,6 +78,22 @@ A restructure describes what a purchase is, not who paid for it. Purchases keep 
 have, so their YNAB category does not change. The one exception is an explicit envelope merge,
 which the dry run reports as a count of purchases changing envelope and YNAB category.
 
+To verify it on a database, write a baseline before applying and compare after (read-only,
+ids and counts only, never names or amounts):
+
+```sh
+export RECEIPTS_MIGRATION_CONNECTION='Host=…;Database=…;Username=…;Password=…'
+dotnet run --project tools/Receipts.EnvelopeParity -- --write-baseline before.tsv
+# apply the plan
+dotnet run --project tools/Receipts.EnvelopeParity -- --compare-baseline before.tsv
+```
+
+The comparison prints items, unchanged, changed (any budget's YNAB category differs), added
+(purchases created since) and removed, and exits 2 when anything changed or was removed. After
+an apply, `changed` should equal the dry run's envelope-merge count. The tool's no-argument
+check compares against the retired node mappings and is only meaningful before a restructure. Only budgets
+with at least one envelope link are compared; with no links the tool refuses to write a baseline.
+
 ## Apply and undo
 
 `POST /api/restructure-plans` with an `applicationId` and the plan changes the tree, defaults,

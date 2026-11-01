@@ -158,19 +158,28 @@ internal static class PortableEnvelopeArchive
 		}
 	}
 
-	public static async Task ImportAsync(ApplicationDbContext db, SqliteConnection sqlite, int exportVersion, CancellationToken ct)
+	/// <summary>Rows written per table; a derived restore creates every row.</summary>
+	public sealed record ImportCounts(int EnvelopesCreated, int EnvelopesUpdated, int OccasionsCreated, int OccasionsUpdated,
+		int DefaultsCreated, int DefaultsUpdated, int YnabMappingsCreated, int YnabMappingsUpdated);
+
+	public static async Task<ImportCounts> ImportAsync(ApplicationDbContext db, SqliteConnection sqlite, int exportVersion, CancellationToken ct)
 	{
 		if (exportVersion < Version)
 		{
+			// The destination had none (RequireDerivableDestinationAsync), so everything present was derived now.
 			await DeriveAsync(db, sqlite, ct);
-			return;
+			return new(await db.Envelopes.IgnoreQueryFilters().CountAsync(ct), 0, 0, 0,
+				await db.ItemTypeEnvelopeDefaults.CountAsync(ct), 0, await db.YnabEnvelopeMappings.CountAsync(ct), 0);
 		}
 
+		int envelopesCreated = 0, envelopesUpdated = 0, occasionsCreated = 0, occasionsUpdated = 0;
+		int defaultsCreated = 0, defaultsUpdated = 0, mappingsCreated = 0, mappingsUpdated = 0;
 		foreach (var row in await ReadAsync(sqlite, "SELECT id, name, is_active, deleted_at, deleted_by_user_id, deleted_by_api_key_id FROM envelopes", ct))
 		{
 			Guid id = Id(row[0]);
-			EnvelopeEntity entity = await db.Envelopes.IgnoreQueryFilters().SingleOrDefaultAsync(e => e.Id == id, ct)
-				?? db.Envelopes.Add(new() { Id = id }).Entity;
+			EnvelopeEntity? existing = await db.Envelopes.IgnoreQueryFilters().SingleOrDefaultAsync(e => e.Id == id, ct);
+			if (existing == null) { envelopesCreated++; } else { envelopesUpdated++; }
+			EnvelopeEntity entity = existing ?? db.Envelopes.Add(new() { Id = id }).Entity;
 			entity.Name = Text(row[1]);
 			entity.IsActive = Convert.ToInt64(row[2], CultureInfo.InvariantCulture) != 0;
 			Delete(entity, row[3], row[4], row[5]);
@@ -178,8 +187,9 @@ internal static class PortableEnvelopeArchive
 		foreach (var row in await ReadAsync(sqlite, "SELECT id, name, is_active, deleted_at, deleted_by_user_id, deleted_by_api_key_id FROM occasions", ct))
 		{
 			Guid id = Id(row[0]);
-			OccasionEntity entity = await db.Occasions.IgnoreQueryFilters().SingleOrDefaultAsync(e => e.Id == id, ct)
-				?? db.Occasions.Add(new() { Id = id }).Entity;
+			OccasionEntity? existing = await db.Occasions.IgnoreQueryFilters().SingleOrDefaultAsync(e => e.Id == id, ct);
+			if (existing == null) { occasionsCreated++; } else { occasionsUpdated++; }
+			OccasionEntity entity = existing ?? db.Occasions.Add(new() { Id = id }).Entity;
 			entity.Name = Text(row[1]);
 			entity.IsActive = Convert.ToInt64(row[2], CultureInfo.InvariantCulture) != 0;
 			Delete(entity, row[3], row[4], row[5]);
@@ -208,7 +218,9 @@ internal static class PortableEnvelopeArchive
 		foreach (var row in await ReadAsync(sqlite, "SELECT id, category_id, envelope_id, created_at, updated_at FROM item_type_envelope_defaults", ct))
 		{
 			Guid category = Id(row[1]);
-			ItemTypeEnvelopeDefaultEntity entity = await db.ItemTypeEnvelopeDefaults.SingleOrDefaultAsync(e => e.CategoryId == category, ct)
+			ItemTypeEnvelopeDefaultEntity? existing = await db.ItemTypeEnvelopeDefaults.SingleOrDefaultAsync(e => e.CategoryId == category, ct);
+			if (existing == null) { defaultsCreated++; } else { defaultsUpdated++; }
+			ItemTypeEnvelopeDefaultEntity entity = existing
 				?? db.ItemTypeEnvelopeDefaults.Add(new() { Id = Id(row[0]), CategoryId = category }).Entity;
 			entity.EnvelopeId = Id(row[2]);
 			entity.CreatedAt = Time(row[3]);
@@ -218,7 +230,9 @@ internal static class PortableEnvelopeArchive
 		{
 			Guid envelope = Id(row[1]);
 			string budget = Text(row[2]);
-			YnabEnvelopeMappingEntity entity = await db.YnabEnvelopeMappings.SingleOrDefaultAsync(e => e.EnvelopeId == envelope && e.YnabBudgetId == budget, ct)
+			YnabEnvelopeMappingEntity? existing = await db.YnabEnvelopeMappings.SingleOrDefaultAsync(e => e.EnvelopeId == envelope && e.YnabBudgetId == budget, ct);
+			if (existing == null) { mappingsCreated++; } else { mappingsUpdated++; }
+			YnabEnvelopeMappingEntity entity = existing
 				?? db.YnabEnvelopeMappings.Add(new() { Id = Id(row[0]), EnvelopeId = envelope, YnabBudgetId = budget }).Entity;
 			entity.YnabCategoryId = Text(row[3]);
 			entity.YnabCategoryName = Text(row[4]);
@@ -235,6 +249,8 @@ internal static class PortableEnvelopeArchive
 			marker.DefaultCount = Convert.ToInt32(row[3], CultureInfo.InvariantCulture);
 		}
 		await db.SaveChangesAsync(ct);
+		return new(envelopesCreated, envelopesUpdated, occasionsCreated, occasionsUpdated,
+			defaultsCreated, defaultsUpdated, mappingsCreated, mappingsUpdated);
 	}
 
 	private static async Task DeriveAsync(ApplicationDbContext db, SqliteConnection sqlite, CancellationToken ct)

@@ -383,14 +383,17 @@ public class ReceiptItemRepositoryTests
 		sku1.Description.Should().Be("New name");
 		sku1.Category.Should().Be("Household");
 		sku1.Subcategory.Should().Be("Cleaning");
+		sku1.CategoryId.Should().Be(sprays, "the id is the latest item's own item type, not a level of its path");
 		var sku2 = actual.Single(s => s.ItemCode == "SKU-2");
 		sku2.Category.Should().Be("Pets");
 		sku2.Subcategory.Should().BeNull();
+		sku2.CategoryId.Should().Be(pets);
 		foreach (string code in new[] { "SKU-3", "SKU-4" })
 		{
 			var none = actual.Single(s => s.ItemCode == code);
 			none.Category.Should().BeEmpty();
 			none.Subcategory.Should().BeNull();
+			none.CategoryId.Should().BeNull();
 		}
 
 		_contextFactory.ResetDatabase();
@@ -423,6 +426,7 @@ public class ReceiptItemRepositoryTests
 		suggestion.MatchType.Should().Be("location");
 		suggestion.Category.Should().Be("Pets");
 		suggestion.Subcategory.Should().BeNull();
+		suggestion.CategoryId.Should().Be(pets);
 
 		_contextFactory.ResetDatabase();
 	}

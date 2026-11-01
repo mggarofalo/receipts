@@ -3110,7 +3110,7 @@ export interface paths {
         };
         /**
          * Get category spending trends over time
-         * @description Returns time-series spending data broken down by category. Categories beyond the topN threshold are collapsed into "Other". Buckets are dense and zero-filled.
+         * @description Returns time-series spending data broken down by category. Categories beyond the topN threshold are collapsed into "Other". Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted. A range of more than 5000 periods at the chosen granularity is rejected with 400.
          */
         get: operations["GetCategoryTrendsReport"];
         put?: never;
@@ -3130,7 +3130,7 @@ export interface paths {
         };
         /**
          * Get spending trends by envelope or occasion
-         * @description Returns time-series spending by each purchase's recorded envelope (the budget view) or occasion. Per currency, series beyond topN are collapsed into Other. Purchases with no envelope or occasion form their own series. Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted.
+         * @description Returns time-series spending by each purchase's recorded envelope (the budget view) or occasion. Per currency, series beyond topN are collapsed into Other. Purchases with no envelope or occasion form their own series. Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted. A range of more than 5000 periods at the chosen granularity is rejected with 400.
          */
         get: operations["GetBudgetTrendsReport"];
         put?: never;
@@ -6673,6 +6673,11 @@ export interface components {
             /** @description Second level of the most recent item's item type, if any */
             subcategory?: string | null;
             /**
+             * Format: uuid
+             * @description The most recent item's item type (stable across taxonomy revisions); null when it has none
+             */
+            categoryId?: string | null;
+            /**
              * Format: double
              * @description Most recent unit price for this item code
              */
@@ -7033,6 +7038,22 @@ export interface components {
             acceptedDuplicatePairsCreated?: number;
             /** Format: int32 */
             acceptedDuplicatePairsUpdated?: number;
+            /** Format: int32 */
+            envelopesCreated?: number;
+            /** Format: int32 */
+            envelopesUpdated?: number;
+            /** Format: int32 */
+            occasionsCreated?: number;
+            /** Format: int32 */
+            occasionsUpdated?: number;
+            /** Format: int32 */
+            itemTypeEnvelopeDefaultsCreated?: number;
+            /** Format: int32 */
+            itemTypeEnvelopeDefaultsUpdated?: number;
+            /** Format: int32 */
+            ynabEnvelopeMappingsCreated?: number;
+            /** Format: int32 */
+            ynabEnvelopeMappingsUpdated?: number;
             /** Format: int32 */
             totalCreated: number;
             /** Format: int32 */

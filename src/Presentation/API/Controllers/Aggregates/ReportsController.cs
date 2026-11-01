@@ -451,6 +451,8 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		try { result = await mediator.Send(query, cancellationToken); }
 		catch (ArgumentException exception) when (exception.ParamName == "capturedCurrentRevisionId")
 		{ return ApiProblem.BadRequest(exception.Message); }
+		catch (Application.Exceptions.ReportRangeTooLargeException exception)
+		{ return ApiProblem.BadRequest(exception.Message); }
 
 		return TypedResults.Ok(new CategoryTrendsResponse
 		{
@@ -527,8 +529,14 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 			default: return ApiProblem.BadRequest("groupBy must be envelope or occasion");
 		}
 
-		AppReports.BudgetTrendsResult result = await mediator.Send(
-			new GetBudgetTrendsReportQuery(start, end, gran, top, dimension, envelopeId, occasionId), cancellationToken);
+		AppReports.BudgetTrendsResult result;
+		try
+		{
+			result = await mediator.Send(
+				new GetBudgetTrendsReportQuery(start, end, gran, top, dimension, envelopeId, occasionId), cancellationToken);
+		}
+		catch (Application.Exceptions.ReportRangeTooLargeException exception)
+		{ return ApiProblem.BadRequest(exception.Message); }
 		return TypedResults.Ok(new BudgetTrendsResponse
 		{
 			GroupBy = JsonNamingPolicy.CamelCase.ConvertName(result.Dimension.ToString()),

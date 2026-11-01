@@ -224,7 +224,7 @@ public partial class BackupImportService(
 			}
 			if (taxonomy != null) { await PortableTaxonomyArchive.RestoreSourceRevisionsAsync(context, taxonomy, cancellationToken); }
 			// Envelope-only updates keep restored source revisions (see the AddEnvelopes migration).
-			await PortableEnvelopeArchive.ImportAsync(context, sqlite, exportVersion, cancellationToken);
+			PortableEnvelopeArchive.ImportCounts envelopes = await PortableEnvelopeArchive.ImportAsync(context, sqlite, exportVersion, cancellationToken);
 			await transaction.CommitAsync(cancellationToken);
 
 			BackupImportResult result = new(
@@ -242,7 +242,17 @@ public partial class BackupImportService(
 				ynabCategoryMappingsCreated, ynabCategoryMappingsUpdated,
 				ynabSyncRecordsCreated, ynabSyncRecordsUpdated,
 				normalizedDescriptionsCreated, normalizedDescriptionsUpdated,
-				acceptedPairsCreated, acceptedPairsUpdated);
+				acceptedPairsCreated, acceptedPairsUpdated)
+			{
+				EnvelopesCreated = envelopes.EnvelopesCreated,
+				EnvelopesUpdated = envelopes.EnvelopesUpdated,
+				OccasionsCreated = envelopes.OccasionsCreated,
+				OccasionsUpdated = envelopes.OccasionsUpdated,
+				ItemTypeEnvelopeDefaultsCreated = envelopes.DefaultsCreated,
+				ItemTypeEnvelopeDefaultsUpdated = envelopes.DefaultsUpdated,
+				YnabEnvelopeMappingsCreated = envelopes.YnabMappingsCreated,
+				YnabEnvelopeMappingsUpdated = envelopes.YnabMappingsUpdated,
+			};
 
 			logger.LogInformation(
 				"Backup import complete: {TotalCreated} created, {TotalUpdated} updated",
