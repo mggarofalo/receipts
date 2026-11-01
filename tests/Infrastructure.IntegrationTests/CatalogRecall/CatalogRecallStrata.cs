@@ -32,7 +32,7 @@ public static partial class CatalogRecallStrata
 	/// </summary>
 	public static bool IsReadable(string description, string targetDisplayName)
 	{
-		string[] words = ReceiptSuggestionEvidence.LexicalTerms(description).ToArray();
+		string[] words = DescriptionText.ProductWords(description).ToArray();
 		if (words.Length == 0) { return false; }
 		HashSet<string> name = Letters().Matches(targetDisplayName).Select(match => match.Value)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -42,13 +42,13 @@ public static partial class CatalogRecallStrata
 	/// <summary>The exact channel's own rule, so this stratum is precisely what that channel solves.</summary>
 	public static bool IsExactName(string description, string canonicalName, string? displayLabel)
 	{
-		string text = description.ToLowerInvariant();
-		return canonicalName.ToLowerInvariant() == text || (displayLabel ?? canonicalName).ToLowerInvariant() == text;
+		string text = DescriptionText.Lower(description);
+		return DescriptionText.Lower(canonicalName) == text || DescriptionText.Lower(displayLabel ?? canonicalName) == text;
 	}
 
 	/// <summary>Some catalog-mode lexical token matches at least <see cref="CrowdedTokenThreshold"/> active names.</summary>
 	public static bool HasCrowdedToken(string description, IReadOnlyCollection<(string CanonicalName, string? DisplayLabel)> catalog)
-		=> NormalizationCandidateRetrieval.LexicalTokens(description).Any(token => catalog.Count(name =>
+		=> DescriptionText.LexicalTokens(description, DescriptionTokenMode.Catalog).Any(token => catalog.Count(name =>
 			name.CanonicalName.ToLowerInvariant().Contains(token)
 			|| (name.DisplayLabel ?? name.CanonicalName).ToLowerInvariant().Contains(token)) >= CrowdedTokenThreshold);
 
