@@ -146,6 +146,7 @@ public static class InfrastructureService
 			.AddScoped<IItemTemplateSimilarityService, ItemTemplateSimilarityService>()
 			.AddScoped<IItemTemplateHistoryCandidateService, ItemTemplateHistoryCandidateService>()
 			.AddScoped<INormalizedDescriptionService, NormalizedDescriptionService>()
+			.AddScoped<IPendingNamePromotionService, PendingNamePromotionService>()
 			.AddScoped<IReceiptRepository, ReceiptRepository>()
 			.AddScoped<IReceiptListReader, ReceiptRepository>()
 			.AddScoped<IAccountRepository, AccountRepository>()

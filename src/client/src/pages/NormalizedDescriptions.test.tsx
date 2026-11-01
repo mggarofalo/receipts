@@ -70,6 +70,27 @@ vi.mock("@/hooks/useNormalizedDescriptionMaintenance", () => ({
   useRequeuePendingMutation: vi.fn(() => mockMutationResult()),
 }));
 
+vi.mock("@/hooks/usePendingNamePromotion", () => ({
+  usePendingNamePromotionPreview: vi.fn(() =>
+    mockQueryResult({
+      data: {
+        minimumPurchases: 2,
+        nameCount: 0,
+        purchaseCount: 0,
+        fingerprint: "empty",
+        names: [],
+      },
+      isLoading: false,
+      isSuccess: true,
+      isPending: false,
+      status: "success",
+    }),
+  ),
+  usePendingNamePromotions: vi.fn(() => mockQueryResult({ data: [] })),
+  usePromotePendingNamesMutation: vi.fn(() => mockMutationResult()),
+  useUndoPendingNamePromotionMutation: vi.fn(() => mockMutationResult()),
+}));
+
 vi.mock("@/hooks/useReceiptItems", () => ({
   useLinkedReceiptItems: vi.fn(() => ({
     data: [],

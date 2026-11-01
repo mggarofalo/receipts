@@ -79,6 +79,8 @@ public class BackupService(
 			//   - ASP.NET Identity users and authentication settings: excluded for security.
 			//   - category_assistance settings, connection, audit, observations, attempts and usage:
 			//     deployment-local consent/operational state; never transfer through portable archives.
+			//   - PendingNamePromotions / PendingNamePromotionEntries: the log of bulk name promotions
+			//     (RECEIPTS-1107). The promoted names' status is exported; the undo history is not.
 			//
 			// Excluding all log/audit and regenerable-cursor tables is the consistent choice: a
 			// backup restores your data, not the history of how it got there.
