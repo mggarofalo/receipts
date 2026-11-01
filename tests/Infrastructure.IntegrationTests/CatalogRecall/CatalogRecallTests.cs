@@ -132,12 +132,25 @@ public sealed class CatalogRecallTests(CatalogRecallModelFixture model, ITestOut
 				DisplayLabel = row.TryGetProperty("displayLabel", out JsonElement label) ? label.GetString() : null,
 				Status = NormalizedDescriptionStatus.Active,
 				CreatedAt = DateTimeOffset.UtcNow,
-				// Production embeds the canonical name (EmbeddingGenerationService).
+				// Production embeds the canonical name, and a display label beside it (EmbeddingGenerationService).
 				Embedding = new Vector(await model.Service.GenerateEmbeddingAsync(name, CancellationToken.None)),
 				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
 			};
 		}
 		db.NormalizedDescriptions.AddRange(targets.Values);
+		foreach (NormalizedDescriptionEntity target in targets.Values.Where(target => target.DisplayLabel is not null))
+		{
+			db.ItemEmbeddings.Add(new ItemEmbeddingEntity
+			{
+				Id = Guid.NewGuid(),
+				EntityType = CatalogSemanticNeighbours.LabelEntityType,
+				EntityId = target.Id,
+				EntityText = target.DisplayLabel!,
+				Embedding = new Vector(await model.Service.GenerateEmbeddingAsync(target.DisplayLabel!, CancellationToken.None)),
+				ModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+		}
 		foreach (JsonElement row in root.GetProperty("mappings").EnumerateArray())
 		{
 			NormalizationSourceKey source = NormalizationCatalogPolicy.Normalize(new(row.GetProperty("store").GetString()!,

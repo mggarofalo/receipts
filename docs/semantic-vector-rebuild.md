@@ -57,7 +57,7 @@ forces the index plan with 60% of rows stale, and fails without the rule.
 ## Rebuild behavior
 
 `EmbeddingGenerationService` processes at most 50 rows per cycle. It prioritizes searchable
-canonical descriptions, then item templates and receipt items. Rows with a missing vector, changed
+canonical descriptions, then their display labels, then item templates and receipt items. Rows with a missing vector, changed
 source text, or obsolete fingerprint are eligible. Each cycle generates outside the database
 transaction, then locks and re-reads the source rows before writing; edits or deletions that race
 inference are skipped and picked up by a later cycle.
@@ -69,6 +69,29 @@ This makes the operation resumable after a process interruption and automatic af
 
 The worker never recreates or relinks canonical descriptions. Rebuilding therefore preserves
 curated names, statuses, links, and other durable decisions.
+
+## Catalog name text
+
+Every catalog name has a vector of its canonical name. A name with a display label also has a
+vector of the label, stored in `matching."ItemEmbeddings"` as entity type
+`NormalizedDescriptionLabel` (RECEIPTS-1096). Canonical names are often raw receipt text, and the
+label is what a reviewer chose to call the product, so the label usually reads better.
+
+The semantic channel scores a name by the closer of its two vectors. A label alone was measured
+first and lost abbreviated matches that the raw-text vector used to win; keeping both adds the
+label's matches without losing those (see `docs/normalization-evaluation/catalog-recall.md`).
+
+- **Rename.** The canonical vector never changes, because the canonical name never does. The label
+  vector is stale as soon as the label changes, and it counts only while its text equals the
+  current label, so a vector of a replaced label is never used. Until the worker builds the new one,
+  the name is still found through its canonical vector.
+- **Coverage.** A labelled name is ready only when both vectors are current, so a rename lowers
+  `canonicalReady` by one until the rebuild.
+- **Revision.** Label vectors live outside the name's row, so building one does not change the
+  business revision that reviewed choices pin. A rename changes that revision once.
+- **Writers.** Every label writer (rename, approved label suggestions, restore) is covered by the
+  text comparison, so none of them has to invalidate a vector itself. A cleared label leaves an
+  unused row behind; it is replaced if a label is set again.
 
 ## Readiness and incomplete coverage
 

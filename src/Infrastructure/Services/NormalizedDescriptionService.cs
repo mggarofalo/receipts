@@ -745,8 +745,10 @@ public class NormalizedDescriptionService(
 	/// to showing its matched text.
 	/// </summary>
 	/// <remarks>
-	/// The embedding and <c>CanonicalName</c> are deliberately untouched. Renaming is cosmetic by
-	/// construction here, so no rename can change which receipt text resolves to this row.
+	/// <c>CanonicalName</c> and its vector are deliberately untouched, so no rename can change which
+	/// receipt text resolves to this row. The label gets a vector of its own beside the canonical one
+	/// (RECEIPTS-1096, <see cref="CatalogSemanticNeighbours"/>): a rename makes it stale, and the
+	/// embedding worker rebuilds it without changing the business revision.
 	/// </remarks>
 	/// <exception cref="KeyNotFoundException">No row with this id.</exception>
 	/// <exception cref="ArgumentException">The label is whitespace-only or too long.</exception>

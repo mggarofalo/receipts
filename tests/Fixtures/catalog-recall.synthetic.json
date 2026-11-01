@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "provenance": "wholly-synthetic",
-  "purpose": "Catalog shortlist recall fixture for RECEIPTS-1089. No real receipt text, store or product data.",
+  "purpose": "Catalog shortlist recall fixture for RECEIPTS-1089. Version 2 (RECEIPTS-1096) adds names created from receipt-style text that carry a readable display label. No real receipt text, store or product data.",
   "catalog": [
     {
       "name": "Cheddar cheese"
@@ -147,6 +147,46 @@
     },
     {
       "name": "Baby spinach"
+    },
+    {
+      "name": "GV WHL WHT BRD",
+      "displayLabel": "Whole wheat bread"
+    },
+    {
+      "name": "KS FRZ BLUBRY 3LB",
+      "displayLabel": "Frozen blueberries"
+    },
+    {
+      "name": "MRKT PNTRY BLK BNS",
+      "displayLabel": "Black beans"
+    },
+    {
+      "name": "HNY NUT OTS CRL",
+      "displayLabel": "Honey nut oat cereal"
+    },
+    {
+      "name": "ORG BBY CRRTS 2LB",
+      "displayLabel": "Baby carrots"
+    },
+    {
+      "name": "CHNKY SALSA MED",
+      "displayLabel": "Medium chunky salsa"
+    },
+    {
+      "name": "DSH SOAP LMN 24OZ",
+      "displayLabel": "Lemon dish soap"
+    },
+    {
+      "name": "SPRKLG WTR LIME 8PK",
+      "displayLabel": "Lime sparkling water"
+    },
+    {
+      "name": "TRKY BRST DELI SLCD",
+      "displayLabel": "Sliced turkey breast"
+    },
+    {
+      "name": "UNSLTD BTR 4QTR",
+      "displayLabel": "Unsalted butter"
     }
   ],
   "mappings": [
@@ -293,6 +333,126 @@
       "description": "CHKN WINGS FAM PK",
       "itemCode": null,
       "target": "Chicken wings"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "WHOLE WHEAT BREAD 24 OZ",
+      "itemCode": null,
+      "target": "GV WHL WHT BRD"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "WHL WHT BRD 20OZ",
+      "itemCode": null,
+      "target": "GV WHL WHT BRD"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "FROZEN BLUEBERRIES 48 OZ",
+      "itemCode": null,
+      "target": "KS FRZ BLUBRY 3LB"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "FRZ BLUEBRY BAG",
+      "itemCode": null,
+      "target": "KS FRZ BLUBRY 3LB"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "BLACK BEANS 15OZ",
+      "itemCode": null,
+      "target": "MRKT PNTRY BLK BNS"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "BLK BNS LOW SOD",
+      "itemCode": null,
+      "target": "MRKT PNTRY BLK BNS"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "HONEY NUT OAT CEREAL",
+      "itemCode": null,
+      "target": "HNY NUT OTS CRL"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "HNY NT OAT CRL 12OZ",
+      "itemCode": null,
+      "target": "HNY NUT OTS CRL"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "BABY CARROTS 1LB",
+      "itemCode": null,
+      "target": "ORG BBY CRRTS 2LB"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "BBY CRRT ORG",
+      "itemCode": null,
+      "target": "ORG BBY CRRTS 2LB"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "MEDIUM CHUNKY SALSA 16OZ",
+      "itemCode": null,
+      "target": "CHNKY SALSA MED"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "SALSA CHNKY MD",
+      "itemCode": null,
+      "target": "CHNKY SALSA MED"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "LEMON DISH SOAP",
+      "itemCode": null,
+      "target": "DSH SOAP LMN 24OZ"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "DSH LIQ LMN",
+      "itemCode": null,
+      "target": "DSH SOAP LMN 24OZ"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "SPARKLING WATER LIME",
+      "itemCode": null,
+      "target": "SPRKLG WTR LIME 8PK"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "SPRK WTR LIME 12CT",
+      "itemCode": null,
+      "target": "SPRKLG WTR LIME 8PK"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "SLICED TURKEY BREAST",
+      "itemCode": null,
+      "target": "TRKY BRST DELI SLCD"
+    },
+    {
+      "store": "Synthetic Market C",
+      "description": "DELI TRKY SLC",
+      "itemCode": null,
+      "target": "TRKY BRST DELI SLCD"
+    },
+    {
+      "store": "Synthetic Market A",
+      "description": "UNSALTED BUTTER 1 LB",
+      "itemCode": null,
+      "target": "UNSLTD BTR 4QTR"
+    },
+    {
+      "store": "Synthetic Market B",
+      "description": "UNSLT BTR QTRS",
+      "itemCode": null,
+      "target": "UNSLTD BTR 4QTR"
     }
   ]
 }

@@ -98,7 +98,7 @@ The settings-page matcher (auto-accept and pending-review thresholds, impact pre
 
 ## Product identity and readable display labels
 
-A matching decision and a readable name are separate decisions. Catalog suggestions may retain `SuggestedDisplayLabel` for an existing identity without changing that identity, its canonical text, embeddings, mappings, or purchase facts. Identity mapping approval never applies a global display label.
+A matching decision and a readable name are separate decisions. Catalog suggestions may retain `SuggestedDisplayLabel` for an existing identity without changing that identity, its canonical text or its canonical-name embedding, mappings, or purchase facts. Approving a label adds a vector of the label beside it (RECEIPTS-1096). Identity mapping approval never applies a global display label.
 
 `LabelOnly` requests support sources that are already mapped or protected by manual/template review. All assigned live observations in that exact source must agree on one Active identity; unassigned siblings are allowed. The model sees that identity as its sole candidate and may suggest a label or abstain, never create or relink products. Null or unchanged label suggestions finish as `no_change`, releasing reservations. Ambiguous sources require identity review first.
 

@@ -11,7 +11,8 @@ public class NormalizedDescriptionEntity
 
 	// Optional human-chosen name (RECEIPTS-876). Null means nobody has renamed this row, and
 	// readers fall back to CanonicalName. Kept separate from CanonicalName so a rename never
-	// touches the text the embedding is anchored to.
+	// touches the text the embedding is anchored to. The label has its own vector in ItemEmbeddings
+	// (RECEIPTS-1096, CatalogSemanticNeighbours).
 	public string? DisplayLabel { get; set; }
 
 	public NormalizedDescriptionStatus Status { get; set; }

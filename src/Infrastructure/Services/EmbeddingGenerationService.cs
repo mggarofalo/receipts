@@ -174,7 +174,9 @@ public class EmbeddingGenerationService(
 		{
 			await transaction.CommitAsync(cancellationToken);
 		}
-		if (canonical.Count > 0 && changed > 0)
+		// A label vector changes the name's suggestions as much as its canonical vector does.
+		if ((canonical.Count > 0 || items.Any(generated => generated.Item.EntityType == CatalogSemanticNeighbours.LabelEntityType))
+			&& changed > 0)
 		{
 			await committedChangePublisher.PublishAsync(new(
 				CommittedEntityType.NormalizedDescription,
@@ -201,7 +203,8 @@ public class EmbeddingGenerationService(
 			return;
 		}
 
-		Guid[] canonicalIds = pending.Where(item => item.EntityType == CanonicalEntityType)
+		// A label vector belongs to its name, so it is locked through the name's row.
+		Guid[] canonicalIds = pending.Where(item => item.EntityType is CanonicalEntityType or CatalogSemanticNeighbours.LabelEntityType)
 			.Select(item => item.EntityId).Distinct().Order().ToArray();
 		if (canonicalIds.Length > 0)
 		{
@@ -252,6 +255,12 @@ public class EmbeddingGenerationService(
 			.Where(item => canonicalIds.Contains(item.Id) && item.Status != NormalizedDescriptionStatus.Rejected)
 			.ToDictionaryAsync(item => item.Id, item => item.CanonicalName, cancellationToken);
 
+		Guid[] labelIds = pending.Where(item => item.EntityType == CatalogSemanticNeighbours.LabelEntityType)
+			.Select(item => item.EntityId).Distinct().ToArray();
+		Dictionary<Guid, string> labelTexts = await context.NormalizedDescriptions.AsNoTracking()
+			.Where(item => labelIds.Contains(item.Id) && item.Status != NormalizedDescriptionStatus.Rejected && item.DisplayLabel != null)
+			.ToDictionaryAsync(item => item.Id, item => item.DisplayLabel!, cancellationToken);
+
 		Guid[] templateIds = pending.Where(item => item.EntityType == "ItemTemplate")
 			.Select(item => item.EntityId).Distinct().ToArray();
 		Dictionary<Guid, string> templateTexts = await context.ItemTemplates.IgnoreQueryFilters().AsNoTracking()
@@ -272,6 +281,7 @@ public class EmbeddingGenerationService(
 			Dictionary<Guid, string> currentTexts = item.EntityType switch
 			{
 				CanonicalEntityType => canonicalTexts,
+				CatalogSemanticNeighbours.LabelEntityType => labelTexts,
 				"ItemTemplate" => templateTexts,
 				_ => receiptItemTexts,
 			};
@@ -303,6 +313,33 @@ public class EmbeddingGenerationService(
 			.ToListAsync(cancellationToken);
 
 		int remaining = BatchSize - pending.Count;
+		if (remaining <= 0)
+		{
+			return pending;
+		}
+
+		// A display label gets its own vector beside the canonical name's (RECEIPTS-1096); a rename
+		// makes it stale, and the canonical vector keeps serving until it is rebuilt.
+		List<PendingItem> labelItems = await context.NormalizedDescriptions
+			.Where(entity => entity.Status != NormalizedDescriptionStatus.Rejected && entity.DisplayLabel != null)
+			.GroupJoin(
+				context.ItemEmbeddings.Where(e => e.EntityType == CatalogSemanticNeighbours.LabelEntityType),
+				entity => entity.Id,
+				e => e.EntityId,
+				(entity, embeddings) => new { Name = entity, Embeddings = embeddings })
+			.SelectMany(
+				x => x.Embeddings.DefaultIfEmpty(),
+				(x, e) => new { x.Name, Embedding = e })
+			.Where(x => x.Embedding == null
+				|| x.Embedding.EntityText != x.Name.DisplayLabel
+				|| x.Embedding.ModelVersion != modelVersion)
+			.OrderBy(x => x.Name.Id)
+			.Select(x => new PendingItem(CatalogSemanticNeighbours.LabelEntityType, x.Name.Id, x.Name.DisplayLabel!))
+			.Take(remaining)
+			.ToListAsync(cancellationToken);
+
+		pending.AddRange(labelItems);
+		remaining = BatchSize - pending.Count;
 		if (remaining <= 0)
 		{
 			return pending;

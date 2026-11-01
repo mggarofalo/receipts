@@ -821,14 +821,14 @@ public class EmbeddingGenerationServiceTests
 		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
 		_embeddingServiceMock
 			.Setup(e => e.GenerateEmbeddingsAsync(
-				It.Is<List<string>>(texts => texts.Count == 2),
+				It.Is<List<string>>(texts => texts.Count == 4),
 				It.IsAny<CancellationToken>()))
-			.ReturnsAsync([CreateFakeEmbedding(), CreateFakeEmbedding()]);
+			.ReturnsAsync([CreateFakeEmbedding(), CreateFakeEmbedding(), CreateFakeEmbedding(), CreateFakeEmbedding()]);
 
 		int processed = await CreatePublisherAwareService()
 			.ProcessPendingEmbeddingsAsync(CancellationToken.None);
 
-		processed.Should().Be(2);
+		processed.Should().Be(4, "both names and both display labels get a vector (RECEIPTS-1096)");
 		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
 		NormalizedDescriptionEntity active = await verify.NormalizedDescriptions.SingleAsync(row => row.Id == activeId);
 		active.Status.Should().Be(NormalizedDescriptionStatus.Active);
@@ -962,6 +962,147 @@ public class EmbeddingGenerationServiceTests
 		_embeddingServiceMock.Verify(
 			e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()),
 			Times.Never);
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_LabelledName_EmbedsTheLabelBesideTheCanonicalName()
+	{
+		// RECEIPTS-1096: a display label gets its own vector; the canonical vector is current and untouched.
+		Guid labelledId = Guid.NewGuid();
+		Guid unlabelledId = Guid.NewGuid();
+		float[] canonicalVector = CreateFakeEmbedding();
+		NormalizedDescriptionEntity seeded;
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seeded = new NormalizedDescriptionEntity
+			{
+				Id = labelledId,
+				CanonicalName = "KS ORG CHKN BRST",
+				DisplayLabel = "Chicken breast",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(canonicalVector),
+				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			};
+			seed.NormalizedDescriptions.AddRange(seeded, new NormalizedDescriptionEntity
+			{
+				Id = unlabelledId,
+				CanonicalName = "Whole milk",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(CreateFakeEmbedding()),
+				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		List<string>? embedded = null;
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.Callback((List<string> texts, CancellationToken _) => embedded = texts)
+			.ReturnsAsync((List<string> texts, CancellationToken _) => texts.Select(_ => CreateFakeEmbedding()).ToList());
+
+		int processed = await CreatePublisherAwareService().ProcessPendingEmbeddingsAsync(CancellationToken.None);
+
+		processed.Should().Be(1);
+		embedded.Should().Equal("Chicken breast");
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		ItemEmbeddingEntity label = await verify.ItemEmbeddings.SingleAsync();
+		label.EntityType.Should().Be(CatalogSemanticNeighbours.LabelEntityType);
+		label.EntityId.Should().Be(labelledId);
+		label.EntityText.Should().Be("Chicken breast");
+		label.ModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+		NormalizedDescriptionEntity labelled = await verify.NormalizedDescriptions.SingleAsync(row => row.Id == labelledId);
+		labelled.Embedding!.ToArray().Should().Equal(canonicalVector);
+		labelled.NormalizationRevision.Should().Be(seeded.NormalizationRevision, "the name row is not written");
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_LabelVectorFromAnotherEmbeddingSpace_IsRebuiltInPlace()
+	{
+		Guid id = Guid.NewGuid();
+		Guid labelRowId = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = id,
+				CanonicalName = "KS ORG CHKN BRST",
+				DisplayLabel = "Chicken breast",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(CreateFakeEmbedding()),
+				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			seed.ItemEmbeddings.Add(new ItemEmbeddingEntity
+			{
+				Id = labelRowId,
+				EntityType = CatalogSemanticNeighbours.LabelEntityType,
+				EntityId = id,
+				EntityText = "Chicken breast",
+				Embedding = new Vector(CreateFakeEmbedding()),
+				ModelVersion = "obsolete-space",
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((List<string> texts, CancellationToken _) => texts.Select(_ => CreateFakeEmbedding()).ToList());
+
+		(await CreatePublisherAwareService().ProcessPendingEmbeddingsAsync(CancellationToken.None)).Should().Be(1);
+
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		ItemEmbeddingEntity label = await verify.ItemEmbeddings.SingleAsync();
+		label.Id.Should().Be(labelRowId, "the row is updated, not duplicated");
+		label.ModelVersion.Should().Be(OnnxEmbeddingService.EmbeddingSpaceFingerprint);
+		_publisherMock.Verify(p => p.PublishAsync(It.Is<CommittedEntityChange>(change =>
+			change.EntityType == CommittedEntityType.NormalizedDescription)), Times.Once,
+			"a new label vector changes the name's suggestions");
+	}
+
+	[Fact]
+	public async Task ProcessPendingEmbeddingsAsync_LabelChangesDuringGeneration_SkipsTheStaleLabel()
+	{
+		Guid id = Guid.NewGuid();
+		await using (ApplicationDbContext seed = _contextFactory.CreateDbContext())
+		{
+			seed.NormalizedDescriptions.Add(new NormalizedDescriptionEntity
+			{
+				Id = id,
+				CanonicalName = "KS ORG CHKN BRST",
+				DisplayLabel = "Chicken breast",
+				Status = NormalizedDescriptionStatus.Active,
+				Embedding = new Vector(CreateFakeEmbedding()),
+				EmbeddingModelVersion = OnnxEmbeddingService.EmbeddingSpaceFingerprint,
+				CreatedAt = DateTimeOffset.UtcNow,
+			});
+			await seed.SaveChangesAsync();
+		}
+		TaskCompletionSource generationStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		TaskCompletionSource releaseGeneration = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		_embeddingServiceMock.Setup(e => e.IsConfigured).Returns(true);
+		_embeddingServiceMock
+			.Setup(e => e.GenerateEmbeddingsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+			.Returns(async () =>
+			{
+				generationStarted.SetResult();
+				await releaseGeneration.Task;
+				return [CreateFakeEmbedding()];
+			});
+		Task<int> processing = CreatePublisherAwareService().ProcessPendingEmbeddingsAsync(CancellationToken.None);
+		await generationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		await using (ApplicationDbContext mutate = _contextFactory.CreateDbContext())
+		{
+			(await mutate.NormalizedDescriptions.SingleAsync(row => row.Id == id)).DisplayLabel = "Chicken breasts";
+			await mutate.SaveChangesAsync();
+		}
+		releaseGeneration.SetResult();
+
+		(await processing).Should().Be(0);
+		await using ApplicationDbContext verify = _contextFactory.CreateDbContext();
+		verify.ItemEmbeddings.Should().BeEmpty("a vector of the replaced label must not be written");
 	}
 
 	private static float[] CreateFakeEmbedding()

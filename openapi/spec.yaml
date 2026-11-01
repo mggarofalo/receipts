@@ -4615,7 +4615,8 @@ paths:
       summary: Get semantic-vector rebuild coverage
       description: |
         Reports how many searchable canonical descriptions and source items carry vectors in
-        the current model/tokenizer/pooling embedding space. The background worker rebuilds
+        the current model/tokenizer/pooling embedding space. A canonical description with a
+        display label counts only when the label's vector is current too. The background worker rebuilds
         pending rows in bounded batches. Exact canonical-name matching remains available while
         coverage is incomplete; ANN and hybrid search ignore obsolete fingerprints. Admin-only.
       security:
@@ -5142,9 +5143,9 @@ paths:
       tags: [NormalizedDescriptions]
       summary: Set or clear a normalized description's display label
       description: |
-        Changes only the display label â€” never `canonicalName`, and never the embedding.
-        Renaming is cosmetic by construction, so it cannot change which receipt text resolves
-        to this row. Send `displayLabel: null` to clear the label and fall back to showing the
+        Changes only the display label â€” never `canonicalName` or its embedding, so it cannot
+        change which receipt text resolves to this row. The label gets its own semantic vector,
+        rebuilt in the background after each change. Send `displayLabel: null` to clear the label and fall back to showing the
         matched text. Admin-only.
 
         Returns 409 when another row already displays the requested name, compared

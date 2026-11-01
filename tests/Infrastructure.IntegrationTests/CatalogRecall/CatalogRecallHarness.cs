@@ -35,7 +35,7 @@ internal sealed class CatalogRecallHarness(Func<ApplicationDbContext> createCont
 		var active = context.NormalizedDescriptions.AsNoTracking().Where(target => target.Status == NormalizedDescriptionStatus.Active);
 		string fingerprint = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
 		return new(fingerprint, await active.CountAsync(cancellationToken),
-			await active.CountAsync(target => target.Embedding != null && target.EmbeddingModelVersion == fingerprint, cancellationToken));
+			await CatalogEmbeddingCoverage.Ready(context, active).CountAsync(cancellationToken));
 	}
 
 	public async Task<CatalogRecallCaseSet> LoadAsync(CatalogRecallGroundTruth groundTruth, CancellationToken cancellationToken)
@@ -144,17 +144,11 @@ internal sealed class CatalogRecallHarness(Func<ApplicationDbContext> createCont
 		float[]? recorded = embedding.Recorded(item.Source.Description);
 		if (recorded is not { Length: > 0 }) { return (null, null, null); }
 		Vector query = new(recorded);
-		string fingerprint = OnnxEmbeddingService.EmbeddingSpaceFingerprint;
-		// The same kNN rule production follows, so partial coverage does not under-measure recall.
-		List<SemanticNeighbour> nearest = await NearestNeighbourSearch.ToListAsync(context.Database, context.Database.SqlQuery<SemanticNeighbour>($"""
-			SELECT "Id", 1 - ("Embedding" <=> {query}::vector) AS "Similarity" FROM matching."NormalizedDescriptions"
-			WHERE "Status" = 'Active' AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {fingerprint}
-			ORDER BY "Embedding" <=> {query}::vector, "Id" LIMIT 21
-			"""), NullLogger.Instance, cancellationToken);
-		List<double> target = await context.Database.SqlQuery<double>($"""
-			SELECT 1 - ("Embedding" <=> {query}::vector) AS "Value" FROM matching."NormalizedDescriptions"
-			WHERE "Id" = {item.TargetId} AND "Embedding" IS NOT NULL AND "EmbeddingModelVersion" = {fingerprint}
-			""").ToListAsync(cancellationToken);
+		// The same kNN rule and similarity production uses, so partial coverage does not under-measure recall.
+		List<CatalogNeighbour> nearest = await NearestNeighbourSearch.ToListAsync(context.Database,
+			CatalogSemanticNeighbours.Nearest(context.Database, query, 21), NullLogger.Instance, cancellationToken);
+		List<double> target = await CatalogSemanticNeighbours.SimilarityOf(context.Database, query, item.TargetId)
+			.ToListAsync(cancellationToken);
 		int index = nearest.Take(20).ToList().FindIndex(neighbour => neighbour.Id == item.TargetId);
 		return (index < 0 ? null : index + 1, target.Count == 0 ? null : target[0],
 			nearest.FirstOrDefault(neighbour => neighbour.Id != item.TargetId)?.Similarity);
@@ -164,11 +158,5 @@ internal sealed class CatalogRecallHarness(Func<ApplicationDbContext> createCont
 	{
 		try { return NormalizationCatalogPolicy.Normalize(source); }
 		catch (NormalizationCatalogException) { return null; }
-	}
-
-	private sealed class SemanticNeighbour
-	{
-		public Guid Id { get; set; }
-		public double Similarity { get; set; }
 	}
 }

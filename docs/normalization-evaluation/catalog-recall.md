@@ -357,6 +357,8 @@ receipt chooser. Fingerprint and coverage are unchanged unless stated.
 | RECEIPTS-1094 lexical relevance ranking | 100% | 100% | 100% | 100% (83.3%) | 70.8% (62.5%) | 50.0% |
 | RECEIPTS-1097 kNN completeness rule | 100% | 100% | 100% | 100% (83.3%) | 70.8% (62.5%) | 50.0% |
 | RECEIPTS-1107 promote 816 consistent pending names (4,567 proxy sources, was 668) | 100% (97.6%) | 99.9% (92.3%) | 99.8% (76.3%) | 100% (83.3%) | 70.8% (62.5%) | 50.0% |
+| RECEIPTS-1096 fixture version 2 (adds 10 labelled names; 44 synthetic sources, was 24) | 100% (97.6%) | 99.9% (92.3%) | 99.8% (76.3%) | 100% (75.0%) | 81.8% (77.3%) | 68.2% |
+| RECEIPTS-1096 label vectors beside canonical vectors | 100% (97.6%) | 99.9% (92.3%) | 99.8% (76.3%) | 100% (88.6%) | 81.8% (77.3%) | 68.2% |
 
 RECEIPTS-1095: the proxy chooser's jump is circular, because every proxy target sits at a
 similarity of at least ~0.82 by construction. The synthetic fixture is the honest signal for
@@ -379,3 +381,21 @@ names. Promotion makes 1,045 names Active (was 229), so the proxy evaluates 4,56
   abbreviated sources, while R@20 stays at 99.9% and 99.8%.
 
 The synthetic fixture brings its own catalog, so it does not change.
+
+RECEIPTS-1096 adds a vector of each display label beside the canonical-name vector. Real data has
+one labelled active name, so the proxy cannot move. Version 2 of the synthetic fixture adds ten
+names whose canonical name is receipt-style text with a readable label, each mapped from one
+readable and one abbreviated source; the first row above remeasures main on it. Recall@5, the
+issue's guard, for the three designs measured on that fixture:
+
+| Synthetic, recall@5 (recall@1) | Canonical only (main) | Label only | Label and canonical in one text | Both vectors (shipped) |
+| --- | ---: | ---: | ---: | ---: |
+| Catalog, readable | 81.8% (63.6%) | 100% (90.9%) | 100% (90.9%) | 100% (90.9%) |
+| Catalog, abbreviated | 95.5% (86.4%) | 77.3% (59.1%) | 95.5% (77.3%) | 95.5% (86.4%) |
+| Chooser, readable | 95.5% (86.4%) | 95.5% (86.4%) | 95.5% (86.4%) | 95.5% (86.4%) |
+| Chooser, abbreviated | 68.2% (68.2%) | 63.6% (63.6%) | 63.6% (63.6%) | 68.2% (68.2%) |
+
+Embedding the label instead of the canonical name lost abbreviated matches, as the issue warned:
+an abbreviated source close to the raw canonical text falls below the chooser's semantic floor once
+its target's only vector is the readable label. Scoring a name by the closer of its two vectors
+keeps every abbreviated result and adds the label's readable matches.
