@@ -44,7 +44,8 @@ public static class CatalogCommand
 					PrivateEvidence.RequireOutside(repository, packet, output);
 					CatalogPacket loaded = CatalogPacket.Load(packet);
 					CatalogReplay replay = CatalogEvaluation.Replay(loaded, ReadJournal(Path.Combine(packet, "live.journal.jsonl")));
-					await WriteAsync(output, CatalogScore.Score(loaded, replay, ReadLatencies(Path.Combine(packet, "latency.private.jsonl"))));
+					await WriteAsync(output, CatalogScore.Score(loaded, replay,
+						ReadLatencies(Path.Combine(packet, "latency.private.jsonl"), replay.Attempts.Select(a => a.RequestSha256))));
 					break;
 				default:
 					Console.Error.WriteLine("Usage: catalog-build <export> <synthetic.json> <catalog.v2.json> <repository> <new-root> <source-commit> | " +
@@ -78,6 +79,9 @@ public static class CatalogCommand
 			strata = CatalogCase.Strata.ToDictionary(s => s, s => packet.Cases.Count(c => c.Stratum == s)),
 			casesWithoutCandidates = packet.Cases.Count(c => c.Candidates.Count == 0),
 			approvedExamplesSent = packet.Cases.Sum(c => c.Request.Candidates.Sum(candidate => candidate.ApprovedExamples.Count)),
+			realApprovedExamplesBeforeLeaveOneOut = packet.Cases.Where(c => c.LeaveOneOut).Sum(c => c.Candidates.Sum(candidate => candidate.ApprovedExamples.Count)),
+			realApprovedExamplesRemovedByLeaveOneOut = packet.Cases.Where(c => c.LeaveOneOut).Sum(c =>
+				c.Candidates.Sum(candidate => candidate.ApprovedExamples.Count) - c.Request.Candidates.Sum(candidate => candidate.ApprovedExamples.Count)),
 			maximumAttempts = packet.Policy.MaximumAttempts,
 			approvedMaximumAttempts = packet.Policy.ApprovedMaximumAttempts,
 			stage1Bytes = new { minimum = stage1.Min(), maximum = stage1.Max(), total = stage1.Sum(b => (long)b) },
@@ -269,9 +273,20 @@ public static class CatalogCommand
 		return state.OutstandingIntent ? throw new InvalidOperationException("Outstanding intent.") : state.Exchanges;
 	}
 
-	internal static IReadOnlyList<long> ReadLatencies(string path) => File.Exists(path)
-		? [.. File.ReadAllLines(path).Where(l => l.Length > 0).Select(l => JsonDocument.Parse(l).RootElement.GetProperty("milliseconds").GetInt64())]
-		: [];
+	/// <summary>Latencies of journalled requests only: a line written for a response the journal never recorded is dropped.</summary>
+	public static IReadOnlyList<long> ReadLatencies(string path, IEnumerable<string> journalledRequests)
+	{
+		if (!File.Exists(path)) { return []; }
+
+		List<string> remaining = [.. journalledRequests];
+		List<long> latencies = [];
+		foreach (string line in File.ReadAllLines(path).Where(l => l.Length > 0))
+		{
+			JsonElement row = JsonDocument.Parse(line).RootElement;
+			if (remaining.Remove(row.GetProperty("requestSha256").GetString()!)) { latencies.Add(row.GetProperty("milliseconds").GetInt64()); }
+		}
+		return latencies;
+	}
 
 	private static async Task WriteAsync(string output, object value)
 	{

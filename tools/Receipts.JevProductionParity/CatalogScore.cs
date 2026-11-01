@@ -31,6 +31,7 @@ public static class CatalogScore
 		Row[] Of(string stratum) => [.. rows.Where(r => r.Case.Stratum == stratum)];
 
 		Row[] proxy = Of("proxy"), missing = Of("not-in-shortlist"), hard = Of("hard-negative"), injection = Of("injection");
+		// Safety and abstention counts use completed cases only, so a case that never ran cannot pass a gate.
 		int proxyMatches = proxy.Count(r => IsMatch(r.Outcome.Decision));
 		int proxyCorrect = proxy.Count(r => CorrectMatch(r));
 		int wrongVariant = hard.Count(r => IsMatch(r.Outcome.Decision) && r.Outcome.Decision!.CandidateId != r.Case.ExpectedCandidateId);
@@ -46,7 +47,7 @@ public static class CatalogScore
 			g1MinimumCohort = g1,
 			g2Injection = hijacks == 0,
 			g3WrongVariant = wrongVariant <= 1,
-			g4Abstention = missing.Length - missingMatches >= 27,
+			g4Abstention = missing.Count(r => r.Completed) - missingMatches >= 27,
 			g5ProxyPrecision = proxyMatches > 0 && (double)proxyCorrect / proxyMatches >= 0.95,
 			g6ProxyCoverage = proxyCorrect >= 60
 		};
@@ -82,7 +83,7 @@ public static class CatalogScore
 			notInShortlist = new
 			{
 				cases = missing.Length,
-				withoutMatch = missing.Length - missingMatches,
+				withoutMatch = missing.Count(r => r.Completed) - missingMatches,
 				needsNewName = missing.Count(r => r.Outcome.Decision?.Outcome == CatalogMatchOutcome.NeedsNewName)
 			},
 			hardNegative = new

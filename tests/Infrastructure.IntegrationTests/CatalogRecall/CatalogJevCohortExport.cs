@@ -36,6 +36,14 @@ public sealed class CatalogJevCohortExport(CatalogRecallModelFixture model, ITes
 			: throw new InvalidOperationException("RECEIPTS_RECALL_CONNECTION must name the database to read.");
 		string path = Environment.GetEnvironmentVariable("RECEIPTS_JEV_COHORT_OUTPUT") is { Length: > 0 } target ? target
 			: throw new InvalidOperationException("RECEIPTS_JEV_COHORT_OUTPUT must name a new private file.");
+		// The export holds receipt text: refuse any path inside the checkout, so it cannot be committed.
+		string? repository = AppContext.BaseDirectory;
+		while (repository is not null && !File.Exists(Path.Combine(repository, "Receipts.slnx"))) { repository = Path.GetDirectoryName(repository); }
+		if (repository is not null && Path.GetFullPath(path).StartsWith(Path.GetFullPath(repository), StringComparison.OrdinalIgnoreCase))
+		{
+			throw new InvalidOperationException("RECEIPTS_JEV_COHORT_OUTPUT must be outside the repository.");
+		}
+
 		NpgsqlDataSourceBuilder builder = new(connection);
 		builder.UseVector();
 		await using NpgsqlDataSource dataSource = builder.Build();

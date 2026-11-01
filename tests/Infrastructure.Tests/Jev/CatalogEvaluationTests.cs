@@ -582,6 +582,57 @@ public sealed class CatalogEvaluationTests : IDisposable
 		Assert.Equal(2, await CatalogCommand.RunAsync(["catalog-unknown", packet]));
 	}
 
+	[Fact]
+	public void NumbersCountRealExamplesBeforeAndRemovedByLeaveOneOut()
+	{
+		CatalogCase source = Case("proxy-real", "proxy", "synthetic oat drink 1l", Id(1),
+			Candidate(1, "Synthetic Oat Drink 1 L", new("synthetic oat drink 1l", true), new("synth oat drk", true)),
+			Candidate(2, "Synthetic Soy Drink 1 L"));
+		CatalogCase real = source with { LeaveOneOut = true };
+		// Synthetic examples are sent but are not real evidence, even when one equals the description.
+		CatalogCase synthetic = Case("proxy-synthetic", "proxy", "synthetic rice drink 1l", Id(5),
+			Candidate(5, "Synthetic Rice Drink 1 L", new("synthetic rice drink 1l", true), new("synth rice drk", true)),
+			Candidate(6, "Synthetic Pea Drink 1 L"));
+
+		JsonElement numbers = Json(CatalogCommand.Numbers(Packet(real, synthetic)));
+
+		Assert.Equal(2, numbers.GetProperty("realApprovedExamplesBeforeLeaveOneOut").GetInt32());
+		Assert.Equal(1, numbers.GetProperty("realApprovedExamplesRemovedByLeaveOneOut").GetInt32());
+		Assert.Equal(3, numbers.GetProperty("approvedExamplesSent").GetInt32());
+	}
+
+	// ---- Latency ----
+
+	private static IReadOnlyList<long> ReadLatencies(string path, params string[] journalled) =>
+		CatalogCommand.ReadLatencies(path, journalled);
+
+	private static string LatencyLine(string hash, long milliseconds) =>
+		JsonSerializer.Serialize(new { requestSha256 = hash, milliseconds });
+
+	[Fact]
+	public void ReadLatenciesIsEmptyWithoutAFile()
+	{
+		Assert.Empty(ReadLatencies(Path.Combine(directory, "latency.private.jsonl"), "h1"));
+	}
+
+	[Fact]
+	public void ReadLatenciesKeepsOneLinePerJournalledRequestInFileOrder()
+	{
+		string path = Path.Combine(directory, "latency.private.jsonl");
+		File.WriteAllLines(path,
+		[
+			LatencyLine("dup", 30),
+			LatencyLine("orphan", 999),
+			LatencyLine("h1", 10),
+			"",
+			LatencyLine("dup", 20),
+			// A third line for a request journalled twice has nothing left to consume.
+			LatencyLine("dup", 50)
+		]);
+
+		Assert.Equal([30L, 10L, 20L], ReadLatencies(path, "h1", "dup", "dup"));
+	}
+
 	// ---- Parity ----
 
 	[Fact]
@@ -728,6 +779,29 @@ public sealed class CatalogEvaluationTests : IDisposable
 		Assert.Equal(1, aggregate.GetProperty("run").GetProperty("failed").GetInt32());
 		Assert.Equal(1, aggregate.GetProperty("run").GetProperty("unattempted").GetInt32());
 		Assert.Equal(JsonValueKind.Null, aggregate.GetProperty("run").GetProperty("latencyMilliseconds").GetProperty("p50").ValueKind);
+	}
+
+	[Fact]
+	public void ScoreCountsOnlyCompletedNotInShortlistCasesTowardAbstention()
+	{
+		// 26 empty shortlists complete as no-candidates; the oat case fails, so the asked not-in-shortlist case never runs.
+		CatalogCase[] cases =
+		[
+			.. Enumerable.Range(1, 26).Select(i => Empty($"empty-{i}")),
+			Oat("a"),
+			Case("asked", "not-in-shortlist", "synthetic cocoa 250g", null, Candidate(7, "Synthetic Coffee 250 g"))
+		];
+		CatalogPacket packet = Packet(cases);
+		CatalogReplay replay = CatalogEvaluation.Replay(packet, [Bound(packet.Stage1Payloads[26]!, "{}")]);
+		Assert.True(replay.Stopped);
+		Assert.Equal("unattempted", replay.Outcomes[27].Status);
+
+		JsonElement aggregate = Json(CatalogScore.Score(packet, replay, [])).GetProperty("aggregate");
+
+		JsonElement missing = aggregate.GetProperty("notInShortlist");
+		Assert.Equal(27, missing.GetProperty("cases").GetInt32());
+		Assert.Equal(26, missing.GetProperty("withoutMatch").GetInt32());
+		Assert.False(aggregate.GetProperty("gates").GetProperty("g4Abstention").GetBoolean());
 	}
 
 	[Fact]

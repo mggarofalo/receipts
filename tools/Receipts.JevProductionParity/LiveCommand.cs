@@ -181,15 +181,20 @@ public static class LiveCommand
 		{
 			long started = System.Diagnostics.Stopwatch.GetTimestamp();
 			ReplayExchange exchange = await SendAsync(client, payload, key, ct);
+			// Best effort: this runs after a paid response and before the journal records it, so it may never throw.
 			if (latencyPath is not null)
 			{
-				using FileStream latency = PrivateEvidence.Open(latencyPath, FileMode.Append, FileAccess.Write);
-				latency.Write(JsonSerializer.SerializeToUtf8Bytes(new
+				try
 				{
-					requestSha256 = Hashing.Hash(payload),
-					milliseconds = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds
-				}));
-				latency.WriteByte((byte)'\n');
+					using FileStream latency = PrivateEvidence.Open(latencyPath, FileMode.Append, FileAccess.Write);
+					latency.Write(JsonSerializer.SerializeToUtf8Bytes(new
+					{
+						requestSha256 = Hashing.Hash(payload),
+						milliseconds = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds
+					}));
+					latency.WriteByte((byte)'\n');
+				}
+				catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
 			}
 
 			return exchange;
