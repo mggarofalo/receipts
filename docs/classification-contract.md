@@ -207,7 +207,9 @@ before this change.
   item columns because `legacy_import` assignments carry no label evidence of
   their own: the columns are the only record of what an imported item said.
   With the writes retired, those columns can no longer change underneath the
-  guards.
+  guards. The other side of this: an unresolved item that carries labels stays
+  out of assistance and organization for good. Choosing its type by hand still
+  works.
 
 What still touches the strings, by design:
 
