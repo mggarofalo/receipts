@@ -1,6 +1,7 @@
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace API.Filters;
 
@@ -9,14 +10,14 @@ public class FluentValidationActionFilter(IServiceProvider serviceProvider) : IA
 	public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
 	{
 		List<ValidationFailure> failures = [];
-		foreach (object? argument in context.ActionArguments.Values)
+		foreach ((string name, object? argument) in context.ActionArguments)
 		{
 			if (argument is null)
 			{
 				continue;
 			}
 
-			await ValidateAsync(argument, "", failures, context.HttpContext.RequestAborted);
+			await ValidateAsync(argument, "", RequiresItems(context, name), failures, context.HttpContext.RequestAborted);
 		}
 
 		// Validate the complete body before invoking any action or persistence.
@@ -29,7 +30,13 @@ public class FluentValidationActionFilter(IServiceProvider serviceProvider) : IA
 		await next();
 	}
 
-	private async Task ValidateAsync(object? value, string path, List<ValidationFailure> failures, CancellationToken cancellationToken)
+	// The non-empty rule guards batch request bodies. A repeatable query parameter that is absent
+	// binds as an empty array and means "no filter", so it is not a missing body (RECEIPTS-1108).
+	private static bool RequiresItems(ActionExecutingContext context, string name) =>
+		context.ActionDescriptor.Parameters.SingleOrDefault(parameter => parameter.Name == name)?.BindingInfo?.BindingSource is not { } source
+		|| source == BindingSource.Body;
+
+	private async Task ValidateAsync(object? value, string path, bool requiresItems, List<ValidationFailure> failures, CancellationToken cancellationToken)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
 		if (value is null)
@@ -62,13 +69,13 @@ public class FluentValidationActionFilter(IServiceProvider serviceProvider) : IA
 		// list validator does not replace the DTO validator for each item.
 		if (value is System.Collections.IList list)
 		{
-			if (list.Count == 0)
+			if (requiresItems && list.Count == 0)
 			{
 				failures.Add(new ValidationFailure(path, "Request body must contain at least one item."));
 			}
 			for (int index = 0; index < list.Count; index++)
 			{
-				await ValidateAsync(list[index], $"{path}[{index}]", failures, cancellationToken);
+				await ValidateAsync(list[index], $"{path}[{index}]", requiresItems, failures, cancellationToken);
 			}
 		}
 	}
