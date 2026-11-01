@@ -42,7 +42,8 @@ client) are parked, so Jev does not suggest catalog matches either.
 
 Only after a new policy version (`catalog-matching-questions-v2` or later) passes a fresh, preregistered evaluation
 with untouched cases. That evaluation would need to show zero injected matches, no wrong-variant matches, and a
-calibrated operating point. A proposal at that time must name:
+calibrated operating point. This is deliberately stricter than the suggestion gates (RECEIPTS-1091 allowed one wrong
+variant in 40): a suggestion is reviewed by a person, but an automatic write is not. A proposal at that time must name:
 
 - the thresholds;
 - the qualifying Q1/Q2/Q3 combination;
