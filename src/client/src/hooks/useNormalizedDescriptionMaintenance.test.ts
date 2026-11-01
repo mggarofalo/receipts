@@ -24,8 +24,6 @@ const previewBody = {
   pendingDescriptionCount: 4,
   pendingFingerprint: "digest-abc",
   linkedItemCount: 120,
-  estimatedResolverCycles: 3,
-  estimatedCatchUpSeconds: 90,
 };
 
 describe("useRequeuePendingPreview", () => {

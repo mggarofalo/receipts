@@ -1530,7 +1530,7 @@ public class NormalizedDescriptionServiceTests
 	}
 
 	[Fact]
-	public async Task PreviewRequeuePendingAsync_ReportsBlastRadiusAndCatchUpEstimate()
+	public async Task PreviewRequeuePendingAsync_ReportsBlastRadius()
 	{
 		Guid pendingId = Guid.NewGuid();
 		Guid activeId = Guid.NewGuid();
@@ -1555,9 +1555,6 @@ public class NormalizedDescriptionServiceTests
 		preview.PendingDescriptionCount.Should().Be(1);
 		preview.PendingFingerprint.Should().Be(FingerprintOf(pendingId), "the digest identifies the exact set the caller was shown");
 		preview.LinkedItemCount.Should().Be(2);
-		// Similarity is advisory; returning purchases to review promises no scheduled rematching.
-		preview.EstimatedResolverCycles.Should().Be(0);
-		preview.EstimatedCatchUpSeconds.Should().Be(0);
 	}
 
 	[Fact]
@@ -1579,8 +1576,6 @@ public class NormalizedDescriptionServiceTests
 		preview.PendingDescriptionCount.Should().Be(0);
 		preview.PendingFingerprint.Should().Be(FingerprintOf(), "the empty set still has a stable digest");
 		preview.LinkedItemCount.Should().Be(0);
-		preview.EstimatedResolverCycles.Should().Be(0);
-		preview.EstimatedCatchUpSeconds.Should().Be(0);
 	}
 
 	[Fact]

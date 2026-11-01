@@ -255,8 +255,6 @@ const requeuePreview = {
   pendingDescriptionCount: 4,
   pendingFingerprint: "digest-abc",
   linkedItemCount: 120,
-  estimatedResolverCycles: 3,
-  estimatedCatchUpSeconds: 90,
 };
 
 function wireDefaults() {
@@ -1652,8 +1650,6 @@ describe("NormalizedDescriptions — Maintenance tab (RECEIPTS-883)", () => {
           pendingDescriptionCount: 0,
           pendingFingerprint: "digest-empty",
           linkedItemCount: 0,
-          estimatedResolverCycles: 0,
-          estimatedCatchUpSeconds: 0,
         },
         isLoading: false,
         isSuccess: true,
