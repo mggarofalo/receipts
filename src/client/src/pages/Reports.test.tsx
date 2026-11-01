@@ -53,6 +53,12 @@ vi.mock("@/components/reports/CategoryTrends", () => ({
   ),
 }));
 
+vi.mock("@/components/reports/BudgetTrends", () => ({
+  default: () => (
+    <div data-testid="report-spending-by-envelope">Spending by Envelope</div>
+  ),
+}));
+
 vi.mock("@/components/reports/DuplicateDetection", () => ({
   default: () => (
     <div data-testid="report-duplicate-detection">Duplicate Detection</div>
@@ -101,7 +107,9 @@ describe("Reports", () => {
       },
     );
     await userEvent.click(
-      screen.getByRole("link", { name: /Category Trends Smaller categories/ }),
+      screen.getByRole("link", {
+        name: /Category Trends What you buy, by item type/,
+      }),
     );
     expect(
       await screen.findByTestId("report-category-trends"),
@@ -128,7 +136,7 @@ describe("Reports", () => {
     await userEvent.click(screen.getByRole("button", { name: "All reports" }));
     expectSharedSelection(null);
     const link = screen.getByRole("link", {
-      name: /Category Trends Smaller categories/,
+      name: /Category Trends What you buy, by item type/,
     });
     expect(link.getAttribute("href")).toContain("startDate=2026-01-01");
     expect(link.getAttribute("href")).toContain("endDate=2026-02-28");
@@ -232,6 +240,15 @@ describe("Reports", () => {
       });
       expect(
         await screen.findByTestId("report-category-trends"),
+      ).toBeInTheDocument();
+    });
+
+    it("opens Spending by Envelope from its slug", async () => {
+      renderWithProviders(<Reports />, {
+        route: "/reports?report=spending-by-envelope",
+      });
+      expect(
+        await screen.findByTestId("report-spending-by-envelope"),
       ).toBeInTheDocument();
     });
 
@@ -367,7 +384,7 @@ describe("Reports", () => {
 
   describe("config", () => {
     it("exports REPORTS config with correct number of reports", () => {
-      expect(REPORTS).toHaveLength(7);
+      expect(REPORTS).toHaveLength(8);
     });
 
     it("groups reports into Spending and Data Quality", () => {
@@ -379,6 +396,7 @@ describe("Reports", () => {
         "spending-by-location",
         "spending-by-normalized-description",
         "category-trends",
+        "spending-by-envelope",
         "item-cost-over-time",
       ]);
       expect(REPORT_GROUPS[1].reports.map((r) => r.slug)).toEqual([

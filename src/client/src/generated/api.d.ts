@@ -3047,6 +3047,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/budget-trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get spending trends by envelope or occasion
+         * @description Returns time-series spending by each purchase's recorded envelope (the budget view) or occasion. Per currency, series beyond topN are collapsed into Other. Purchases with no envelope or occasion form their own series. Buckets are dense and zero-filled from startDate, or from the first purchase when startDate is omitted.
+         */
+        get: operations["GetBudgetTrendsReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/uncategorized-items": {
         parameters: {
             query?: never;
@@ -5336,6 +5356,29 @@ export interface components {
             knowledgeCutoff?: string | null;
             series?: components["schemas"]["CategoryTrendsSeries"][];
             currencyTotals?: components["schemas"]["CategoryTrendsCurrencyTotal"][];
+        };
+        BudgetTrendsResponse: {
+            /** @description envelope or occasion. */
+            groupBy: string;
+            /** @description Ordered series; each bucket's amounts parallel this list. */
+            series: components["schemas"]["BudgetTrendsSeries"][];
+            buckets: components["schemas"]["CategoryTrendsBucket"][];
+        };
+        BudgetTrendsSeries: {
+            /**
+             * Format: uuid
+             * @description The envelope or occasion; null for purchases with none, and for Other.
+             */
+            id?: string | null;
+            name: string;
+            /** @description False for an archived envelope or occasion, which keeps its history. */
+            isActive: boolean;
+            currency: string;
+            isOther: boolean;
+            /** Format: double */
+            total: number;
+            /** Format: int32 */
+            purchaseCount: number;
         };
         CategoryTrendsCurrencyTotal: {
             currency: string;
@@ -15751,6 +15794,10 @@ export interface operations {
                 knowledgeCutoff?: string;
                 /** @description Reuse an existing immutable revision; requires currentHierarchy. */
                 capturedCurrentRevisionId?: string;
+                /** @description Only purchases recorded with this envelope. */
+                envelopeId?: string;
+                /** @description Only purchases tagged with this occasion. */
+                occasionId?: string;
             };
             header?: never;
             path?: never;
@@ -15765,6 +15812,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CategoryTrendsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    GetBudgetTrendsReport: {
+        parameters: {
+            query?: {
+                /** @description Start date. Defaults to the first purchase. */
+                startDate?: string;
+                /** @description End date. Defaults to today. */
+                endDate?: string;
+                granularity?: "daily" | "monthly" | "quarterly" | "yearly";
+                topN?: number;
+                groupBy?: "envelope" | "occasion";
+                /** @description Only purchases recorded with this envelope. */
+                envelopeId?: string;
+                /** @description Only purchases tagged with this occasion. */
+                occasionId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetTrendsResponse"];
                 };
             };
             /** @description Bad Request */

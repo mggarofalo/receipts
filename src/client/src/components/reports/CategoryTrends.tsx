@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from "react";
-import { differenceInDays, parseISO } from "date-fns";
 import { ChartCard, StackedAreaChart } from "@/components/charts";
 import { DateRangeSelector } from "@/components/dashboard/DateRangeSelector";
+import { BudgetFilters } from "@/components/reports/BudgetFilters";
+import { parseBudgetFilterParams } from "@/lib/budget-filters";
 import type { DateRange } from "@/hooks/useDashboard";
 import { useCategoryTrendsReport } from "@/hooks/useCategoryTrendsReport";
 import { useReportSearchParams } from "@/hooks/useReportSearchParams";
@@ -17,6 +18,13 @@ import {
   categoryTrendsExport,
 } from "@/lib/category-trends";
 import { useCsvExport } from "@/hooks/useCsvExport";
+import {
+  GRANULARITY_OR_AUTO,
+  getAutoGranularity,
+  granularityOptions,
+  topNOptions,
+  type Granularity,
+} from "@/lib/trend-granularity";
 import { csvFilename } from "@/lib/export-csv";
 import type { CategoryTrendsParams } from "@/hooks/useCategoryTrendsReport";
 import { Button } from "@/components/ui/button";
@@ -28,41 +36,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type Granularity = "daily" | "monthly" | "quarterly" | "yearly";
-
-const GRANULARITIES = ["daily", "monthly", "quarterly", "yearly"] as const;
-
-const granularityOptions: { value: Granularity; label: string }[] = [
-  { value: "daily", label: "Day" },
-  { value: "monthly", label: "Month" },
-  { value: "quarterly", label: "Quarter" },
-  { value: "yearly", label: "Year" },
-];
-
-const topNOptions = [3, 5, 7, 10, 15] as const;
-
-function getAutoGranularity(dateRange: DateRange): Granularity {
-  if (!dateRange.startDate || !dateRange.endDate) {
-    return "yearly";
-  }
-  const days = differenceInDays(
-    parseISO(dateRange.endDate),
-    parseISO(dateRange.startDate),
-  );
-  if (days <= 93) return "daily";
-  if (days <= 730) return "monthly";
-  return "yearly";
-}
-
 interface CategoryTrendsUrlParams {
   dateRange: DateRange;
   /** `null` means "auto" — derive from the date range (see {@link getAutoGranularity}). */
   granularityOverride: Granularity | null;
   topN: number;
   selection: ReturnType<typeof parseCategoryReportParams>;
+  budget: ReturnType<typeof parseBudgetFilterParams>;
 }
-
-const GRANULARITY_OR_AUTO = [...GRANULARITIES, "auto"] as const;
 
 function parseCategoryTrendsParams(
   searchParams: URLSearchParams,
@@ -76,6 +57,7 @@ function parseCategoryTrendsParams(
   return {
     dateRange: parseDateRangeParam(searchParams),
     selection: parseCategoryReportParams(searchParams),
+    budget: parseBudgetFilterParams(searchParams),
     granularityOverride: granularity === "auto" ? null : granularity,
     topN: parseNumberEnumParam(searchParams.get("topN"), topNOptions, 5),
   };
@@ -85,7 +67,7 @@ export default function CategoryTrends() {
   const [urlParams, updateParams] = useReportSearchParams(
     parseCategoryTrendsParams,
   );
-  const { dateRange, granularityOverride, topN, selection } = urlParams;
+  const { dateRange, granularityOverride, topN, selection, budget } = urlParams;
 
   const autoGranularity = useMemo(
     () => getAutoGranularity(dateRange),
@@ -95,6 +77,7 @@ export default function CategoryTrends() {
 
   const params: CategoryTrendsParams = {
     ...selection,
+    ...budget,
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
     granularity,
@@ -173,6 +156,11 @@ export default function CategoryTrends() {
             <option value="root">Root category</option>
           </select>
         </label>
+        <BudgetFilters
+          envelopeId={budget.envelopeId}
+          occasionId={budget.occasionId}
+          onChange={updateParams}
+        />
         <Button
           variant="outline"
           disabled={

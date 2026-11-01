@@ -91,6 +91,7 @@ Nothing writes them any more.
 | `GET /api/ynab/envelope-mappings`, `GET /api/ynab/envelope-mappings/unmapped`, `PUT/DELETE /api/ynab/envelope-mappings/{envelopeId}` | YNAB links for the selected budget. |
 | `PUT /api/receipts/{id}/budget-choices` | Set the receipt's paid-from envelope and occasion. Null is automatic / none. |
 | `PUT /api/receipt-items/{id}/budget-choices` | Set an item's envelope override and occasion. Null is automatic / none. |
+| `GET /api/reports/budget-trends` | Spending over time by envelope (`groupBy=envelope`) or occasion (`groupBy=occasion`), optionally narrowed with `envelopeId` / `occasionId`. |
 
 Receipt and item responses expose `paidFromEnvelopeId`, `occasionId`,
 `envelopeId` and `envelopeSource`. Receipt and item writes accept optional
@@ -117,6 +118,26 @@ override; **Automatic** removes it.
 
 Before a receipt is saved the page previews each item's envelope with the same
 rule (`lib/envelope-display.ts`); the server records the real value at save.
+
+## Reports
+
+Three reports answer the three budget questions:
+
+- **Reports → Category Trends** is *what you bought*: spending by item type. It
+  takes optional **Envelope** and **Occasion** filters (`envelopeId`,
+  `occasionId` on `GET /api/reports/category-trends`).
+- **Reports → Spending by Envelope** is the budget view: spending by the
+  envelope each purchase is recorded with, so overrides and paid-from choices
+  count where the owner put them. Purchases without one show as **No
+  envelope**. **Group by: Occasion** shows the same spending by occasion tag,
+  with untagged purchases as **No occasion**.
+- Each view narrows by the other: an envelope report can be limited to one
+  occasion and the reverse.
+
+Archived envelopes and occasions stay in reports (marked "archived") because
+their purchases are still history. Top N and **Other** are per currency, as in
+category trends; currencies are never summed together. Deleted purchases and
+receipts are excluded.
 
 ## Portable backups
 

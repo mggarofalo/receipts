@@ -633,6 +633,155 @@ public class ReportsControllerTests
 			It.IsAny<CancellationToken>()), Times.Once);
 	}
 
+	[Fact]
+	public async Task GetCategoryTrends_PassesEnvelopeAndOccasionFilters()
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid();
+		Guid occasionId = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetCategoryTrendsReportQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new AppReports.CategoryTrendsResult([], []));
+
+		// Act
+		Results<Ok<CategoryTrendsResponse>, BadRequestProblem> result = await _controller.GetCategoryTrends(
+			null, null, null, null, CancellationToken.None, envelopeId: envelopeId, occasionId: occasionId);
+
+		// Assert
+		Assert.IsType<Ok<CategoryTrendsResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetCategoryTrendsReportQuery>(q =>
+				q.CategoryOptions!.EnvelopeId == envelopeId && q.CategoryOptions!.OccasionId == occasionId),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetCategoryTrends_WithoutBudgetFilters_PassesNullFilters()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetCategoryTrendsReportQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new AppReports.CategoryTrendsResult([], []));
+
+		// Act
+		await _controller.GetCategoryTrends(null, null, null, null, CancellationToken.None);
+
+		// Assert
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetCategoryTrendsReportQuery>(q =>
+				q.CategoryOptions!.EnvelopeId == null && q.CategoryOptions!.OccasionId == null),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	// ── BudgetTrends ───────────────────────────────
+
+	[Fact]
+	public async Task GetBudgetTrends_MapsResult_WithDefaultParameters()
+	{
+		// Arrange
+		Guid envelopeId = Guid.NewGuid();
+		AppReports.BudgetTrendsResult trends = new(AppReports.BudgetTrendsDimension.Envelope,
+		[
+			new(envelopeId, "Groceries", false, "USD", false, 12.34m, 3),
+			new(null, "Other", true, "USD", true, 5.5m, 1),
+		],
+		[new AppReports.CategoryTrendsBucketResult("2025-01", [12.34m, 5.5m])]);
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetBudgetTrendsReportQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(trends);
+
+		// Act
+		Results<Ok<BudgetTrendsResponse>, BadRequestProblem> result =
+			await _controller.GetBudgetTrends(null, null, null, null, null, null, null, CancellationToken.None);
+
+		// Assert
+		BudgetTrendsResponse response = Assert.IsType<Ok<BudgetTrendsResponse>>(result.Result).Value!;
+		response.GroupBy.Should().Be("envelope");
+		response.Series.Should().HaveCount(2);
+		BudgetTrendsSeries named = response.Series.First();
+		named.Id.Should().Be(envelopeId);
+		named.Name.Should().Be("Groceries");
+		named.IsActive.Should().BeFalse();
+		named.Currency.Should().Be("USD");
+		named.IsOther.Should().BeFalse();
+		named.Total.Should().Be(12.34);
+		named.PurchaseCount.Should().Be(3);
+		BudgetTrendsSeries other = response.Series.Last();
+		other.Id.Should().BeNull();
+		other.IsOther.Should().BeTrue();
+		response.Buckets.Should().ContainSingle();
+		response.Buckets.First().Period.Should().Be("2025-01");
+		response.Buckets.First().Amounts.Should().Equal(12.34, 5.5);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetBudgetTrendsReportQuery>(q =>
+				q.StartDate == DateOnly.MinValue && q.EndDate == DateOnly.FromDateTime(DateTime.Today)
+				&& q.Granularity == "monthly" && q.TopN == 7 && q.Dimension == AppReports.BudgetTrendsDimension.Envelope
+				&& q.EnvelopeId == null && q.OccasionId == null),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetBudgetTrends_GroupByOccasion_PassesParametersAndReportsOccasion()
+	{
+		// Arrange
+		DateOnly start = new(2024, 1, 1);
+		DateOnly end = new(2024, 12, 31);
+		Guid envelopeId = Guid.NewGuid();
+		Guid occasionId = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetBudgetTrendsReportQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new AppReports.BudgetTrendsResult(AppReports.BudgetTrendsDimension.Occasion, [], []));
+
+		// Act
+		Results<Ok<BudgetTrendsResponse>, BadRequestProblem> result = await _controller.GetBudgetTrends(
+			start, end, "quarterly", 3, "occasion", envelopeId, occasionId, CancellationToken.None);
+
+		// Assert
+		Assert.IsType<Ok<BudgetTrendsResponse>>(result.Result).Value!.GroupBy.Should().Be("occasion");
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetBudgetTrendsReportQuery>(q =>
+				q.StartDate == start && q.EndDate == end && q.Granularity == "quarterly" && q.TopN == 3
+				&& q.Dimension == AppReports.BudgetTrendsDimension.Occasion
+				&& q.EnvelopeId == envelopeId && q.OccasionId == occasionId),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetBudgetTrends_GroupByEnvelope_SendsEnvelopeDimension()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetBudgetTrendsReportQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new AppReports.BudgetTrendsResult(AppReports.BudgetTrendsDimension.Envelope, [], []));
+
+		// Act
+		Results<Ok<BudgetTrendsResponse>, BadRequestProblem> result = await _controller.GetBudgetTrends(
+			null, null, "Yearly", null, "envelope", null, null, CancellationToken.None);
+
+		// Assert
+		Assert.IsType<Ok<BudgetTrendsResponse>>(result.Result).Value!.GroupBy.Should().Be("envelope");
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetBudgetTrendsReportQuery>(q => q.Dimension == AppReports.BudgetTrendsDimension.Envelope),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Theory]
+	[InlineData("2025-12-31", "2025-01-01", null, null, null, "startDate must be before or equal to endDate")]
+	[InlineData(null, null, "weekly", null, null, "Invalid granularity")]
+	[InlineData(null, null, null, 0, null, "topN must be between 1 and 50")]
+	[InlineData(null, null, null, 51, null, "topN must be between 1 and 50")]
+	[InlineData(null, null, null, null, "category", "groupBy must be envelope or occasion")]
+	[InlineData(null, null, null, null, "Envelope", "groupBy must be envelope or occasion")]
+	public async Task GetBudgetTrends_ReturnsBadRequest_ForInvalidParameters(
+		string? startDate, string? endDate, string? granularity, int? topN, string? groupBy, string detail)
+	{
+		// Act
+		Results<Ok<BudgetTrendsResponse>, BadRequestProblem> result = await _controller.GetBudgetTrends(
+			startDate is null ? null : DateOnly.Parse(startDate, System.Globalization.CultureInfo.InvariantCulture),
+			endDate is null ? null : DateOnly.Parse(endDate, System.Globalization.CultureInfo.InvariantCulture),
+			granularity, topN, groupBy, null, null, CancellationToken.None);
+
+		// Assert
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
+		badResult.Value!.Detail.Should().Contain(detail);
+		_mediatorMock.VerifyNoOtherCalls();
+	}
+
 	// ── GetDuplicates ──────────────────────────────
 
 	[Fact]

@@ -394,7 +394,9 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		[FromQuery] string? rollup = null,
 		[FromQuery] Guid? categoryId = null,
 		[FromQuery] string? knowledgeCutoff = null,
-		[FromQuery] Guid? capturedCurrentRevisionId = null)
+		[FromQuery] Guid? capturedCurrentRevisionId = null,
+		[FromQuery] Guid? envelopeId = null,
+		[FromQuery] Guid? occasionId = null)
 	{
 		DateOnly start = startDate ?? DateOnly.MinValue;
 		DateOnly end = endDate ?? DateOnly.FromDateTime(DateTime.Today);
@@ -445,7 +447,7 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 		if (capturedCurrentRevisionId.HasValue && view != AppReports.CategoryReportView.CurrentHierarchy)
 		{ return ApiProblem.BadRequest("capturedCurrentRevisionId requires currentHierarchy"); }
 		GetCategoryTrendsReportQuery query = new(start, end, gran, top)
-		{ CategoryOptions = new(view, level, categoryId, cutoff, capturedCurrentRevisionId) };
+		{ CategoryOptions = new(view, level, categoryId, cutoff, capturedCurrentRevisionId, envelopeId, occasionId) };
 		AppReports.CategoryTrendsResult result;
 		try { result = await mediator.Send(query, cancellationToken); }
 		catch (ArgumentException exception) when (exception.ParamName == "capturedCurrentRevisionId")
@@ -487,6 +489,65 @@ public class ReportsController(IMediator mediator, IEntityChangeNotifier notifie
 				Period = b.Period,
 				Amounts = b.Amounts.Select(a => (double)a).ToList()
 			}).ToList()
+		});
+	}
+
+	[HttpGet("budget-trends")]
+	[EndpointSummary("Get spending trends by envelope or occasion")]
+	public async Task<Results<Ok<BudgetTrendsResponse>, BadRequestProblem>> GetBudgetTrends(
+		[FromQuery] DateOnly? startDate,
+		[FromQuery] DateOnly? endDate,
+		[FromQuery] string? granularity,
+		[FromQuery] int? topN,
+		[FromQuery] string? groupBy,
+		[FromQuery] Guid? envelopeId,
+		[FromQuery] Guid? occasionId,
+		CancellationToken cancellationToken)
+	{
+		DateOnly start = startDate ?? DateOnly.MinValue;
+		DateOnly end = endDate ?? DateOnly.FromDateTime(DateTime.Today);
+		string gran = granularity ?? "monthly";
+		int top = topN ?? 7;
+		if (start > end)
+		{
+			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
+		}
+		if (gran.ToLowerInvariant() is not ("daily" or "monthly" or "quarterly" or "yearly"))
+		{
+			return ApiProblem.BadRequest($"Invalid granularity '{gran}'. Allowed: daily, monthly, quarterly, yearly");
+		}
+		if (top is < 1 or > 50)
+		{
+			return ApiProblem.BadRequest("topN must be between 1 and 50");
+		}
+		AppReports.BudgetTrendsDimension dimension;
+		switch (groupBy)
+		{
+			case null or "envelope": dimension = AppReports.BudgetTrendsDimension.Envelope; break;
+			case "occasion": dimension = AppReports.BudgetTrendsDimension.Occasion; break;
+			default: return ApiProblem.BadRequest("groupBy must be envelope or occasion");
+		}
+
+		AppReports.BudgetTrendsResult result = await mediator.Send(
+			new GetBudgetTrendsReportQuery(start, end, gran, top, dimension, envelopeId, occasionId), cancellationToken);
+		return TypedResults.Ok(new BudgetTrendsResponse
+		{
+			GroupBy = JsonNamingPolicy.CamelCase.ConvertName(result.Dimension.ToString()),
+			Series = [.. result.Series.Select(series => new BudgetTrendsSeries
+			{
+				Id = series.Id,
+				Name = series.Name,
+				IsActive = series.IsActive,
+				Currency = series.Currency,
+				IsOther = series.IsOther,
+				Total = (double)series.Total,
+				PurchaseCount = series.PurchaseCount,
+			})],
+			Buckets = [.. result.Buckets.Select(bucket => new CategoryTrendsBucket
+			{
+				Period = bucket.Period,
+				Amounts = [.. bucket.Amounts.Select(amount => (double)amount)],
+			})],
 		});
 	}
 

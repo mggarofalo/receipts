@@ -259,7 +259,7 @@ for (const width of [1280, 375])
       .click();
     await page
       .getByRole("link", {
-        name: "Category Trends Smaller categories are grouped into Other.",
+        name: "Category Trends What you buy, by item type. Smaller categories are grouped into Other.",
       })
       .click();
     await expect(
@@ -283,7 +283,7 @@ for (const width of [1280, 375])
     await expect(page).toHaveURL(/categoryView=currentHierarchy/);
     await page
       .getByRole("link", {
-        name: "Category Trends Smaller categories are grouped into Other.",
+        name: "Category Trends What you buy, by item type. Smaller categories are grouped into Other.",
       })
       .click();
     await expect(

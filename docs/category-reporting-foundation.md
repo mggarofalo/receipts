@@ -143,7 +143,8 @@ The reader groups receipt year/month/day (or quarter) together with assignment i
 and currency in SQL, then resolves the bounded grouped facts against batched snapshots.
 The response captures one current revision across every period. The cutoff reconstructs
 classification knowledge only; monetary facts remain current. No location filter existed
-on this endpoint before this cutover.
+on this endpoint before this cutover. Optional `envelopeId` and `occasionId` narrow the
+purchases before categorizing (see [envelopes](envelopes.md#reports)).
 
 Purchase search accepts a stable category UUID, `categoryView`, optional inclusive UTC
 `knowledgeCutoff`, and optional `capturedCurrentRevisionId` for current-hierarchy pages.
