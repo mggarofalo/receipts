@@ -299,12 +299,27 @@ public partial class ApplicationDbContext
 		}
 	}
 
+	/// <summary>
+	/// Items per review-work statement. A backup restore saves every imported item at once (about 16,500 for the owner),
+	/// and one statement over all of them outran the default 30-second command timeout on a slow host (RECEIPTS-1111).
+	/// Each statement acts on each item independently, so chunks give the same result, and every statement's cost is
+	/// bounded by this size rather than by the size of the save.
+	/// </summary>
+	internal const int ReviewWorkChunkSize = 1000;
+
 	private async Task ReconcileNormalizationReviewWorkAsync(CancellationToken ct)
 	{
 		if (!Database.IsNpgsql()) { return; }
-		Guid[] ids = ChangeTracker.Entries<ReceiptItemEntity>().Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+		Guid[] changed = ChangeTracker.Entries<ReceiptItemEntity>().Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
 			.Select(entry => entry.Entity.Id).Distinct().ToArray();
-		if (ids.Length == 0) { return; }
+		foreach (Guid[] ids in changed.Chunk(ReviewWorkChunkSize))
+		{
+			await ReconcileNormalizationReviewWorkAsync(ids, ct).ConfigureAwait(false);
+		}
+	}
+
+	private async Task ReconcileNormalizationReviewWorkAsync(Guid[] ids, CancellationToken ct)
+	{
 		await Database.ExecuteSqlInterpolatedAsync($"""
 			INSERT INTO matching."NormalizationReviewWork" ("ItemId", "ReceiptId", "SourceHash", "SourceRevision", "CreatedAt", "UpdatedAt")
 			SELECT i."Id", i."ReceiptId", i."NormalizationSourceHash", i."NormalizationRevision", now(), now()
