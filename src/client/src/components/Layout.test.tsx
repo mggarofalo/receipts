@@ -400,3 +400,41 @@ it.each([defaultAuth.user, adminUser])(
     ).not.toBeInTheDocument();
   },
 );
+
+describe("sidebar scroll region", () => {
+  // RECEIPTS-1114: the sidebar is pinned at viewport height, so a nav list
+  // taller than the window left its lower entries unreachable. The entries
+  // scroll inside .sidebar-nav; the brand and status footer stay pinned.
+  function scrollRegion(): HTMLElement {
+    const region = sidebar().querySelector<HTMLElement>(".sidebar-nav");
+    expect(region, "missing the .sidebar-nav scroll region").not.toBeNull();
+    return region!;
+  }
+
+  it("places every nav entry inside the scroll region", () => {
+    renderLayout({ user: adminUser });
+    const region = scrollRegion();
+    const items = sidebar().querySelectorAll<HTMLElement>("a.nav-item");
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) expect(region).toContainElement(item);
+    const nav = within(sidebar());
+    expect(region).toContainElement(
+      nav.getByRole("link", { name: /^Dashboard/ }),
+    );
+    expect(region).toContainElement(
+      nav.getByRole("link", { name: "Normalized Descriptions" }),
+    );
+  });
+
+  it("keeps the brand and status footer outside the scroll region", () => {
+    renderLayout({ user: adminUser });
+    const region = scrollRegion();
+    expect(region.parentElement).toBe(sidebar());
+    const brand = within(sidebar())
+      .getAllByRole("link")
+      .find((link) => link.classList.contains("brand"));
+    expect(brand).toBeDefined();
+    expect(region).not.toContainElement(brand!);
+    expect(region).not.toContainElement(within(sidebar()).getByRole("status"));
+  });
+});
