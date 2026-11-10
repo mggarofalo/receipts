@@ -44,8 +44,8 @@ read the same standard variables, so one block of settings configures everything
 |----------|---------|---------|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://otel.example.com` | Collector base URL. **Unset means no export.** |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | `http/protobuf` or `grpc`. Defaults to `grpc`. |
-| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic <base64>` | Headers on every export request. Comma-separated `key=value` pairs. |
-| `OTEL_SERVICE_NAME` | `receipts-api` | `service.name` on every signal. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic <token>` | Headers on every export request. Comma-separated `key=value` pairs. |
+| `OTEL_SERVICE_NAME` | `receipts-api` | `service.name` on every signal. Keep `receipts-api`: dashboards and alerts select on it. |
 
 Give the **base** URL, without `/v1/traces`. With `http/protobuf` both exporters add
 `/v1/traces`, `/v1/metrics` and `/v1/logs` themselves. With `grpc` the URL is used as is.
@@ -56,19 +56,14 @@ an error that names only the position of the bad entry. An unsupported protocol 
 
 ### Connecting to a remote collector
 
-Build the credential from the collector's user and password:
-
-```bash
-printf '%s' 'app:<secret>' | base64
-```
-
-Then add this to the `app` service's `environment` in `docker-compose.yml`:
+Get a token from the monitoring stack for this app. For HTTP Basic it is the base64 of
+`user:secret`; a stack that issues credentials prints it for you. Then add this to the `app` service's `environment` in `docker-compose.yml`:
 
 ```yaml
       - OTEL_SERVICE_NAME=receipts-api
       - OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64 of app:secret>
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <token>
 ```
 
 The header is a credential. Keep the real value out of git. One way is to put the line in a
@@ -88,7 +83,7 @@ services:
       - OTEL_SERVICE_NAME=receipts-api
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64 of app:secret>
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <token>
     networks:
       - receipts-net
       - observability

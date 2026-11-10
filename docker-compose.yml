@@ -113,7 +113,7 @@ services:
       # - OTEL_SERVICE_NAME=receipts-api
       # - OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com
       # - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-      # - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64 of app:secret>
+      # - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <token>
     depends_on:
       db:
         condition: service_healthy
