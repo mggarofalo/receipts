@@ -108,6 +108,18 @@ public class OrganizerMigrationOrderTests(PostgresFixture fixture)
 				.Select(table => $"{table.Schema ?? "public"}.{table.Name}").ToHashSet();
 			actual.Where(column => modeledTables.Contains(column[..column.LastIndexOf('.')]))
 				.Order(StringComparer.Ordinal).Should().Equal(expected, entry.Key);
+			string[] expectedIndexes = target.GetRelationalModel().Tables
+				.SelectMany(table => table.Indexes.Select(index => $"{table.Schema ?? "public"}.{table.Name}.{index.Name}:{index.IsUnique}"))
+				.ToArray();
+			string[] actualIndexes = await db.Database.SqlQueryRaw<string>("""
+                            SELECT concat(n.nspname, '.', t.relname, '.', i.relname, ':', CASE WHEN x.indisunique THEN 'True' ELSE 'False' END) AS "Value"
+                            FROM pg_index x
+                            JOIN pg_class i ON i.oid = x.indexrelid
+                            JOIN pg_class t ON t.oid = x.indrelid
+                            JOIN pg_namespace n ON n.oid = t.relnamespace
+                            """).ToArrayAsync();
+			// Handwritten SQL may add indexes EF does not model, so only the modeled ones must match.
+			expectedIndexes.Except(actualIndexes).Should().BeEmpty(entry.Key);
 		}
 	}
 
