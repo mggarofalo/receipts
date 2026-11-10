@@ -36,4 +36,12 @@ describe("sidebar scroll layout", () => {
     expect(nav).toMatch(/min-height\s*:\s*0\s*;/);
     expect(nav).toMatch(/overflow-y\s*:\s*auto\s*;/);
   });
+
+  it("insets the scroll region so focus rings on its edge items stay visible", () => {
+    const nav = ruleBody(".sidebar-nav");
+
+    expect(nav).toMatch(/margin\s*:\s*0\s+-4px\s*;/);
+    expect(nav).toMatch(/padding\s*:\s*0\s+4px\s+4px\s*;/);
+    expect(nav).toMatch(/scroll-padding-block\s*:\s*4px\s*;/);
+  });
 });

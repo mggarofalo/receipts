@@ -563,7 +563,8 @@ body {
 }
 /* The sidebar is pinned to the viewport, so a nav list taller than the
    window must scroll inside it; the brand and status footer stay put. The
-   inset (cancelled by the negative margin) keeps focus rings unclipped. */
+   inset (cancelled by the negative margin) and the scroll padding keep focus
+   rings unclipped when keyboard focus scrolls an item to an edge. */
 .sidebar-nav {
   flex: 1;
   min-height: 0;
@@ -571,6 +572,7 @@ body {
   overscroll-behavior: contain;
   margin: 0 -4px;
   padding: 0 4px 4px;
+  scroll-padding-block: 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
