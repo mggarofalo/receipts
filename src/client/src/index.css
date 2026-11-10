@@ -561,6 +561,20 @@ body {
   top: 0;
   height: 100vh;
 }
+/* The sidebar is pinned to the viewport, so a nav list taller than the
+   window must scroll inside it; the brand and status footer stay put. The
+   inset (cancelled by the negative margin) keeps focus rings unclipped. */
+.sidebar-nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -4px;
+  padding: 0 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .brand {
   display: flex;
   align-items: center;

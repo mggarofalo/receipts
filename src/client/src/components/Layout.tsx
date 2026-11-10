@@ -172,33 +172,35 @@ export function Layout() {
           {showVersion && <div className="ver">{appVersion}</div>}
         </Link>
 
-        {sections.map((section) => (
-          <div key={section.title}>
-            <div className="nav-section">{section.title}</div>
-            {section.items.map((item) => {
-              const IconComp = item.icon;
-              const active = item === activeItem;
-              // Plain Link (not NavLink) — NavLink derives its own `active`
-              // class and `aria-current` from per-item prefix matching, which
-              // would re-introduce the double highlight regardless of what we
-              // pass. The single winner from resolveActiveNavItem drives both.
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={cn("nav-item", active && "active")}
-                  aria-current={active ? "page" : undefined}
-                >
-                  <IconComp aria-hidden="true" focusable="false" />
-                  {item.label}
-                  {preferences.showKeyboardHints && item.kbd && (
-                    <span className="kbd">{item.kbd}</span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+        <div className="sidebar-nav">
+          {sections.map((section) => (
+            <div key={section.title}>
+              <div className="nav-section">{section.title}</div>
+              {section.items.map((item) => {
+                const IconComp = item.icon;
+                const active = item === activeItem;
+                // Plain Link (not NavLink) — NavLink derives its own `active`
+                // class and `aria-current` from per-item prefix matching, which
+                // would re-introduce the double highlight regardless of what we
+                // pass. The single winner from resolveActiveNavItem drives both.
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn("nav-item", active && "active")}
+                    aria-current={active ? "page" : undefined}
+                  >
+                    <IconComp aria-hidden="true" focusable="false" />
+                    {item.label}
+                    {preferences.showKeyboardHints && item.kbd && (
+                      <span className="kbd">{item.kbd}</span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </div>
 
         <div
           className="sidebar-foot"
