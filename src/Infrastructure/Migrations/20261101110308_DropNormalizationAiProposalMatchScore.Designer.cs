@@ -702,8 +702,7 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Revision")
-                        .IsUnique();
+                    b.HasIndex("Revision");
 
                     b.ToTable("SettingsAudit", "category_assistance");
                 });
