@@ -9,7 +9,7 @@ if (args.Length < 1)
 {
     Console.Error.WriteLine("Usage: dotnet run scripts/rollback.cs -- <image_tag>");
     Console.Error.WriteLine();
-    Console.Error.WriteLine("Example: dotnet run scripts/rollback.cs -- v1.2.3");
+    Console.Error.WriteLine("Example: dotnet run scripts/rollback.cs -- 0.17.1");
     Console.Error.WriteLine("Example: dotnet run scripts/rollback.cs -- sha-abc1234");
     return 1;
 }

@@ -147,7 +147,7 @@ See **[docs/deployment.md](docs/deployment.md)** for HTTPS, backups, and updates
 | [Development](docs/development.md) | Local setup, debugging, build & test commands |
 | [Testing](docs/testing.md) | Test strategy, conventions, and coverage |
 | [Deployment](docs/deployment.md) | Docker Compose, HTTPS, operations |
-| [Observability](docs/observability.md) | OpenTelemetry, Grafana, and Sentry |
+| [Observability](docs/observability.md) | OpenTelemetry export to an external collector, and Sentry |
 | [Admin & backup](docs/admin.md) | User management, API keys, audit log |
 
 The REST API is fully documented with OpenAPI metadata — run the app and open `/scalar` for an interactive reference.

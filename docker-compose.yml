@@ -7,7 +7,7 @@ services:
     command:
       - -c
       - |
-        for secret in pg_password jwt_key admin_password grafana_password; do
+        for secret in pg_password jwt_key admin_password; do
           if [ ! -f "/secrets/$${secret}" ]; then
             if [ "$${secret}" = "admin_password" ]; then
               pw=$$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 44)
@@ -105,15 +105,18 @@ services:
       - AdminSeed__Email=admin@example.com
       - AdminSeed__FirstName=Admin
       - AdminSeed__LastName=User
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - OTEL_SERVICE_NAME=receipts-api
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_BACKEND_DSN=${SENTRY_BACKEND_DSN:-}
+      # Telemetry is off unless OTEL_EXPORTER_OTLP_ENDPOINT is set. To send traces,
+      # metrics and logs to an external OTel collector, uncomment this block and see
+      # docs/observability.md. The header is a secret: keep the real value out of git.
+      # - OTEL_SERVICE_NAME=receipts-api
+      # - OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com
+      # - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      # - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <token>
     depends_on:
       db:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
     volumes:
       - secrets:/secrets:ro
       - app-data:/data
@@ -141,156 +144,25 @@ services:
       - no-new-privileges:true
     networks:
       - receipts-net
+      # Same-host collector: uncomment, and the external network below, then use
+      # OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318.
+      # - observability
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "3"
 
-  # --- Observability Stack ---
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.121.0
-    container_name: receipts-otel-collector
-    restart: unless-stopped
-    command: ["--config=/etc/otelcol/config.yaml"]
-    volumes:
-      - ./observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
-    ports:
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
-    depends_on:
-      - tempo
-      - loki
-      - prometheus
-    deploy:
-      resources:
-        limits:
-          memory: 128M
-          cpus: "0.5"
-    networks:
-      - receipts-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "2"
-
-  tempo:
-    image: grafana/tempo:2.7.2
-    container_name: receipts-tempo
-    restart: unless-stopped
-    command: ["-config.file=/etc/tempo/config.yaml"]
-    volumes:
-      - ./observability/tempo/config.yaml:/etc/tempo/config.yaml:ro
-      - tempo-data:/var/tempo
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"
-    networks:
-      - receipts-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "2"
-
-  loki:
-    image: grafana/loki:3.4.3
-    container_name: receipts-loki
-    restart: unless-stopped
-    command: ["-config.file=/etc/loki/config.yaml"]
-    volumes:
-      - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
-      - loki-data:/loki
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"
-    networks:
-      - receipts-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "2"
-
-  prometheus:
-    image: prom/prometheus:v3.3.0
-    container_name: receipts-prometheus
-    restart: unless-stopped
-    command:
-      - "--config.file=/etc/prometheus/config.yaml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=14d"
-      - "--web.enable-remote-write-receiver"
-    volumes:
-      - ./observability/prometheus/config.yaml:/etc/prometheus/config.yaml:ro
-      - prometheus-data:/prometheus
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"
-    networks:
-      - receipts-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "2"
-
-  grafana:
-    image: grafana/grafana:11.6.0
-    container_name: receipts-grafana
-    restart: unless-stopped
-    environment:
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD__FILE=/secrets/grafana_password
-    ports:
-      - "3000:3000"
-    volumes:
-      - secrets:/secrets:ro
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana-data:/var/lib/grafana
-    depends_on:
-      init:
-        condition: service_completed_successfully
-      prometheus:
-        condition: service_started
-      tempo:
-        condition: service_started
-      loki:
-        condition: service_started
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: "0.5"
-    networks:
-      - receipts-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "2"
-
 volumes:
   secrets:
   db-data:
   app-data:
   chatgpt-auth:
-  tempo-data:
-  loki-data:
-  prometheus-data:
-  grafana-data:
 
 networks:
   receipts-net:
     driver: bridge
+  # Same-host collector only. The monitoring stack creates this network; compose
+  # fails to start if it is declared here and does not exist.
+  # observability:
+  #   external: true
