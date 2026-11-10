@@ -2,28 +2,21 @@
 
 The Receipts application uses a hybrid observability strategy:
 
-- **Backend**: OpenTelemetry (traces, metrics, logs) routed through an OTel Collector to a self-hosted Grafana LGTM stack, plus Sentry for error reporting
+- **Backend**: OpenTelemetry traces, metrics and logs, sent over OTLP to a collector you run yourself, plus Sentry for error reporting
 - **Frontend**: Sentry for error reporting, user feedback, and session replay
+
+This repository does not ship a monitoring stack. Storage and dashboards live in a separate
+deployment; the app only exports to it. With no collector configured, the app exports nothing.
 
 ## Architecture
 
 ```
-┌──────────┐  OTLP/gRPC   ┌────────────────┐
-│ API      │──────────────►│ OTel Collector  │
-│ (.NET)   │               └───────┬─┬─┬────┘
-│          │───► Sentry (cloud)    │ │ │
-└──────────┘     - Error reporting │ │ │
-                          traces   │ │ │  logs     metrics
-                                   ▼ │ ▼          ▼
-                            ┌──────┐ │ ┌─────┐ ┌────────────┐
-                            │ Tempo│ │ │ Loki│ │ Prometheus  │
-                            └──┬───┘ │ └──┬──┘ └─────┬──────┘
-                               │     │    │          │
-                               └─────┼────┼──────────┘
-                                     ▼
-                              ┌──────────┐
-                              │ Grafana  │ :3000
-                              └──────────┘
+┌──────────┐  OTLP (http/protobuf or gRPC)   ┌──────────────────────┐
+│ API      │────────────────────────────────►│ External OTel        │
+│ (.NET)   │  Authorization header           │ collector            │
+│          │                                 │ (your monitoring     │
+│          │───► Sentry (cloud)              │  stack)              │
+└──────────┘     - Error reporting           └──────────────────────┘
 
 ┌──────────┐
 │ React    │───► Sentry (cloud)
@@ -32,61 +25,99 @@ The Receipts application uses a hybrid observability strategy:
                  - User feedback
 ```
 
-## Backend Observability (Grafana LGTM)
+## Backend Telemetry (OpenTelemetry)
 
-The .NET API emits OpenTelemetry signals via `Receipts.ServiceDefaults`:
+The .NET API emits three signals:
 
-| Signal  | Instrumentation                                              | Backend   |
-|---------|--------------------------------------------------------------|-----------|
-| Traces  | ASP.NET Core, HttpClient, Entity Framework Core              | Tempo     |
-| Metrics | ASP.NET Core, HttpClient, .NET Runtime                       | Prometheus|
-| Logs    | Serilog with OTLP sink, structured with CorrelationId        | Loki      |
+| Signal  | Source                                                                       |
+|---------|------------------------------------------------------------------------------|
+| Traces  | OTel SDK in `Receipts.ServiceDefaults`: ASP.NET Core, HttpClient, EF Core     |
+| Metrics | OTel SDK in `Receipts.ServiceDefaults`: ASP.NET Core, HttpClient, .NET runtime, `Receipts.Embeddings` |
+| Logs    | Serilog OTLP sink (`API.Services.LoggingService`), structured with CorrelationId |
 
-### Docker Compose Services
+Traces and metrics go through the OTel SDK. Logs go through Serilog's own OTLP sink. Both
+read the same standard variables, so one block of settings configures everything.
 
-All services are defined in `docker-compose.yml` under the `# --- Observability Stack ---` section:
+### Configuration
 
-| Service         | Image                                      | Port  | Purpose                     |
-|-----------------|--------------------------------------------|-------|-----------------------------|
-| otel-collector  | otel/opentelemetry-collector-contrib:0.121.0 | 4317/4318 | Receives and routes OTLP |
-| tempo           | grafana/tempo:2.7.2                         | -     | Distributed trace storage   |
-| loki            | grafana/loki:3.4.3                          | -     | Log aggregation             |
-| prometheus      | prom/prometheus:v3.3.0                      | -     | Metrics storage             |
-| grafana         | grafana/grafana:11.6.0                      | 3000  | Dashboards and alerting     |
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://otel.example.com` | Collector base URL. **Unset means no export.** |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | `http/protobuf` or `grpc`. Defaults to `grpc`. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic <base64>` | Headers on every export request. Comma-separated `key=value` pairs. |
+| `OTEL_SERVICE_NAME` | `receipts-api` | `service.name` on every signal. |
 
-### Accessing Grafana
+Give the **base** URL, without `/v1/traces`. With `http/protobuf` both exporters add
+`/v1/traces`, `/v1/metrics` and `/v1/logs` themselves. With `grpc` the URL is used as is.
 
-- URL: `http://<host>:3000`
-- Admin user: `admin`, password auto-generated in `/secrets/grafana_password` (same pattern as the PostgreSQL and JWT secrets)
-- Anonymous read access is enabled by default
+The app never logs the header value. A malformed `OTEL_EXPORTER_OTLP_HEADERS` stops startup with
+an error that names only the position of the bad entry. An unsupported protocol (such as
+`http/json`) also stops startup, because the log sink cannot speak it.
 
-### Pre-configured Datasources
+### Connecting to a remote collector
 
-Datasources are auto-provisioned on startup (`observability/grafana/provisioning/datasources/`):
-- **Prometheus** (default) - with trace exemplar links to Tempo
-- **Tempo** - with trace-to-log correlation via Loki and service map via Prometheus
-- **Loki** - with derived fields extracting traceId for Tempo linking
+Build the credential from the collector's user and password:
 
-### Dashboards
+```bash
+printf '%s' 'app:<secret>' | base64
+```
 
-Provisioned dashboards (`observability/grafana/dashboards/`):
-- **API Overview** - request rate, error rate, latency percentiles (p50/p95/p99), status codes, GC, memory, thread pool, recent traces
+Then add this to the `app` service's `environment` in `docker-compose.yml`:
 
-### Alerting
+```yaml
+      - OTEL_SERVICE_NAME=receipts-api
+      - OTEL_EXPORTER_OTLP_ENDPOINT=https://otel.example.com
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64 of app:secret>
+```
 
-Provisioned alert rules (`observability/grafana/provisioning/alerting/`):
-- **Elevated 5xx Error Rate** - fires when 5xx rate exceeds 0.1 req/s for 5 minutes
-- **High Request Latency** - fires when p95 latency exceeds 2 seconds for 5 minutes
-- **API Service Down** - fires when no traffic is detected for 5 minutes
+The header is a credential. Keep the real value out of git. One way is to put the line in a
+`.env` file next to `docker-compose.yml` and reference it as
+`OTEL_EXPORTER_OTLP_HEADERS=${OTEL_EXPORTER_OTLP_HEADERS}`.
 
-### Verifying the Stack
+### Connecting to a collector on the same host
 
-1. Start everything: `docker compose up -d`
-2. Generate some API traffic (login, browse receipts)
-3. Open Grafana at `http://localhost:3000`
-4. Navigate to **Explore > Tempo** and search for traces by `service.name = receipts-api`
-5. Navigate to **Explore > Loki** and query `{service_name="receipts-api"}`
-6. Check the **API Overview** dashboard for metrics
+If the monitoring stack runs on the same Docker host, skip the public URL and join its network.
+The monitoring stack creates an external network called `observability` with the collector
+reachable as `otel-collector`. In `docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    environment:
+      - OTEL_SERVICE_NAME=receipts-api
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64 of app:secret>
+    networks:
+      - receipts-net
+      - observability
+
+networks:
+  receipts-net:
+    driver: bridge
+  observability:
+    external: true
+```
+
+The collector still requires the `Authorization` header on this path. `docker compose up` fails
+if the `observability` network does not exist yet, so start the monitoring stack first.
+
+### Verifying export
+
+1. Set the variables above and recreate the app: `docker compose up -d app`
+2. Generate some API traffic (log in, browse receipts)
+3. In the monitoring stack, look for `service.name = receipts-api` in traces, metrics and logs
+
+A `401` from the collector means the header is missing or wrong. The OTel SDK and the Serilog
+sink report export failures through their own diagnostics, not the app's log, so check the
+collector's logs first.
+
+### Local development
+
+Under Aspire (`dotnet run --project src/Receipts.AppHost`), the AppHost sets these variables
+for the API so all three signals reach the Aspire dashboard. Nothing else is needed. See
+[development.md](development.md).
 
 ## Backend Error Reporting (Sentry)
 
@@ -151,5 +182,3 @@ Add these to your GitHub repository secrets:
 2. `SENTRY_AUTH_TOKEN` - Sentry auth token with `project:releases` and `org:read` scopes (frontend source map uploads only)
 3. `SENTRY_ORG` - your Sentry organization slug (frontend source map uploads only)
 4. `SENTRY_PROJECT` - your Sentry project slug (frontend source map uploads only)
-
-The Grafana admin password is auto-generated by the init container into `/secrets/grafana_password`, just like the other secrets. To retrieve it: `docker compose exec grafana cat /secrets/grafana_password`.

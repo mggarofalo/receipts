@@ -79,7 +79,25 @@ For an air-gapped deployment, run `dotnet run scripts/download-onnx-model.cs` on
 
 ## Configuration
 
-Edit values directly in `docker-compose.yml`. No `.env` file needed.
+Edit values directly in `docker-compose.yml`. A `.env` file next to it is optional; use it for
+values you change on upgrade (`IMAGE_TAG`) or keep out of the compose file (telemetry credentials).
+
+### Image tag
+
+Pin an exact release instead of running `latest`:
+
+```bash
+# .env, next to docker-compose.yml
+IMAGE_TAG=0.18.1
+```
+
+Image tags have **no leading `v`**: the git tag `v0.18.1` publishes the image
+`ghcr.io/mggarofalo/receipts:0.18.1` (also `0.18`, `latest` and `sha-<short sha>`).
+`IMAGE_TAG=v0.18.1` names an image that does not exist.
+
+A pinned tag makes every upgrade explicit and every rollback a one-line change. With `latest`,
+`docker compose up -d` keeps running whatever `latest` image is already on the host, because
+compose does not re-pull a tag it already has.
 
 ### App Service
 
@@ -97,7 +115,8 @@ Edit values directly in `docker-compose.yml`. No `.env` file needed.
 | `AdminSeed__Email` | `admin@example.com` | Initial admin account email |
 | `AdminSeed__FirstName` | `Admin` | Admin first name |
 | `AdminSeed__LastName` | `User` | Admin last name |
-| `IMAGE_TAG` | `latest` | Docker image tag (used by operations scripts) |
+| `IMAGE_TAG` | `latest` | Image tag, no leading `v`. Pin it in `.env` (see [Image tag](#image-tag)) |
+| `OTEL_*` | unset | Optional telemetry export to an external collector. See [observability.md](observability.md) |
 
 ### Auto-Generated Secrets
 
@@ -196,18 +215,51 @@ If NPM runs on the same host, add the NPM container to the `receipts-net` networ
 ### Update to a new version
 
 ```bash
+dotnet run scripts/update.cs -- 0.18.1    # Update to a specific version (recommended)
 dotnet run scripts/update.cs              # Update to latest
-dotnet run scripts/update.cs -- v1.2.3    # Update to specific version
 ```
 
-The update script automatically backs up the database before updating and rolls back if the health check fails.
+The update script backs up the database, runs `docker compose pull app` and then
+`docker compose up -d app` with `IMAGE_TAG` set to the tag you pass, and rolls back if the health
+check fails. It does not edit `.env`: set `IMAGE_TAG=0.18.1` there too, or the next plain
+`docker compose up -d` goes back to the old tag.
+
+To upgrade by hand, change `IMAGE_TAG` in `.env`, then always pull before starting:
+
+```bash
+docker compose pull app
+docker compose up -d app
+```
 
 ### Roll back
 
 ```bash
-dotnet run scripts/rollback.cs -- v1.1.0     # Roll back to a specific tag
-dotnet run scripts/rollback.cs -- sha-abc123 # Roll back to a specific build
+dotnet run scripts/rollback.cs -- 0.17.1       # Roll back to a specific release
+dotnet run scripts/rollback.cs -- sha-abc1234  # Roll back to a specific build
 ```
+
+The rollback script also pulls before starting. As with updates, set the same tag in `.env`.
+
+### Upgrading from 0.18.0 or earlier: bundled monitoring removed
+
+Up to 0.18.0, `docker-compose.yml` also started an OTel collector, Tempo, Loki, Prometheus and
+Grafana. From 0.18.1 it does not; telemetry goes to an external collector instead (see
+[observability.md](observability.md)). When you move to the new compose file:
+
+1. Delete the `otel-collector`, `tempo`, `loki`, `prometheus` and `grafana` services, their
+   volumes (`tempo-data`, `loki-data`, `prometheus-data`, `grafana-data`), the `otel-collector`
+   entry under `app.depends_on`, and the `app` lines `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`
+   and `OTEL_SERVICE_NAME=receipts-api`. Drop `grafana_password` from the `init` loop.
+2. Pull and start, removing the containers compose no longer defines:
+
+   ```bash
+   docker compose pull app
+   docker compose up -d --remove-orphans
+   ```
+
+3. Optionally reclaim the old data: `docker volume ls` shows the four volumes with your project
+   prefix (for example `receipts_grafana-data`); remove them with `docker volume rm`.
+   `/secrets/grafana_password` stays in the secrets volume and is no longer used.
 
 ### Backup and restore
 

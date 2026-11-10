@@ -29,19 +29,15 @@ public static class LoggingService
 				.MinimumLevel.Information();
 		}
 
-		// Forward logs to Aspire Dashboard via OTLP when running under Aspire
-		string? otlpEndpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
-		if (!string.IsNullOrEmpty(otlpEndpoint))
+		// Export logs over OTLP only when an endpoint is configured: the Aspire dashboard in
+		// development, or an external collector in production (docs/observability.md).
+		Action<BatchedOpenTelemetrySinkOptions>? otlpSink =
+			OtlpLogSinkConfiguration.Create(builder.Configuration, builder.Environment.ApplicationName);
+		if (otlpSink is not null)
 		{
-			loggerConfiguration.WriteTo.OpenTelemetry(options =>
-			{
-				options.Endpoint = otlpEndpoint;
-				options.Protocol = OtlpProtocol.Grpc;
-				options.ResourceAttributes = new Dictionary<string, object>
-				{
-					["service.name"] = builder.Environment.ApplicationName
-				};
-			});
+			// null: OtlpLogSinkConfiguration is the only source, so the sink must not
+			// re-read the process environment on top of it.
+			loggerConfiguration.WriteTo.OpenTelemetry(otlpSink, getConfigurationVariable: null);
 		}
 
 		Log.Logger = loggerConfiguration.CreateLogger();
