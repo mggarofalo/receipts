@@ -2,6 +2,7 @@ using API.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
+using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 
 namespace Presentation.API.Tests.Services;
@@ -143,6 +144,57 @@ public class OtlpLogSinkConfigurationTests
 	}
 
 	[Fact]
+	public void Create_WithServiceNameInResourceAttributesOnly_UsesResourceAttribute()
+	{
+		BatchedOpenTelemetrySinkOptions options = Apply(WithEndpoint(
+			(OtlpLogSinkConfiguration.ResourceAttributesKey, "service.name=from-attrs")));
+
+		options.ResourceAttributes.Should().ContainKey("service.name")
+			.WhoseValue.Should().Be("from-attrs");
+	}
+
+	[Theory]
+	[InlineData("")]
+	[InlineData("   ")]
+	public void Create_WithBlankOtelServiceName_FallsBackToResourceAttribute(string configured)
+	{
+		BatchedOpenTelemetrySinkOptions options = Apply(WithEndpoint(
+			(OtlpLogSinkConfiguration.ServiceNameKey, configured),
+			(OtlpLogSinkConfiguration.ResourceAttributesKey, "service.name=from-attrs")));
+
+		options.ResourceAttributes.Should().ContainKey("service.name")
+			.WhoseValue.Should().Be("from-attrs");
+	}
+
+	[Fact]
+	public void Create_WithServiceNameInBothSources_PrefersOtelServiceName()
+	{
+		BatchedOpenTelemetrySinkOptions options = Apply(WithEndpoint(
+			(OtlpLogSinkConfiguration.ServiceNameKey, "receipts-api-prod"),
+			(OtlpLogSinkConfiguration.ResourceAttributesKey, "service.name=from-attrs")));
+
+		options.ResourceAttributes.Should().ContainKey("service.name")
+			.WhoseValue.Should().Be("receipts-api-prod");
+	}
+
+	[Theory]
+	[InlineData("deployment.environment=production,no-separator,service.version=1.2.3")]
+	[InlineData("deployment.environment=production,=orphan-value,service.version=1.2.3")]
+	[InlineData("deployment.environment=production, =orphan-value,service.version=1.2.3")]
+	public void Create_WithMalformedResourceAttributeEntry_SkipsItAndKeepsValidEntries(string attributes)
+	{
+		BatchedOpenTelemetrySinkOptions options = Apply(WithEndpoint(
+			(OtlpLogSinkConfiguration.ResourceAttributesKey, attributes)));
+
+		options.ResourceAttributes.Should().BeEquivalentTo(new Dictionary<string, object>
+		{
+			["deployment.environment"] = "production",
+			["service.version"] = "1.2.3",
+			["service.name"] = DefaultServiceName,
+		});
+	}
+
+	[Fact]
 	public void Create_CopiesResourceAttributes()
 	{
 		BatchedOpenTelemetrySinkOptions options = Apply(WithEndpoint(
@@ -163,8 +215,17 @@ public class OtlpLogSinkConfigurationTests
 			[OtlpLogSinkConfiguration.HeadersKey] = "Authorization=Basic YXBwOnNlY3JldA==",
 		});
 
-		Action act = () => builder.AddLoggingService();
+		try
+		{
+			Action act = () => builder.AddLoggingService();
 
-		act.Should().NotThrow();
+			act.Should().NotThrow();
+		}
+		finally
+		{
+			// AddLoggingService assigns the process-wide Log.Logger, which here owns a live
+			// batching OTLP sink. Disposing it stops that sink; nothing else owns the logger.
+			Log.CloseAndFlush();
+		}
 	}
 }

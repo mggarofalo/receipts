@@ -33,8 +33,8 @@ internal static class OtlpLogSinkConfiguration
 		}
 
 		OtlpProtocol protocol = ParseProtocol(configuration[ProtocolKey]);
-		List<KeyValuePair<string, string>> headers = ParseList(configuration[HeadersKey], HeadersKey);
-		List<KeyValuePair<string, string>> resourceAttributes = ParseList(configuration[ResourceAttributesKey], ResourceAttributesKey);
+		List<KeyValuePair<string, string>> headers = ParseHeaders(configuration[HeadersKey]);
+		List<KeyValuePair<string, string>> resourceAttributes = ParseResourceAttributes(configuration[ResourceAttributesKey]);
 		string? serviceName = configuration[ServiceNameKey];
 
 		return options =>
@@ -53,7 +53,16 @@ internal static class OtlpLogSinkConfiguration
 				options.ResourceAttributes[key] = value;
 			}
 
-			options.ResourceAttributes["service.name"] = string.IsNullOrWhiteSpace(serviceName) ? defaultServiceName : serviceName;
+			// The OTel SDK's precedence: OTEL_SERVICE_NAME, then service.name in
+			// OTEL_RESOURCE_ATTRIBUTES. Only then the app's own name.
+			if (!string.IsNullOrWhiteSpace(serviceName))
+			{
+				options.ResourceAttributes["service.name"] = serviceName;
+			}
+			else if (!options.ResourceAttributes.ContainsKey("service.name"))
+			{
+				options.ResourceAttributes["service.name"] = defaultServiceName;
+			}
 		};
 	}
 
@@ -66,8 +75,18 @@ internal static class OtlpLogSinkConfiguration
 			$"{ProtocolKey} '{value}' is not supported for log export. Use 'grpc' or 'http/protobuf'."),
 	};
 
+	// Headers carry credentials, so a malformed entry fails startup rather than sending
+	// requests the collector will reject. The message names the position only.
+	private static List<KeyValuePair<string, string>> ParseHeaders(string? value) =>
+		ParseList(value, index => throw new InvalidOperationException(
+			$"{HeadersKey} entry {index} is not in key=value form."));
+
+	// Like the OTel SDK, ignore a malformed resource attribute rather than refuse to start.
+	private static List<KeyValuePair<string, string>> ParseResourceAttributes(string? value) =>
+		ParseList(value, _ => { });
+
 	// The OTel list format: comma-separated key=value pairs, values percent-decoded.
-	private static List<KeyValuePair<string, string>> ParseList(string? value, string variableName)
+	private static List<KeyValuePair<string, string>> ParseList(string? value, Action<int> onMalformed)
 	{
 		List<KeyValuePair<string, string>> pairs = [];
 		if (string.IsNullOrWhiteSpace(value))
@@ -88,9 +107,8 @@ internal static class OtlpLogSinkConfiguration
 			string key = separator < 0 ? "" : entry[..separator].Trim();
 			if (key.Length == 0)
 			{
-				// Name the position only: the entry may hold a credential.
-				throw new InvalidOperationException(
-					$"{variableName} entry {i + 1} is not in key=value form.");
+				onMalformed(i + 1);
+				continue;
 			}
 
 			pairs.Add(new(key, Uri.UnescapeDataString(entry[(separator + 1)..].Trim())));

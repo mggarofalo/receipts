@@ -250,6 +250,8 @@ Grafana. From 0.18.1 it does not; telemetry goes to an external collector instea
    volumes (`tempo-data`, `loki-data`, `prometheus-data`, `grafana-data`), the `otel-collector`
    entry under `app.depends_on`, and the `app` lines `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`
    and `OTEL_SERVICE_NAME=receipts-api`. Drop `grafana_password` from the `init` loop.
+   To keep telemetry, add the block from [observability.md](observability.md) in their place;
+   it sets `OTEL_SERVICE_NAME=receipts-api` again.
 2. Pull and start, removing the containers compose no longer defines:
 
    ```bash
