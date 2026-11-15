@@ -93,7 +93,7 @@ function Dashboard() {
         }
       />
 
-      <SummaryStats dateRange={dateRange} />
+      <SummaryStats dateRange={dateRange} categoryView={categoryView} />
 
       <div
         className="grid grid-cols-1 gap-5 lg:grid-cols-2"

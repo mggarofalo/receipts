@@ -19,7 +19,9 @@ vi.mock("@/components/dashboard/DateRangeSelector", () => ({
 }));
 
 vi.mock("@/components/dashboard/SummaryStats", () => ({
-  SummaryStats: () => <div data-testid="summary-stats" />,
+  SummaryStats: ({ categoryView }: { categoryView: string }) => (
+    <div data-testid="summary-stats" data-category-view={categoryView} />
+  ),
 }));
 
 vi.mock("@/components/dashboard/SpendingOverTimeWidget", () => ({
@@ -27,7 +29,16 @@ vi.mock("@/components/dashboard/SpendingOverTimeWidget", () => ({
 }));
 
 vi.mock("@/components/dashboard/SpendingByCategoryWidget", () => ({
-  SpendingByCategoryWidget: () => <div data-testid="spending-by-category" />,
+  SpendingByCategoryWidget: ({
+    options,
+  }: {
+    options: { categoryView: string };
+  }) => (
+    <div
+      data-testid="spending-by-category"
+      data-category-view={options.categoryView}
+    />
+  ),
 }));
 
 vi.mock("@/components/dashboard/SpendingByAccountWidget", () => ({
@@ -135,4 +146,36 @@ it("persists category view in the URL and report navigation", async () => {
   expect(params.get("foo")).toBe("kept");
   expect(params.has("page")).toBe(false);
   expect(params.has("offset")).toBe(false);
+});
+
+// RECEIPTS-1123: One dashboard, one view — Top category follows the selected view.
+it.each(["asClassified", "currentHierarchy"] as const)(
+  "computes Top category and spending by category in the %s view",
+  async (view) => {
+    const userEvent = (await import("@testing-library/user-event")).default;
+    const other = view === "asClassified" ? "currentHierarchy" : "asClassified";
+    renderWithQueryClient(<Dashboard />, {
+      route: `/?categoryView=${other}`,
+    });
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "Category view" }),
+      view,
+    );
+    expect(screen.getByTestId("summary-stats")).toHaveAttribute(
+      "data-category-view",
+      view,
+    );
+    expect(screen.getByTestId("spending-by-category")).toHaveAttribute(
+      "data-category-view",
+      view,
+    );
+  },
+);
+
+it("defaults Top category to the asClassified view", () => {
+  renderWithQueryClient(<Dashboard />);
+  expect(screen.getByTestId("summary-stats")).toHaveAttribute(
+    "data-category-view",
+    "asClassified",
+  );
 });

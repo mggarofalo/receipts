@@ -18,13 +18,26 @@ namespace API.Controllers.Aggregates;
 [Authorize]
 public class DashboardController(IMediator mediator) : ControllerBase
 {
+	private const string InvalidCategoryView = "categoryView must be asClassified or currentHierarchy";
+
+	private static bool TryParseCategoryView(string? value, out CategoryReportView view)
+	{
+		switch (value)
+		{
+			case null or "asClassified": view = CategoryReportView.AsClassified; return true;
+			case "currentHierarchy": view = CategoryReportView.CurrentHierarchy; return true;
+			default: view = default; return false;
+		}
+	}
+
 	[HttpGet("summary")]
 	[EndpointSummary("Get dashboard summary statistics")]
 	[EndpointDescription("Returns high-level stats for a date range including total receipts, total spent, average trip amount, and most-used account/category.")]
 	public async Task<Results<Ok<DashboardSummaryResponse>, BadRequestProblem>> GetDashboardSummary(
 		[FromQuery] DateOnly? startDate,
 		[FromQuery] DateOnly? endDate,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken = default,
+		[FromQuery] string? categoryView = null)
 	{
 		DateOnly start = startDate ?? DateOnly.MinValue;
 		DateOnly end = endDate ?? DateOnly.FromDateTime(DateTime.Today);
@@ -34,7 +47,12 @@ public class DashboardController(IMediator mediator) : ControllerBase
 			return ApiProblem.BadRequest("startDate must be before or equal to endDate");
 		}
 
-		GetDashboardSummaryQuery query = new(start, end);
+		if (!TryParseCategoryView(categoryView, out CategoryReportView view))
+		{
+			return ApiProblem.BadRequest(InvalidCategoryView);
+		}
+
+		GetDashboardSummaryQuery query = new(start, end, view);
 		DashboardSummaryResult result = await mediator.Send(query, cancellationToken);
 
 		return TypedResults.Ok(new DashboardSummaryResponse
@@ -134,12 +152,9 @@ public class DashboardController(IMediator mediator) : ControllerBase
 			return ApiProblem.BadRequest("limit must be between 1 and 100");
 		}
 
-		CategoryReportView view;
-		switch (categoryView)
+		if (!TryParseCategoryView(categoryView, out CategoryReportView view))
 		{
-			case null or "asClassified": view = CategoryReportView.AsClassified; break;
-			case "currentHierarchy": view = CategoryReportView.CurrentHierarchy; break;
-			default: return ApiProblem.BadRequest("categoryView must be asClassified or currentHierarchy");
+			return ApiProblem.BadRequest(InvalidCategoryView);
 		}
 		CategoryReportRollup level;
 		switch (rollup)

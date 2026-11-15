@@ -1,4 +1,5 @@
 using Application.Models;
+using Application.Models.Reports;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using Infrastructure.Entities.Core;
@@ -47,7 +48,7 @@ public class CardAccountOwnershipTests(PostgresFixture fixture) : IClassFixture<
 		TransactionService transactions = new(new TransactionRepository(factory), new TransactionMapper(), new AccountMapper(), factory, new ReceiptMapper(), new ReceiptItemMapper(), new AdjustmentMapper());
 		AccountRepository accounts = new(factory);
 		ReceiptRepository receipts = new(factory);
-		var summary = await dashboard.GetSummaryAsync(date, date, CancellationToken.None);
+		var summary = await dashboard.GetSummaryAsync(date, date, CategoryReportView.AsClassified, CancellationToken.None);
 		var spending = await dashboard.GetSpendingByAccountAsync(date, date, CancellationToken.None);
 		var transaction = await transactions.GetByIdAsync(active, CancellationToken.None);
 		var all = await transactions.GetAllAsync(0, 500, SortParams.Default, CancellationToken.None);
