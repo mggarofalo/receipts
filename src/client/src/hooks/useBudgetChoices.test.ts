@@ -14,16 +14,21 @@ vi.mock("@/lib/api-client", () => ({
     PUT: vi.fn(),
     DELETE: vi.fn(),
   },
+  isTimeoutError: () => false,
+  isNetworkError: () => false,
 }));
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }));
 
+import { toast } from "sonner";
 import client from "@/lib/api-client";
+import { createAppQueryClient } from "@/lib/query-client";
 import {
   useSetReceiptBudgetChoices,
   useSetReceiptItemBudgetChoices,
+  useSetReceiptItemEnvelopeAutomatic,
 } from "./useBudgetChoices";
 
 function createWrapper(queryClient: QueryClient) {
@@ -201,5 +206,51 @@ describe("useSetReceiptItemBudgetChoices", () => {
       }),
     ).rejects.toMatchObject({ status: 404 });
     expect(invalidated(queryClient)).toEqual([]);
+  });
+});
+
+describe("useSetReceiptItemEnvelopeAutomatic", () => {
+  it("POSTs Automatic for the item and repairs ledger projections", async () => {
+    (client.POST as Mock).mockResolvedValue({ error: undefined });
+    const queryClient = seededClient();
+    const { result } = renderHook(() => useSetReceiptItemEnvelopeAutomatic(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await result.current.mutateAsync({ itemId: "item-1" });
+
+    expect(client.POST).toHaveBeenCalledWith(
+      "/api/receipt-items/{id}/envelope/automatic",
+      expect.objectContaining({ params: { path: { id: "item-1" } } }),
+    );
+    expect(client.PUT).not.toHaveBeenCalled();
+    expect(invalidated(queryClient)).toEqual([
+      "receiptItems",
+      "receipts",
+      "trips",
+    ]);
+  });
+
+  it("shows the 409 detail and repairs nothing when nothing can be derived", async () => {
+    const detail =
+      "No envelope can be derived: the receipt has no paid-from and the item type has no default.";
+    (client.POST as Mock).mockResolvedValue({
+      error: { status: 409, title: "Conflict", detail },
+    });
+    const queryClient = createAppQueryClient();
+    for (const key of Object.values(projectionKeys))
+      queryClient.setQueryData(key, { cached: true });
+    const { result } = renderHook(() => useSetReceiptItemEnvelopeAutomatic(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(
+      result.current.mutateAsync({ itemId: "item-1" }),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining(detail),
+    );
+    expect(invalidated(queryClient)).toEqual([]);
+    queryClient.clear();
   });
 });

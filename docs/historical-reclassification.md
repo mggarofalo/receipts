@@ -136,6 +136,10 @@ The first undo request must persist its taxonomy revision and immutable reason f
 retries. `Undoing -> Undone` requires all eligible applied rows to have a durable
 undo outcome. Conflicts preserve later work and remain visible.
 
+Apply and undo only fill an item's envelope when it has none; they never move a
+recorded envelope, and an undo does not clear one its apply filled
+([Envelopes and occasions](envelopes.md)).
+
 ## Acceptance still required for persistence
 
 Real PostgreSQL tests must prove atomic assignment/progress commit and rollback,

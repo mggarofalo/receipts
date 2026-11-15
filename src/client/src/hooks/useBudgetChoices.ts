@@ -33,7 +33,11 @@ export function useSetReceiptBudgetChoices() {
   });
 }
 
-/** Null envelope returns the item to automatic; null occasion is none. Pending until refetched. */
+/**
+ * A non-null envelope is a per-item override; null keeps the recorded envelope
+ * (only {@link useSetReceiptItemEnvelopeAutomatic} re-derives it). Null
+ * occasion is none. Pending until refetched.
+ */
 export function useSetReceiptItemBudgetChoices() {
   const queryClient = useQueryClient();
   return useSessionMutation({
@@ -53,6 +57,29 @@ export function useSetReceiptItemBudgetChoices() {
           ...toastErrorPolicy.request,
           params: { path: { id: itemId } },
           body: { envelopeId, occasionId },
+        },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => invalidateDomainChange(queryClient, "receipt-item"),
+  });
+}
+
+/**
+ * Automatic: re-derives the item's envelope once, from the receipt's paid-from,
+ * else its item type's default. When neither resolves the server refuses with
+ * 409, and the toast shows its problem detail. Pending until refetched.
+ */
+export function useSetReceiptItemEnvelopeAutomatic() {
+  const queryClient = useQueryClient();
+  return useSessionMutation({
+    ...toastErrorPolicy.mutation,
+    mutationFn: async ({ itemId }: { itemId: string }) => {
+      const { error } = await client.POST(
+        "/api/receipt-items/{id}/envelope/automatic",
+        {
+          ...toastErrorPolicy.request,
+          params: { path: { id: itemId } },
         },
       );
       if (error) throw error;

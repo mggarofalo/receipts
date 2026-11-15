@@ -3,9 +3,5 @@ using Mediator;
 
 namespace Application.Queries.Core.Ynab;
 
-public enum YnabComparisonCategoryView { AsClassified, CurrentHierarchy }
-
-public record GetReceiptYnabSplitComparisonQuery(
-	Guid ReceiptId,
-	YnabComparisonCategoryView CategoryView = YnabComparisonCategoryView.AsClassified)
-	: IRequest<ReceiptYnabSplitComparisonResult>;
+/// <summary>The expected split uses each item's recorded envelope; it never re-derives one.</summary>
+public record GetReceiptYnabSplitComparisonQuery(Guid ReceiptId) : IRequest<ReceiptYnabSplitComparisonResult>;

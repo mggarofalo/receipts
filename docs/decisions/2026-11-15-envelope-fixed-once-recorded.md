@@ -1,6 +1,6 @@
 # An envelope is fixed once recorded
 
-Date: 2026-11-15. Status: accepted; implementation tracked by RECEIPTS-1124. Tracking: RECEIPTS-1118.
+Date: 2026-11-15. Status: accepted; implemented by RECEIPTS-1124. Tracking: RECEIPTS-1118.
 
 ## Context
 
@@ -57,5 +57,4 @@ The rule is the [envelope-attribution](../../openspec/specs/envelope-attribution
   - warnings on pushed receipts;
   - removing the YNAB split comparison's "current hierarchy" option, which no longer predicts anything (a breaking
     API change).
-- Until then, [Envelopes and occasions](../envelopes.md) describes the current behaviour and points to this
-  decision.
+- RECEIPTS-1124 is implemented; [Envelopes and occasions](../envelopes.md) describes the rule as built.

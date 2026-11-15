@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { installApiMocks, signInAsFixtureUser } from "../fixtures/api-mocks";
 
 for (const width of [1280, 375]) {
-  test(`split preview keeps the recorded push and separates views at ${width}px`, async ({
+  test(`split comparison shows the recorded split without a preview selector at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
@@ -48,17 +48,9 @@ for (const width of [1280, 375]) {
         "**/api/ynab/settings/budget": (route) =>
           route.fulfill({ json: { selectedBudgetId: "budget" } }),
         "**/api/ynab/receipts/r1/split-comparison**": (route) => {
-          const query = new URL(route.request().url()).search;
-          queries.push(query);
-          if (query)
-            return route.fulfill({
-              status: 400,
-              json: { detail: "Preview unavailable" },
-            });
+          queries.push(new URL(route.request().url()).search);
           return route.fulfill({
             json: {
-              categoryView: "asClassified",
-              capturedCurrentRevisionId: null,
               canComputeExpected: true,
               unmappedCategories: [],
               transactionComparisons: [
@@ -86,26 +78,14 @@ for (const width of [1280, 375]) {
     await signInAsFixtureUser(page);
     await page.goto("/receipts/r1", { waitUntil: "domcontentloaded" });
 
-    const view = page.getByRole("combobox", { name: "Expected split view" });
-    await expect(view).toHaveValue("asClassified");
     await expect(page.getByText("Recorded category")).toBeVisible();
-    expect(queries).toContain("");
-    const push = page.getByRole("button", { name: /push to ynab/i });
-    await expect(push).toBeVisible();
-
-    await view.selectOption("currentHierarchy");
     await expect(
-      page.getByText(/Could not load split comparison/),
+      page.getByRole("combobox", { name: "Expected split view" }),
+    ).toHaveCount(0);
+    await expect(page.getByText(/current hierarchy/i)).toHaveCount(0);
+    expect(queries.every((query) => query === "")).toBe(true);
+    await expect(
+      page.getByRole("button", { name: /push to ynab/i }),
     ).toBeVisible();
-    await expect(page.getByText("Recorded category")).toHaveCount(0);
-    expect(queries).toContain("?categoryView=currentHierarchy");
-    await expect(push).toBeVisible();
-    const bounds = await view.boundingBox();
-    expect(bounds).not.toBeNull();
-    expect(bounds!.x).toBeGreaterThanOrEqual(0);
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-
-    await view.selectOption("asClassified");
-    await expect(page.getByText("Recorded category")).toBeVisible();
   });
 }

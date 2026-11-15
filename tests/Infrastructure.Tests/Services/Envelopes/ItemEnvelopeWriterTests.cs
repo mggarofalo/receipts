@@ -12,7 +12,7 @@ namespace Infrastructure.Tests.Services.Envelopes;
 
 /// <summary>
 /// Drives the persistence chokepoints end to end on InMemory: item saves record the envelope and a
-/// classification write (<see cref="EnvelopeWorld.ClassifyAsync"/>) makes default envelopes follow the item type.
+/// classification write (<see cref="EnvelopeWorld.ClassifyAsync"/>) only fills an unresolved envelope.
 /// </summary>
 public class ItemEnvelopeWriterTests
 {
@@ -77,7 +77,7 @@ public class ItemEnvelopeWriterTests
 	}
 
 	[Fact]
-	public async Task Reclassify_DefaultSourcedItem_FollowsNewItemTypeDefault()
+	public async Task Reclassify_DefaultSourcedItem_KeepsRecordedEnvelope()
 	{
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
@@ -89,7 +89,24 @@ public class ItemEnvelopeWriterTests
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
-		actual.EnvelopeId.Should().Be(world.Car);
+		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
+	[Fact]
+	public async Task Reclassify_ToUnclassified_KeepsRecordedEnvelope()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+
+		// Act
+		await world.ClassifyAsync(created.Id, null);
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Food);
 		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
 	}
 
@@ -277,7 +294,7 @@ public class ItemEnvelopeWriterTests
 	}
 
 	[Fact]
-	public async Task Reclassify_HistoricalItemWithoutEnvelope_FollowsNewItemType()
+	public async Task Reclassify_HistoricalItemWithoutEnvelope_IsFilledFromNewItemType()
 	{
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();

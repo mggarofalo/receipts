@@ -6,10 +6,12 @@ using API.Services;
 using Application.Commands.ReceiptItem.BudgetChoices;
 using Application.Commands.ReceiptItem.Create;
 using Application.Commands.ReceiptItem.Delete;
+using Application.Commands.ReceiptItem.EnvelopeAutomatic;
 using Application.Commands.ReceiptItem.Restore;
 using Application.Commands.ReceiptItem.Update;
 using Application.Envelopes;
 using Application.Exceptions;
+using Application.Interfaces.Services;
 using Application.Models;
 using Application.Queries.Core.ReceiptItem;
 using Application.Queries.Core.ReceiptItem.GetReceiptItemSuggestions;
@@ -39,7 +41,11 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 	public const string RouteGetDeleted = "deleted";
 	public const string RouteRestore = "{id}/restore";
 	public const string RouteBudgetChoices = "{id}/budget-choices";
+	public const string RouteEnvelopeAutomatic = "{id}/envelope/automatic";
 	public const string RouteGetSuggestions = "suggestions";
+
+	public const string EnvelopeAutomaticUnresolvableDetail =
+		"No envelope can be derived: the receipt has no paid-from and the item type has no default.";
 
 	[HttpGet("normalization-candidates")]
 	[EndpointSummary("Get bounded advisory product candidates for receipt entry")]
@@ -393,6 +399,23 @@ public class ReceiptItemsController(IMediator mediator, ReceiptItemMapper mapper
 		catch (EnvelopeException ex) when (ex.Status == StatusCodes.Status400BadRequest)
 		{
 			return ApiProblem.BadRequest(ex.Message);
+		}
+
+		await notifier.NotifyUpdated("receipt-item", id);
+		return TypedResults.NoContent();
+	}
+
+	[HttpPost(RouteEnvelopeAutomatic)]
+	[EndpointSummary("Re-derive an item's envelope once")]
+	public async Task<Results<NoContent, NotFound, ConflictProblem>> SetReceiptItemEnvelopeAutomatic([FromRoute] Guid id,
+		CancellationToken cancellationToken = default)
+	{
+		switch (await mediator.Send(new SetReceiptItemEnvelopeAutomaticCommand(id), cancellationToken))
+		{
+			case ItemEnvelopeAutomaticResult.NotFound:
+				return TypedResults.NotFound();
+			case ItemEnvelopeAutomaticResult.Unresolvable:
+				return ApiProblem.Conflict(EnvelopeAutomaticUnresolvableDetail);
 		}
 
 		await notifier.NotifyUpdated("receipt-item", id);

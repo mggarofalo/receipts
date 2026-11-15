@@ -5901,7 +5901,7 @@ paths:
       operationId: SetReceiptItemBudgetChoices
       tags: [ReceiptItems]
       summary: Set an item's envelope override and occasion
-      description: Replaces both choices. An envelope is a per-item override; null returns an overridden item to automatic (the receipt's active paid-from envelope, else its item type's default). A null occasion clears the tag. Keeping an archived choice is allowed.
+      description: Replaces the occasion and, when an envelope is given, records it as a per-item override. A null envelope keeps the recorded envelope and its source; use the Automatic action to re-derive it. A null occasion clears the tag. Keeping an archived choice is allowed.
       security:
         - BearerAuth: []
         - ApiKey: []
@@ -5929,6 +5929,34 @@ paths:
                 $ref: "#/components/schemas/ProblemDetails"
         "404":
           description: Not Found
+
+  /api/receipt-items/{id}/envelope/automatic:
+    post:
+      operationId: SetReceiptItemEnvelopeAutomatic
+      tags: [ReceiptItems]
+      summary: Re-derive an item's envelope once
+      description: Re-derives the item's envelope whatever its current source, from the receipt's active paid-from envelope (source receipt), else its item type's default (source default). The occasion and classification are unchanged. Refuses rather than record an unresolved envelope.
+      security:
+        - BearerAuth: []
+        - ApiKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+        "409":
+          description: No envelope can be derived for the item
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
 
   /api/receipt-items/{id}/restore:
     post:
@@ -9350,9 +9378,8 @@ paths:
       description: >
         Returns the expected YNAB category split computed locally alongside the
         actual state stored in YNAB for any already-pushed transactions. Used by
-        the receipt detail page to validate and preview splits. The default
-        asClassified view uses recorded assignment ancestry; currentHierarchy
-        previews mapping against one captured current taxonomy revision.
+        the receipt detail page to validate and preview splits. The expected
+        split uses each item's recorded envelope.
       security:
         - BearerAuth: []
       parameters:
@@ -9362,13 +9389,6 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: categoryView
-          in: query
-          description: Classification ancestry used for the expected split. Defaults to asClassified.
-          schema:
-            type: string
-            enum: [asClassified, currentHierarchy]
-            default: asClassified
       responses:
         "200":
           description: Split comparison for the receipt
@@ -9376,12 +9396,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReceiptYnabSplitComparisonResponse"
-        "400":
-          description: Invalid category view
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetails"
         "503":
           description: YNAB integration is not configured
 
@@ -15979,7 +15993,7 @@ components:
     EnvelopeSource:
       type: string
       enum: [default, receipt, item, historical]
-      description: "Why an item carries its envelope: its item type's default, the receipt's paid-from envelope, a per-item override, or the historical backfill. Only default-sourced (or unresolved) envelopes follow item-type changes."
+      description: "Where an item's recorded envelope came from: its item type's default (filled when unresolved, or set by Automatic), the receipt's paid-from envelope, a per-item override, or the historical backfill. Provenance only: no source makes an envelope follow later item-type changes."
 
     ItemTypeEnvelopeDefaultResponse:
       type: object
@@ -16019,12 +16033,12 @@ components:
           description: Null is no occasion.
     ReceiptItemBudgetChoicesRequest:
       type: object
-      description: Both choices are replaced; an omitted choice counts as null.
+      description: An omitted choice counts as null. The occasion is replaced; a null envelope keeps the recorded one.
       properties:
         envelopeId:
           type: [string, "null"]
           format: uuid
-          description: A per-item envelope override. Null is automatic.
+          description: A per-item envelope override. Null keeps the recorded envelope; use the Automatic action to re-derive it.
         occasionId:
           type: [string, "null"]
           format: uuid
@@ -16281,15 +16295,8 @@ components:
 
     ReceiptYnabSplitComparisonResponse:
       type: object
-      required: [canComputeExpected, unmappedCategories, transactionComparisons, categoryView]
+      required: [canComputeExpected, unmappedCategories, transactionComparisons]
       properties:
-        categoryView:
-          $ref: "#/components/schemas/ReceiptYnabSplitComparisonResponseCategoryView"
-        capturedCurrentRevisionId:
-          type:
-            - "null"
-            - string
-          format: uuid
         canComputeExpected:
           type: boolean
         expectedUnavailableReason:
@@ -16304,10 +16311,6 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TransactionSplitComparison"
-    ReceiptYnabSplitComparisonResponseCategoryView:
-      type: string
-      enum: [asClassified, currentHierarchy]
-
     YnabMemoSyncResultItem:
       type: object
       required: [localTransactionId, receiptId, outcome]
