@@ -194,7 +194,7 @@ for (const width of [1280, 375]) {
   }) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     await installApiMocks(page, {
-      user: FIXTURE_USER,
+      user: ADMIN_FIXTURE_USER,
       freezeClock: false,
       overrides: {
         "**/api/taxonomy": (route) => route.fulfill({ json: taxonomyFixture }),
@@ -238,7 +238,7 @@ for (const width of [1280, 375]) {
           route.fulfill({ json: { items: [], nextOffset: null } }),
       },
     });
-    await signInAs(page, FIXTURE_USER);
+    await signInAs(page, ADMIN_FIXTURE_USER);
     await page.goto("/classification");
     await expect(page.getByText(/suggestions are unavailable/i)).toBeVisible();
     await page.getByRole("link", { name: "Browse categories" }).click();

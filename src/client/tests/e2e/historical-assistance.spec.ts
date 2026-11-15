@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { installApiMocks, signInAs } from "../fixtures/api-mocks";
+import {
+  ADMIN_FIXTURE_USER,
+  installApiMocks,
+  signInAs,
+} from "../fixtures/api-mocks";
 
 const pollingEvidence = new WeakMap<Page, Array<Record<string, unknown>>>();
 test.beforeEach(async ({ page }) => {
@@ -86,6 +90,7 @@ for (const width of [375, 1280]) {
     let original: Record<string, unknown>;
     let capability = "ready";
     await installApiMocks(page, {
+      user: ADMIN_FIXTURE_USER,
       freezeClock: false,
       overrides: {
         "**/api/historical-reclassifications/groups?*": (route) =>
@@ -128,7 +133,7 @@ for (const width of [375, 1280]) {
         },
       },
     });
-    await signInAs(page);
+    await signInAs(page, ADMIN_FIXTURE_USER);
     await page.goto("/categories/cleanup");
     await page
       .getByRole("checkbox", { name: "Select MILK 2% GAL at Market" })
@@ -174,6 +179,7 @@ for (const width of [375, 1280]) {
     let details = 0;
     let recents = 0;
     await installApiMocks(page, {
+      user: ADMIN_FIXTURE_USER,
       freezeClock: false,
       overrides: {
         "**/api/historical-reclassifications/groups?*": (route) =>
@@ -217,7 +223,7 @@ for (const width of [375, 1280]) {
         },
       },
     });
-    await signInAs(page);
+    await signInAs(page, ADMIN_FIXTURE_USER);
     await page.goto("/categories/cleanup");
     await page.getByLabel("Select visible page").check();
     await page.getByRole("button", { name: "Request suggestions" }).click();

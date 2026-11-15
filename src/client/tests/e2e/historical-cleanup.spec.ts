@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installApiMocks, signInAs } from "../fixtures/api-mocks";
+import {
+  ADMIN_FIXTURE_USER,
+  installApiMocks,
+  signInAs,
+} from "../fixtures/api-mocks";
 
 const group = {
   group: { store: "Market", rawDescription: "MILK 2% GAL", itemCode: null },
@@ -32,7 +36,10 @@ for (const width of [375, 1280]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
-    await installApiMocks(page, { freezeClock: false });
+    await installApiMocks(page, {
+      user: ADMIN_FIXTURE_USER,
+      freezeClock: false,
+    });
     await page.route("**/api/historical-reclassifications/groups?*", (route) =>
       route.fulfill({
         json: { items: groups, totalGroups: groups.length, nextOffset: null },
@@ -41,7 +48,7 @@ for (const width of [375, 1280]) {
     await page.route("**/api/historical-reclassifications?*", (route) =>
       route.fulfill({ json: { items: [], nextOffset: null } }),
     );
-    await signInAs(page);
+    await signInAs(page, ADMIN_FIXTURE_USER);
     await page.goto("/categories", {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
@@ -76,7 +83,9 @@ for (const width of [375, 1280]) {
     });
     await page.getByLabel("Select visible page").check();
     await expect(page.getByText("Selected groups (25/25)")).toBeVisible();
-    await expect(page.getByRole("checkbox", { name: /^Select ITEM / })).toHaveCount(24);
+    await expect(
+      page.getByRole("checkbox", { name: /^Select ITEM / }),
+    ).toHaveCount(24);
     await page.getByLabel("Select visible page").uncheck();
     await expect(page.getByText("Selected groups (25/25)")).toBeHidden();
   });
