@@ -8,6 +8,7 @@ using Application.Commands.Occasion.Delete;
 using Application.Commands.Occasion.Update;
 using Application.Commands.Receipt.BudgetChoices;
 using Application.Commands.ReceiptItem.BudgetChoices;
+using Application.Commands.ReceiptItem.EnvelopeAutomatic;
 using Application.Interfaces.Services;
 using Application.Queries.Core.Envelope;
 using Application.Queries.Core.ItemTypeEnvelopeDefault;
@@ -274,6 +275,25 @@ public class EnvelopeHandlerTests
 
 		// Assert
 		actual.Should().BeTrue();
+	}
+
+	[Theory]
+	[InlineData(ItemEnvelopeAutomaticResult.Applied)]
+	[InlineData(ItemEnvelopeAutomaticResult.NotFound)]
+	[InlineData(ItemEnvelopeAutomaticResult.Unresolvable)]
+	public async Task SetReceiptItemEnvelopeAutomatic_ReturnsTheServiceOutcome(ItemEnvelopeAutomaticResult expected)
+	{
+		// Arrange
+		Guid itemId = Guid.NewGuid();
+		_budgetChoices.Setup(s => s.SetItemAutomaticAsync(itemId, It.IsAny<CancellationToken>())).ReturnsAsync(expected);
+
+		// Act
+		ItemEnvelopeAutomaticResult actual = await new SetReceiptItemEnvelopeAutomaticCommandHandler(_budgetChoices.Object)
+			.Handle(new(itemId), CancellationToken.None);
+
+		// Assert
+		actual.Should().Be(expected);
+		_budgetChoices.Verify(s => s.SetItemAutomaticAsync(itemId, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
 	[Fact]

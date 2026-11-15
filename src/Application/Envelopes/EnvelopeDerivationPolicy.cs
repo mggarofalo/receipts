@@ -29,18 +29,25 @@ public static class EnvelopeDerivationPolicy
 		=> itemOverride is Guid item ? new(item, EnvelopeSource.Item) : stored;
 
 	/// <summary>
-	/// Choosing a per-item envelope overrides whatever was recorded. Returning to automatic re-derives an
-	/// overridden item from the receipt's paid-from or its item-type default; any other item keeps its envelope.
+	/// Choosing a per-item envelope overrides whatever was recorded; no choice keeps the recorded envelope,
+	/// whatever its source. Only <see cref="Automatic"/> returns an item to automatic.
 	/// </summary>
-	public static EnvelopeAssignment AfterOverrideChange(EnvelopeAssignment stored, Guid? itemOverride, Guid? receiptPaidFrom,
-		Guid? itemTypeDefault)
-		=> itemOverride is not null || stored.Source == EnvelopeSource.Item
-			? ForNewItem(itemOverride, receiptPaidFrom, itemTypeDefault)
-			: stored;
+	public static EnvelopeAssignment AfterOverrideChange(EnvelopeAssignment stored, Guid? itemOverride)
+		=> ForEditedItem(stored, itemOverride);
 
-	/// <summary>Only default-sourced or unresolved envelopes follow an item-type change.</summary>
+	/// <summary>
+	/// A person's Automatic re-derives once, whatever the stored source: the receipt's paid-from, else the item
+	/// type's default. An unresolved result is for the caller to refuse, never to record.
+	/// </summary>
+	public static EnvelopeAssignment Automatic(Guid? receiptPaidFrom, Guid? itemTypeDefault)
+		=> ForNewItem(null, receiptPaidFrom, itemTypeDefault);
+
+	/// <summary>
+	/// An item-type change only fills: an unresolved envelope takes the new type's default. A recorded envelope,
+	/// whatever its source, is kept, and so is the stored source when there is no default to fill from.
+	/// </summary>
 	public static EnvelopeAssignment AfterItemTypeChange(EnvelopeAssignment stored, Guid? itemTypeDefault)
-		=> FollowsItemType(stored) ? new(itemTypeDefault, EnvelopeSource.Default) : stored;
+		=> IsUnresolved(stored) && itemTypeDefault is Guid fill ? new(fill, EnvelopeSource.Default) : stored;
 
 	/// <summary>
 	/// Choosing a receipt's paid-from envelope applies it to every item except per-item overrides.
@@ -59,8 +66,7 @@ public static class EnvelopeDerivationPolicy
 		return stored.Source == EnvelopeSource.Receipt ? new(itemTypeDefault, EnvelopeSource.Default) : stored;
 	}
 
-	public static bool FollowsItemType(EnvelopeAssignment stored)
-		=> stored.Source == EnvelopeSource.Default || stored.EnvelopeId is null;
+	public static bool IsUnresolved(EnvelopeAssignment stored) => stored.EnvelopeId is null;
 
 	/// <summary>Default for an item type located in a revision's nodes; unknown or cyclic ancestry stops the walk.</summary>
 	public static Guid? ResolveDefault(Guid? categoryId, IReadOnlyDictionary<Guid, TaxonomyNode> nodes,

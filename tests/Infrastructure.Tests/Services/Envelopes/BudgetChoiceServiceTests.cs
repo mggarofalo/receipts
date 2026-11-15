@@ -1,4 +1,5 @@
 using Application.Envelopes;
+using Application.Interfaces.Services;
 using Application.Taxonomy;
 using Domain.Envelopes;
 using FluentAssertions;
@@ -11,8 +12,9 @@ using Microsoft.Extensions.Options;
 namespace Infrastructure.Tests.Services.Envelopes;
 
 /// <summary>
-/// Explicit receipt and item budget choices on InMemory: unlike ordinary edits, null means automatic
-/// (envelope) or none (occasion), and only new choices must be selectable.
+/// Explicit receipt and item budget choices on InMemory: unlike ordinary edits, a null occasion means none and a
+/// null receipt paid-from is automatic; a null item envelope keeps the recorded one, and Automatic re-derives it.
+/// Only new choices must be selectable.
 /// </summary>
 public class BudgetChoiceServiceTests
 {
@@ -208,7 +210,7 @@ public class BudgetChoiceServiceTests
 	}
 
 	[Fact]
-	public async Task SetItem_NullOnOverride_ReturnsToReceiptPaidFrom()
+	public async Task SetItem_NullOnOverride_KeepsTheOverride()
 	{
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
@@ -220,12 +222,56 @@ public class BudgetChoiceServiceTests
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Item);
+	}
+
+	[Theory]
+	[InlineData(EnvelopeSource.Default)]
+	[InlineData(EnvelopeSource.Receipt)]
+	[InlineData(EnvelopeSource.Item)]
+	[InlineData(EnvelopeSource.Historical)]
+	public async Task SetItem_OccasionOnlyEdit_KeepsTheEnvelopeAndItsSource(EnvelopeSource source)
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		Guid occasion = await AddOccasionAsync(world, isActive: true);
+		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+		await world.SetStoredEnvelopeAsync(created.Id, world.Food, source);
+
+		// Act
+		await Service(world).SetItemChoicesAsync(created.Id, null, occasion, CancellationToken.None);
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.OccasionId.Should().Be(occasion);
+		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeSource.Should().Be(source);
+	}
+
+	// --- Automatic ---
+
+	[Fact]
+	public async Task SetAutomatic_OnOverride_ReturnsToReceiptPaidFrom()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Car);
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Food), world.Groceries);
+
+		// Act
+		ItemEnvelopeAutomaticResult result = await Service(world).SetItemAutomaticAsync(created.Id, CancellationToken.None);
+
+		// Assert
+		result.Should().Be(ItemEnvelopeAutomaticResult.Applied);
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
 		actual.EnvelopeId.Should().Be(world.Car);
 		actual.EnvelopeSource.Should().Be(EnvelopeSource.Receipt);
 	}
 
 	[Fact]
-	public async Task SetItem_NullOnOverrideWithoutPaidFrom_ReturnsToItemTypeDefault()
+	public async Task SetAutomatic_OnOverrideWithoutPaidFrom_ReturnsToItemTypeDefault()
 	{
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
@@ -233,7 +279,25 @@ public class BudgetChoiceServiceTests
 		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
 
 		// Act
-		await Service(world).SetItemChoicesAsync(created.Id, null, null, CancellationToken.None);
+		ItemEnvelopeAutomaticResult result = await Service(world).SetItemAutomaticAsync(created.Id, CancellationToken.None);
+
+		// Assert
+		result.Should().Be(ItemEnvelopeAutomaticResult.Applied);
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
+	[Fact]
+	public async Task SetAutomatic_WhenReceiptPaidFromIsArchived_UsesItemTypeDefault()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Retired);
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
+
+		// Act
+		await Service(world).SetItemAutomaticAsync(created.Id, CancellationToken.None);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
@@ -242,20 +306,99 @@ public class BudgetChoiceServiceTests
 	}
 
 	[Fact]
-	public async Task SetItem_NullOnOverrideWhenReceiptPaidFromIsArchived_ReturnsToItemTypeDefault()
+	public async Task SetAutomatic_DefaultSourcedItem_TakesTheReceiptPaidFrom()
+	{
+		// Arrange: the paid-from is stored directly, so it has not been applied to the item yet.
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Groceries);
+		await using (ApplicationDbContext db = world.Factory.CreateDbContext())
+		{
+			(await db.Receipts.SingleAsync(row => row.Id == receipt.Id)).PaidFromEnvelopeId = world.Car;
+			await db.SaveChangesAsync();
+		}
+
+		// Act
+		ItemEnvelopeAutomaticResult result = await Service(world).SetItemAutomaticAsync(created.Id, CancellationToken.None);
+
+		// Assert
+		result.Should().Be(ItemEnvelopeAutomaticResult.Applied);
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Car);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Receipt);
+	}
+
+	[Theory]
+	[InlineData(EnvelopeSource.Default)]
+	[InlineData(EnvelopeSource.Historical)]
+	public async Task SetAutomatic_RecordedEnvelopeDifferingFromTheDefault_MovesToTheDefault(EnvelopeSource source)
 	{
 		// Arrange
 		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
-		ReceiptEntity receipt = await world.AddReceiptAsync(paidFrom: world.Retired);
-		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id), world.Fuel);
+		await world.SetStoredEnvelopeAsync(created.Id, world.Food, source);
 
 		// Act
-		await Service(world).SetItemChoicesAsync(created.Id, null, null, CancellationToken.None);
+		await Service(world).SetItemAutomaticAsync(created.Id, CancellationToken.None);
 
 		// Assert
 		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
-		actual.EnvelopeId.Should().Be(world.Food);
+		actual.EnvelopeId.Should().Be(world.Car);
 		actual.EnvelopeSource.Should().Be(EnvelopeSource.Default);
+	}
+
+	[Fact]
+	public async Task SetAutomatic_LeavesTheOccasionUnchanged()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		Guid occasion = await AddOccasionAsync(world, isActive: true);
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car), world.Groceries);
+		await Service(world).SetItemChoicesAsync(created.Id, world.Car, occasion, CancellationToken.None);
+
+		// Act
+		await Service(world).SetItemAutomaticAsync(created.Id, CancellationToken.None);
+
+		// Assert
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.OccasionId.Should().Be(occasion);
+		actual.EnvelopeId.Should().Be(world.Food);
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task SetAutomatic_NothingToDerive_IsUnresolvableAndRecordsNothing(bool classified)
+	{
+		// Arrange: Gifts has no default, and an unclassified item has none either.
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+		ReceiptEntity receipt = await world.AddReceiptAsync();
+		ReceiptItemEntity created = await CreateItemAsync(world, EnvelopeWorld.NewItem(receipt.Id, envelopeOverride: world.Car),
+			classified ? world.Gifts : null);
+
+		// Act
+		ItemEnvelopeAutomaticResult result = await Service(world).SetItemAutomaticAsync(created.Id, CancellationToken.None);
+
+		// Assert
+		result.Should().Be(ItemEnvelopeAutomaticResult.Unresolvable);
+		ReceiptItemEntity actual = await world.ReadItemAsync(created.Id);
+		actual.EnvelopeId.Should().Be(world.Car);
+		actual.EnvelopeSource.Should().Be(EnvelopeSource.Item);
+	}
+
+	[Fact]
+	public async Task SetAutomatic_MissingItem_IsNotFound()
+	{
+		// Arrange
+		EnvelopeWorld world = await EnvelopeWorld.CreateAsync();
+
+		// Act
+		ItemEnvelopeAutomaticResult result = await Service(world).SetItemAutomaticAsync(Guid.NewGuid(), CancellationToken.None);
+
+		// Assert
+		result.Should().Be(ItemEnvelopeAutomaticResult.NotFound);
 	}
 
 	[Theory]

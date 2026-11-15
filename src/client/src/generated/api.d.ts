@@ -2252,10 +2252,30 @@ export interface paths {
         get?: never;
         /**
          * Set an item's envelope override and occasion
-         * @description Replaces both choices. An envelope is a per-item override; null returns an overridden item to automatic (the receipt's active paid-from envelope, else its item type's default). A null occasion clears the tag. Keeping an archived choice is allowed.
+         * @description Replaces the occasion and, when an envelope is given, records it as a per-item override. A null envelope keeps the recorded envelope and its source; use the Automatic action to re-derive it. A null occasion clears the tag. Keeping an archived choice is allowed.
          */
         put: operations["SetReceiptItemBudgetChoices"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/receipt-items/{id}/envelope/automatic": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-derive an item's envelope once
+         * @description Re-derives the item's envelope whatever its current source, from the receipt's active paid-from envelope (source receipt), else its item type's default (source default). The occasion and classification are unchanged. Refuses rather than record an unresolved envelope.
+         */
+        post: operations["SetReceiptItemEnvelopeAutomatic"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3860,7 +3880,7 @@ export interface paths {
         };
         /**
          * Get expected vs actual YNAB category split for a receipt
-         * @description Returns the expected YNAB category split computed locally alongside the actual state stored in YNAB for any already-pushed transactions. Used by the receipt detail page to validate and preview splits. The default asClassified view uses recorded assignment ancestry; currentHierarchy previews mapping against one captured current taxonomy revision.
+         * @description Returns the expected YNAB category split computed locally alongside the actual state stored in YNAB for any already-pushed transactions. Used by the receipt detail page to validate and preview splits. The expected split uses each item's recorded envelope.
          */
         get: operations["GetReceiptYnabSplitComparison"];
         put?: never;
@@ -7262,7 +7282,7 @@ export interface components {
             isActive: boolean;
         };
         /**
-         * @description Why an item carries its envelope: its item type's default, the receipt's paid-from envelope, a per-item override, or the historical backfill. Only default-sourced (or unresolved) envelopes follow item-type changes.
+         * @description Where an item's recorded envelope came from: its item type's default (filled when unresolved, or set by Automatic), the receipt's paid-from envelope, a per-item override, or the historical backfill. Provenance only: no source makes an envelope follow later item-type changes.
          * @enum {string}
          */
         EnvelopeSource: "default" | "receipt" | "item" | "historical";
@@ -7293,11 +7313,11 @@ export interface components {
              */
             occasionId?: string | null;
         };
-        /** @description Both choices are replaced; an omitted choice counts as null. */
+        /** @description An omitted choice counts as null. The occasion is replaced; a null envelope keeps the recorded one. */
         ReceiptItemBudgetChoicesRequest: {
             /**
              * Format: uuid
-             * @description A per-item envelope override. Null is automatic.
+             * @description A per-item envelope override. Null keeps the recorded envelope; use the Automatic action to re-derive it.
              */
             envelopeId?: string | null;
             /**
@@ -7412,16 +7432,11 @@ export interface components {
             matches?: null | boolean;
         };
         ReceiptYnabSplitComparisonResponse: {
-            categoryView: components["schemas"]["ReceiptYnabSplitComparisonResponseCategoryView"];
-            /** Format: uuid */
-            capturedCurrentRevisionId?: null | string;
             canComputeExpected: boolean;
             expectedUnavailableReason?: null | string;
             unmappedCategories: string[];
             transactionComparisons: components["schemas"]["TransactionSplitComparison"][];
         };
-        /** @enum {string} */
-        ReceiptYnabSplitComparisonResponseCategoryView: "asClassified" | "currentHierarchy";
         YnabMemoSyncResultItem: {
             /** Format: uuid */
             localTransactionId: string;
@@ -14071,6 +14086,42 @@ export interface operations {
             };
         };
     };
+    SetReceiptItemEnvelopeAutomatic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No envelope can be derived for the item */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
     RestoreReceiptItem: {
         parameters: {
             query?: never;
@@ -17527,10 +17578,7 @@ export interface operations {
     };
     GetReceiptYnabSplitComparison: {
         parameters: {
-            query?: {
-                /** @description Classification ancestry used for the expected split. Defaults to asClassified. */
-                categoryView?: "asClassified" | "currentHierarchy";
-            };
+            query?: never;
             header?: never;
             path: {
                 receiptId: string;
@@ -17546,15 +17594,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReceiptYnabSplitComparisonResponse"];
-                };
-            };
-            /** @description Invalid category view */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ProblemDetails"];
                 };
             };
             /** @description YNAB integration is not configured */

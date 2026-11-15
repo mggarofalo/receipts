@@ -9,11 +9,7 @@ public record ReceiptYnabSplitComparisonResult(
 	bool CanComputeExpected,
 	string? ExpectedUnavailableReason,
 	List<string> UnmappedCategories,
-	List<TransactionSplitComparison> TransactionComparisons)
-{
-	public string CategoryView { get; init; } = "asClassified";
-	public Guid? CapturedCurrentRevisionId { get; init; }
-}
+	List<TransactionSplitComparison> TransactionComparisons);
 
 public record TransactionSplitComparison(
 	Guid LocalTransactionId,

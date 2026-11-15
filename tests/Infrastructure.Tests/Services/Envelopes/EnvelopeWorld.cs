@@ -105,7 +105,7 @@ internal sealed class EnvelopeWorld
 
 	/// <summary>
 	/// Records a classification write the way every assignment chokepoint does: append the assignment, move the
-	/// current pointer and let <see cref="ItemEnvelopeWriter.AfterItemTypeChangeAsync"/> make the envelope follow.
+	/// current pointer and let <see cref="ItemEnvelopeWriter.AfterItemTypeChangeAsync"/> fill an unresolved envelope.
 	/// An item's type changes only through classification; the explicit-intent path locks rows with PostgreSQL SQL,
 	/// so this InMemory world stands in for it.
 	/// </summary>

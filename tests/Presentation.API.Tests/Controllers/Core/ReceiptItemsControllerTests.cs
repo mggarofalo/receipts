@@ -6,10 +6,12 @@ using API.Services;
 using Application.Commands.ReceiptItem.BudgetChoices;
 using Application.Commands.ReceiptItem.Create;
 using Application.Commands.ReceiptItem.Delete;
+using Application.Commands.ReceiptItem.EnvelopeAutomatic;
 using Application.Commands.ReceiptItem.Restore;
 using Application.Commands.ReceiptItem.Update;
 using Application.Envelopes;
 using Application.Exceptions;
+using Application.Interfaces.Services;
 using Application.Models;
 using Application.Queries.Core.ReceiptItem;
 using Domain.Core;
@@ -776,6 +778,91 @@ public class ReceiptItemsControllerTests
 		// Assert
 		Assert.IsType<NotFound>(result.Result);
 		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task SetReceiptItemBudgetChoices_SendsANullEnvelopeThrough_SoTheServiceKeepsTheRecordedOne()
+	{
+		// Arrange
+		Guid id = Guid.NewGuid(), occasion = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(It.IsAny<SetReceiptItemBudgetChoicesCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+
+		// Act
+		await _controller.SetReceiptItemBudgetChoices(id, new ReceiptItemBudgetChoicesRequest { OccasionId = occasion });
+
+		// Assert
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<SetReceiptItemBudgetChoicesCommand>(c => c.ItemId == id && c.EnvelopeId == null && c.OccasionId == occasion),
+			It.IsAny<CancellationToken>()), Times.Once);
+		_mediatorMock.Verify(m => m.Send(It.IsAny<SetReceiptItemEnvelopeAutomaticCommand>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task SetReceiptItemEnvelopeAutomatic_ReturnsNoContentAndNotifies_WhenApplied()
+	{
+		// Arrange
+		Guid id = Guid.NewGuid();
+		_mediatorMock.Setup(m => m.Send(It.Is<SetReceiptItemEnvelopeAutomaticCommand>(c => c.ItemId == id), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(ItemEnvelopeAutomaticResult.Applied);
+
+		// Act
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.SetReceiptItemEnvelopeAutomatic(id);
+
+		// Assert
+		Assert.IsType<NoContent>(result.Result);
+		_notifierMock.Verify(n => n.NotifyUpdated("receipt-item", id), Times.Once);
+	}
+
+	[Fact]
+	public async Task SetReceiptItemEnvelopeAutomatic_ReturnsNotFoundWithoutNotification_WhenItemDoesNotExist()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(It.IsAny<SetReceiptItemEnvelopeAutomaticCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(ItemEnvelopeAutomaticResult.NotFound);
+
+		// Act
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.SetReceiptItemEnvelopeAutomatic(Guid.NewGuid());
+
+		// Assert
+		Assert.IsType<NotFound>(result.Result);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public async Task SetReceiptItemEnvelopeAutomatic_ReturnsConflictProblemWithoutNotification_WhenNothingResolves()
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(It.IsAny<SetReceiptItemEnvelopeAutomaticCommand>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(ItemEnvelopeAutomaticResult.Unresolvable);
+
+		// Act
+		Results<NoContent, NotFound, ConflictProblem> result = await _controller.SetReceiptItemEnvelopeAutomatic(Guid.NewGuid());
+
+		// Assert
+		ConflictProblem conflict = Assert.IsType<ConflictProblem>(result.Result);
+		conflict.Value!.Status.Should().Be(409);
+		conflict.Value.Detail.Should().Be(ReceiptItemsController.EnvelopeAutomaticUnresolvableDetail);
+		_notifierMock.VerifyNoOtherCalls();
+	}
+
+	[Fact]
+	public void SetReceiptItemEnvelopeAutomatic_RequiresTheSameAuthorizationAsBudgetChoices()
+	{
+		// Arrange
+		Type controller = typeof(ReceiptItemsController);
+		System.Reflection.MethodInfo automatic = controller.GetMethod(nameof(ReceiptItemsController.SetReceiptItemEnvelopeAutomatic))!;
+		System.Reflection.MethodInfo budgetChoices = controller.GetMethod(nameof(ReceiptItemsController.SetReceiptItemBudgetChoices))!;
+
+		// Act
+		static string[] Policies(System.Reflection.MemberInfo member) => member
+			.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true)
+			.Cast<Microsoft.AspNetCore.Authorization.AuthorizeAttribute>().Select(a => a.Policy ?? "").ToArray();
+
+		// Assert: the controller-level [Authorize] covers both, and neither opts out or adds a policy.
+		Policies(controller).Should().Equal("");
+		Policies(automatic).Should().Equal(Policies(budgetChoices));
+		automatic.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), true).Should().BeEmpty();
 	}
 
 	[Fact]

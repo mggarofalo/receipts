@@ -196,7 +196,7 @@ public sealed class ClassificationService(IDbContextFactory<ApplicationDbContext
 		long sequence = current == null ? 1 : 1 + await db.Classifications.Where(x => x.Id == current.AssignmentId).Select(x => x.Sequence).SingleAsync(ct);
 		PurchaseClassificationEntity assignment = Append(db, actor, itemId, categoryId, revisionId, current, sequence, operationId,
 			source, reason, clock, legacyCategory, legacySubcategory, legacyResolution);
-		// Every classification write but a restructure appends here, so this is where envelopes follow the item type.
+		// Every classification write but a restructure appends here, so this is where an unresolved envelope is filled.
 		await ItemEnvelopeWriter.AfterItemTypeChangeAsync(db, itemId, categoryId, revisionId, ct);
 		return assignment;
 	}

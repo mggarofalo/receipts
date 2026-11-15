@@ -47,8 +47,8 @@ internal static class ItemEnvelopeWriter
 	}
 
 	/// <summary>
-	/// Records an item's explicit choices: an envelope is a per-item override and null returns the item to
-	/// automatic (the receipt's paid-from, else its item type's default); a null occasion clears the tag.
+	/// Records an item's explicit choices: an envelope is a per-item override and null keeps the recorded
+	/// envelope, whatever its source (only <see cref="ApplyAutomaticAsync"/> re-derives); a null occasion clears the tag.
 	/// </summary>
 	internal static async Task ApplyItemChoicesAsync(ApplicationDbContext db, ReceiptItemEntity item, Guid? envelopeOverride,
 		Guid? occasion, CancellationToken ct)
@@ -59,26 +59,43 @@ internal static class ItemEnvelopeWriter
 			[stored.Source == EnvelopeSource.Item && stored.EnvelopeId == envelopeOverride ? null : envelopeOverride],
 			[occasion != item.OccasionId ? occasion : null], ct);
 		item.OccasionId = occasion;
-		if (envelopeOverride is null && stored.Source != EnvelopeSource.Item)
-		{
-			return;
-		}
-		Guid? paidFrom = null;
-		Guid? itemTypeDefault = null;
-		if (envelopeOverride is null)
-		{
-			paidFrom = (await SelectableReceiptChoicesAsync(db, [item.ReceiptId], ct)).GetValueOrDefault(item.ReceiptId).PaidFrom;
-			if (paidFrom is null && (await CurrentTypesAsync(db, [item.Id], ct)).TryGetValue(item.Id, out var type))
-			{
-				itemTypeDefault = await ResolveDefaultAsync(db, type.CategoryId, type.RevisionId, ct);
-			}
-		}
-		Set(item, EnvelopeDerivationPolicy.AfterOverrideChange(stored, envelopeOverride, paidFrom, itemTypeDefault));
+		Set(item, EnvelopeDerivationPolicy.AfterOverrideChange(stored, envelopeOverride));
 	}
 
 	/// <summary>
-	/// Every classification write passes here: default-sourced or unresolved envelopes follow the
-	/// new item type. The caller saves the tracked item with its assignment.
+	/// A person's Automatic: re-derives the item's envelope once, whatever its source, from the receipt's active
+	/// paid-from, else its current item type's active default. Returns false, recording nothing, when neither resolves.
+	/// </summary>
+	internal static async Task<bool> ApplyAutomaticAsync(ApplicationDbContext db, ReceiptItemEntity item, CancellationToken ct)
+	{
+		(Guid? paidFrom, Guid? itemTypeDefault) = await AutomaticInputsAsync(db, item, ct);
+		EnvelopeAssignment derived = EnvelopeDerivationPolicy.Automatic(paidFrom, itemTypeDefault);
+		if (EnvelopeDerivationPolicy.IsUnresolved(derived))
+		{
+			return false;
+		}
+		Set(item, derived);
+		return true;
+	}
+
+	/// <summary>
+	/// What automatic derives from: the receipt's active paid-from, else the current item type's active default
+	/// (looked up only when there is no paid-from).
+	/// </summary>
+	private static async Task<(Guid? PaidFrom, Guid? ItemTypeDefault)> AutomaticInputsAsync(ApplicationDbContext db,
+		ReceiptItemEntity item, CancellationToken ct)
+	{
+		Guid? paidFrom = (await SelectableReceiptChoicesAsync(db, [item.ReceiptId], ct)).GetValueOrDefault(item.ReceiptId).PaidFrom;
+		if (paidFrom is null && (await CurrentTypesAsync(db, [item.Id], ct)).TryGetValue(item.Id, out var type))
+		{
+			return (null, await ResolveDefaultAsync(db, type.CategoryId, type.RevisionId, ct));
+		}
+		return (paidFrom, null);
+	}
+
+	/// <summary>
+	/// Every classification write passes here, and it only fills: an unresolved envelope takes the new item
+	/// type's default, and a recorded one is never changed. The caller saves the tracked item with its assignment.
 	/// </summary>
 	internal static async Task AfterItemTypeChangeAsync(ApplicationDbContext db, Guid itemId, Guid? categoryId,
 		Guid revisionId, CancellationToken ct)
@@ -86,7 +103,7 @@ internal static class ItemEnvelopeWriter
 		ReceiptItemEntity item = db.ReceiptItems.Local.FirstOrDefault(row => row.Id == itemId)
 			?? await db.ReceiptItems.IgnoreQueryFilters().IgnoreAutoIncludes().SingleAsync(row => row.Id == itemId, ct);
 		EnvelopeAssignment stored = Get(item);
-		if (!EnvelopeDerivationPolicy.FollowsItemType(stored))
+		if (!EnvelopeDerivationPolicy.IsUnresolved(stored))
 		{
 			return;
 		}

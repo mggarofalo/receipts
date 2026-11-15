@@ -25,10 +25,8 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 	ITransactionService transactionService,
 	IYnabEnvelopeMappingService envelopeMappingService,
 	IEnvelopeService envelopeService,
-	IItemTypeEnvelopeDefaultService envelopeDefaultService,
 	IYnabAccountMappingService accountMappingService,
 	IYnabBudgetSelectionService budgetSelectionService,
-		ITaxonomyService taxonomyService,
 	IYnabSyncRecordService syncRecordService,
 	IYnabApiClient ynabApiClient,
 	IYnabSplitCalculator splitCalculator,
@@ -42,12 +40,12 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 		Domain.Core.Receipt? receipt = await receiptService.GetByIdAsync(request.ReceiptId, cancellationToken);
 		if (receipt is null)
 		{
-			return Unavailable("Receipt not found.", request.CategoryView);
+			return Unavailable("Receipt not found.");
 		}
 
 		if (receipt.TaxAmount.Currency != Currency.USD)
 		{
-			return Unavailable("Only USD receipts are supported for YNAB sync.", request.CategoryView);
+			return Unavailable("Only USD receipts are supported for YNAB sync.");
 		}
 
 		PagedResult<Domain.Core.ReceiptItem> itemsResult = await receiptItemService.GetByReceiptIdAsync(
@@ -56,12 +54,12 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 
 		if (items.Count == 0)
 		{
-			return Unavailable("Receipt has no items.", request.CategoryView);
+			return Unavailable("Receipt has no items.");
 		}
 
 		if (items.Any(i => i.TotalAmount.Currency != Currency.USD))
 		{
-			return Unavailable("Only USD receipts are supported for YNAB sync.", request.CategoryView);
+			return Unavailable("Only USD receipts are supported for YNAB sync.");
 		}
 
 		PagedResult<Domain.Core.Adjustment> adjResult = await adjustmentService.GetByReceiptIdAsync(
@@ -74,45 +72,28 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 
 		if (transactions.Count == 0)
 		{
-			return Unavailable("Receipt has no transactions.", request.CategoryView);
+			return Unavailable("Receipt has no transactions.");
 		}
 
 		string? budgetId = await budgetSelectionService.GetSelectedBudgetIdAsync(cancellationToken);
 		if (string.IsNullOrEmpty(budgetId))
 		{
-			return Unavailable("No YNAB budget selected.", request.CategoryView);
+			return Unavailable("No YNAB budget selected.");
 		}
 
 		// Envelope mapping check — surface unmapped list as structured data
 		List<YnabEnvelopeMappingDto> allMappings = await envelopeMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
 		Dictionary<Guid, string> envelopeNames = (await envelopeService.GetAllAsync(null, cancellationToken))
 			.ToDictionary(envelope => envelope.Id, envelope => envelope.Name);
-		TaxonomyRevision? currentRevision = null;
-		if (request.CategoryView == YnabComparisonCategoryView.CurrentHierarchy)
-		{
-			currentRevision = await taxonomyService.ReadAsync(null, cancellationToken);
-			if (currentRevision is null)
-			{
-				return Unavailable("Current taxonomy is unavailable.", request.CategoryView);
-			}
-		}
-		Dictionary<Guid, Guid> defaults = currentRevision is null ? [] : (await envelopeDefaultService.GetAllAsync(cancellationToken))
-			.ToDictionary(row => row.CategoryId, row => row.EnvelopeId);
 		(Dictionary<string, string> categoryToYnabId, List<string> unmapped) =
-			currentRevision is null
-				? YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings, envelopeNames)
-				: YnabReceiptMappingResolver.ResolveCurrent(items, budgetId, allMappings, envelopeNames, currentRevision, defaults);
+			YnabReceiptMappingResolver.Resolve(items, budgetId, allMappings, envelopeNames);
 		if (unmapped.Count > 0)
 		{
 			return new ReceiptYnabSplitComparisonResult(
 				CanComputeExpected: false,
 				ExpectedUnavailableReason: "Unmapped envelopes found.",
 				UnmappedCategories: unmapped,
-				TransactionComparisons: [])
-			{
-				CategoryView = ViewName(request.CategoryView),
-				CapturedCurrentRevisionId = currentRevision?.Id,
-			};
+				TransactionComparisons: []);
 		}
 
 		List<YnabAccountMappingDto> accountMappingsList = await accountMappingService.GetByBudgetIdAsync(budgetId, cancellationToken);
@@ -127,7 +108,7 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 
 		if (unmappedAccountIds.Count > 0)
 		{
-			return Unavailable("Some transaction accounts are not mapped to YNAB accounts.", request.CategoryView, currentRevision?.Id);
+			return Unavailable("Some transaction accounts are not mapped to YNAB accounts.");
 		}
 
 		ReceiptWithItems receiptWithItems = new()
@@ -146,7 +127,7 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 		catch (InvalidOperationException ex)
 		{
 			logger.LogWarning(ex, "Split calculator failed for receipt {ReceiptId}", request.ReceiptId);
-			return Unavailable(ex.Message, request.CategoryView, currentRevision?.Id);
+			return Unavailable(ex.Message);
 		}
 
 		// Load YNAB categories so we can render friendly names alongside IDs.
@@ -255,27 +236,15 @@ public class GetReceiptYnabSplitComparisonQueryHandler(
 			CanComputeExpected: true,
 			ExpectedUnavailableReason: null,
 			UnmappedCategories: [],
-			TransactionComparisons: comparisons)
-		{
-			CategoryView = ViewName(request.CategoryView),
-			CapturedCurrentRevisionId = currentRevision?.Id,
-		};
+			TransactionComparisons: comparisons);
 	}
 
-	private static string ViewName(YnabComparisonCategoryView view) =>
-		view == YnabComparisonCategoryView.CurrentHierarchy ? "currentHierarchy" : "asClassified";
-
-	private static ReceiptYnabSplitComparisonResult Unavailable(
-		string reason, YnabComparisonCategoryView view, Guid? revisionId = null) =>
+	private static ReceiptYnabSplitComparisonResult Unavailable(string reason) =>
 		new(
 			CanComputeExpected: false,
 			ExpectedUnavailableReason: reason,
 			UnmappedCategories: [],
-			TransactionComparisons: [])
-		{
-			CategoryView = ViewName(view),
-			CapturedCurrentRevisionId = revisionId,
-		};
+			TransactionComparisons: []);
 
 	/// <summary>
 	/// Compares two split lists as unordered multisets of (categoryId, milliunits) pairs.

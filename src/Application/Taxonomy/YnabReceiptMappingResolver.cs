@@ -1,8 +1,5 @@
-using Application.Envelopes;
 using Application.Models.Ynab;
 using Domain.Core;
-using Domain.Envelopes;
-using Domain.Taxonomy;
 
 namespace Application.Taxonomy;
 
@@ -16,25 +13,6 @@ public static class YnabReceiptMappingResolver
 		IReadOnlyList<ReceiptItem> items, string budgetId, IReadOnlyList<YnabEnvelopeMappingDto> mappings,
 		IReadOnlyDictionary<Guid, string> envelopeNames)
 		=> ResolveEnvelopes(items.Select(item => (item, item.EnvelopeId)), budgetId, mappings, envelopeNames);
-
-	/// <summary>
-	/// Preview under the current item-type defaults: envelopes that follow the item type are re-derived
-	/// from the current tree; receipt, item and historical envelopes are kept, as a save would keep them.
-	/// </summary>
-	public static (Dictionary<string, string> ItemTargets, List<string> Unmapped) ResolveCurrent(
-		IReadOnlyList<ReceiptItem> items, string budgetId, IReadOnlyList<YnabEnvelopeMappingDto> mappings,
-		IReadOnlyDictionary<Guid, string> envelopeNames, TaxonomyRevision revision, IReadOnlyDictionary<Guid, Guid> defaults)
-	{
-		Dictionary<Guid, TaxonomyNode> nodes = revision.Nodes.GroupBy(node => node.Id).ToDictionary(group => group.Key, group => group.First());
-		return ResolveEnvelopes(items.Select(item =>
-		{
-			EnvelopeAssignment stored = new(item.EnvelopeId, item.EnvelopeSource);
-			return (item, EnvelopeDerivationPolicy.FollowsItemType(stored)
-				? EnvelopeDerivationPolicy.AfterItemTypeChange(stored,
-					EnvelopeDerivationPolicy.ResolveDefault(item.CurrentClassification?.CategoryId, nodes, defaults)).EnvelopeId
-				: stored.EnvelopeId);
-		}), budgetId, mappings, envelopeNames);
-	}
 
 	public static string ItemKey(Guid itemId) => $"item:{itemId:D}";
 
