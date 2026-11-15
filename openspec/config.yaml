@@ -1,0 +1,63 @@
+schema: spec-driven
+
+context: |
+  Receipts is a single-owner app (receipts -> categorisation -> YNAB) that the
+  owner deploys from released GHCR images. Agents have no access to the deployed
+  environment; the only view of production data is the owner's portable SQLite
+  backup.
+  - A change that adds an EF migration or moves data is proven by a local upgrade
+    rehearsal: latest released container + restored backup, upgraded in place to
+    the new image, then the app and the database inspected. Telling the owner to
+    "take a backup first" is not a substitute.
+  - Rehearsals share one Colima VM, run one at a time, and start only after an
+    explicit go from the owner or orchestrator.
+
+  The owner will not hand-label or bulk-approve items (~17k purchase links are
+  legacy/automatic). Do not design features, ground truth or evaluations that
+  only work once many mappings are approved; approvals must accrue as a side
+  effect of normal entry.
+
+  Item type and funding envelope are separate concepts (docs/envelopes.md).
+  Historical category labels predate that split and often record the envelope,
+  so they are a poor answer key for what an item is. Ask the owner before
+  changing categorisation UX.
+
+  Every change is tracked by a non-epic Plane issue (RECEIPTS-<n>). Name the
+  OpenSpec change `receipts-<n>-<slug>` so change, branch and PR line up.
+
+  A PR that breaks openapi/spec.yaml needs the `breaking-changes-allowed` label
+  AND `!` in its Conventional Commit title; the release bump is computed from `!`,
+  not from the label.
+
+  Branching, commits, the error contract, generated client types and the
+  tests-in-the-same-PR rule are in AGENTS.md and docs/; they are binding and not
+  repeated here.
+
+rules:
+  proposal:
+    - Open with the Plane issue id (RECEIPTS-<n>) and state what is out of scope.
+    - Say whether openapi/spec.yaml changes and whether the change is compatible; mark an incompatible contract change **BREAKING**.
+    - Say whether the change adds an EF migration or a data backfill.
+  specs:
+    - Use a flat layout, `specs/<capability>/spec.md`, named for a durable behaviour (e.g. `receipt-capture`), never for a layer, PR or task.
+    - Where a docs/ page already covers the capability, reuse its vocabulary instead of coining new names for existing concepts.
+    - HTTP error scenarios name the status code; a reasoned 4xx returns a problem document with the reason in `detail`.
+  design:
+    - Name the Clean Architecture layer (Domain / Application / Infrastructure / Presentation) that owns each new piece.
+    - For a schema or data change, the Migration Plan covers what happens to existing rows, the local upgrade rehearsal, the `Down` rollback (and whether the previous release can run against the new schema), and a `docs/migrations/<migration-id>.md` note.
+    - A decision that should outlast the change, or that reverses one in docs/decisions/, gets a new dated ADR there (`YYYY-MM-DD-<slug>.md`); never silently override an accepted decision.
+  tasks:
+    - Put refactoring tasks (behaviour unchanged, tests still green) before tasks that change behaviour.
+    - Put openapi/spec.yaml edits before the endpoint implementation that follows them.
+    - For a migration or data change, add a checkpoint task "CI green; report ready for rehearsal and wait for the go", then a separate rehearsal task; do not fold either into implementation tasks.
+    - For a **BREAKING** change, add a task to apply the `breaking-changes-allowed` label and put `!` in the PR title before merge.
+
+operations:
+  apply:
+    guidance:
+      - Rehearsals use the one shared Colima profile; never create or delete a profile. Isolate with distinct compose project names, ports and volumes.
+      - If main gained a migration after this branch was cut, rebase, rebuild the newest migration's Designer `BuildTargetModel` from the model snapshot (or regenerate the migration), and rerun the Postgres gate (`dotnet run scripts/run-prerequisite-tests.cs -- postgres`) before pushing; build, unit tests and HasPendingModelChanges do not catch this.
+  archive:
+    guidance:
+      - Archive on the change's branch as the last commit before squash-merge, after every task (including any rehearsal) is done, so code and specs land in one commit; main only accepts PRs, so archiving after merge would need a second PR.
+      - Before archiving, confirm each ADR or docs/migrations note the design called for exists.

@@ -32,6 +32,13 @@ If a PR looks like a blocker, report it and stop — do not close it.
 
 Conventional Commits: `<type>(<scope>): <description>`. Enforced by `commit-msg` hook and CI PR title check. See **[docs/development.md](docs/development.md#commit-convention)** for types, scopes, and config.
 
+### Breaking API changes
+
+The **API Breaking Changes** CI gate (`scripts/check-breaking.mjs`) fails any PR that makes an incompatible change to `openapi/spec.yaml`. When the break is intended, do both:
+
+- Apply the `breaking-changes-allowed` label to the PR. This skips the gate.
+- Put `!` in the PR title (`<type>(<scope>)!: <description>`). The squash commit inherits the title, and the release bump is computed from `!` / `BREAKING CHANGE`, not from the label. A labelled PR without `!` makes the next release propose too small a bump.
+
 ### OpenAPI
 
 Spec-first workflow — edit `openapi/spec.yaml`, lint, build, check drift. See **[docs/api-guidelines.md](docs/api-guidelines.md)** for full details.
