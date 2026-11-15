@@ -13,7 +13,7 @@
   - clearing a type keeps the envelope.
 
   Verify the policy tests pass.
-- [ ] 2.2 Update `ItemEnvelopeWriter.AfterItemTypeChangeAsync` and its comment, plus the hook comment in `ClassificationService`. Rewrite the tests that encode "follows the type":
+- [x] 2.2 Update `ItemEnvelopeWriter.AfterItemTypeChangeAsync` and its comment, plus the hook comment in `ClassificationService`. Rewrite the tests that encode "follows the type":
   - `ItemEnvelopeWriterTests.Reclassify_DefaultSourcedItem_FollowsNewItemTypeDefault`;
   - `ClassificationTests.Envelopes`;
   - `CategoryAssistanceAutoWriterTests.Envelopes`;
