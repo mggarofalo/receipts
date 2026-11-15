@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <!-- Keep in sync with the Aspire.Hosting.* versions pinned inline in Receipts.AppHost.csproj. -->
-    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.1.3" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="13.6.5" />
     <PackageVersion Include="Asp.Versioning.Mvc" Version="8.1.1" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.3" />
@@ -36,16 +36,16 @@
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.5" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.3" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.3" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.3" />
-    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.3" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.1.0" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
     <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.24.3" />
     <PackageVersion Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.14" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
@@ -64,8 +64,8 @@
       OpenTelemetry.Exporter.OpenTelemetryProtocol → GHSA-4625-4j76-fww9, GHSA-mr8r-92fq-pj8p,
       GHSA-q834-8qmm-v933.
     -->
-    <PackageVersion Include="OpenTelemetry.Api" Version="1.15.3" />
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Api" Version="1.17.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
     <!-- Pinned for security: GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf (RECEIPTS-680). Forced
          into Infrastructure.csproj via a direct PackageReference so CPM resolves the patched
          transitive. Bumped again for GHSA-cvvh-rhrc-wg4q, GHSA-23rf-6693-g89p, GHSA-8q5v-6pqq-x66h,
@@ -75,18 +75,16 @@
 
     <!--
       Transitive security pins (RECEIPTS-828). None of these is referenced
-      directly; they arrive via EF Core's SQLite provider, ASP.NET Core's
-      OpenAPI package and Aspire respectively, and are held here by
+      directly; they arrive via EF Core's SQLite provider and ASP.NET Core's
+      OpenAPI package respectively, and are held here by
       CentralPackageTransitivePinningEnabled above. Each patch stays within the
       package's current major line, so none is a breaking upgrade. Drop a pin
       once the parent dependency ships a patched version on its own.
         SQLitePCLRaw.lib.e_sqlite3 → GHSA-2m69-gcr7-jv3q (vulnerable <= 2.1.11)
         Microsoft.OpenApi         → GHSA-v5pm-xwqc-g5wc (patched in 2.7.5)
-        MessagePack               → GHSA-hv8m-jj95-wg3x and GHSA-qhrr-8q5h-9q3h (2.5.303)
     -->
     <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.12" />
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
-    <PackageVersion Include="MessagePack" Version="2.5.303" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />

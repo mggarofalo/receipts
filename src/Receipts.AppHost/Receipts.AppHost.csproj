@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.1.3">
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -6,6 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>b5ec2e0d-4615-427e-9fdc-7c109cb3902a</UserSecretsId>
+    <!--
+      ASPIRE010 (new in 13.6) flags that the SDK defaults AspireUseCliBundle to
+      false. This AppHost runs on the DCP and dashboard from its NuGet packages,
+      as it did before 13.6, so the warning carries no action for us.
+    -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,17 +21,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.1.3" />
-    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.1.3" />
-    <!--
-      Pinned for security: GHSA-hv8m-jj95-wg3x and GHSA-qhrr-8q5h-9q3h, patched in 2.5.303 (RECEIPTS-986).
-      MessagePack arrives transitively through Aspire.Hosting. This project pins
-      versions inline rather than opting into central package management, so the
-      CentralPackageTransitivePinningEnabled pin in Directory.Packages.props does
-      not reach it and a direct reference is needed. Drop this once Aspire ships
-      a patched MessagePack of its own.
-    -->
-    <PackageReference Include="MessagePack" Version="2.5.303" />
+    <PackageReference Include="Aspire.Hosting.JavaScript" Version="13.6.5" />
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.6.5" />
   </ItemGroup>
 
 </Project>
