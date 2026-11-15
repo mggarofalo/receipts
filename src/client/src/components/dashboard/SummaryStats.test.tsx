@@ -12,13 +12,30 @@ const mockUseDashboardSummary = vi.mocked(useDashboardSummary);
 const dateRange = { startDate: "2024-01-01", endDate: "2024-01-31" };
 
 describe("SummaryStats", () => {
+  it("requests the summary in the given category view", () => {
+    mockUseDashboardSummary.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+    } as ReturnType<typeof useDashboardSummary>);
+
+    renderWithQueryClient(
+      <SummaryStats dateRange={dateRange} categoryView="currentHierarchy" />,
+    );
+    expect(mockUseDashboardSummary).toHaveBeenCalledWith(
+      dateRange,
+      "currentHierarchy",
+    );
+  });
+
   it("renders loading state", () => {
     mockUseDashboardSummary.mockReturnValue({
       data: undefined,
       isLoading: true,
     } as ReturnType<typeof useDashboardSummary>);
 
-    renderWithQueryClient(<SummaryStats dateRange={dateRange} />);
+    renderWithQueryClient(
+      <SummaryStats dateRange={dateRange} categoryView="asClassified" />,
+    );
     expect(screen.getByText("Total receipts")).toBeInTheDocument();
     expect(screen.getByText("Total spent")).toBeInTheDocument();
     expect(screen.getByText("Avg trip")).toBeInTheDocument();
@@ -37,7 +54,9 @@ describe("SummaryStats", () => {
       isLoading: false,
     } as ReturnType<typeof useDashboardSummary>);
 
-    renderWithQueryClient(<SummaryStats dateRange={dateRange} />);
+    renderWithQueryClient(
+      <SummaryStats dateRange={dateRange} categoryView="asClassified" />,
+    );
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.getByText("$1,234.56")).toBeInTheDocument();
     expect(screen.getByText("$29.39")).toBeInTheDocument();
@@ -57,7 +76,9 @@ describe("SummaryStats", () => {
       isLoading: false,
     } as ReturnType<typeof useDashboardSummary>);
 
-    renderWithQueryClient(<SummaryStats dateRange={dateRange} />);
+    renderWithQueryClient(
+      <SummaryStats dateRange={dateRange} categoryView="asClassified" />,
+    );
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 });

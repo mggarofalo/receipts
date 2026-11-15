@@ -427,7 +427,7 @@ describe("first successful connection catch-up", () => {
     const startGate = deferred();
     sdk.plans.push(() => startGate.promise);
     queryClient.setDefaultOptions({ queries: { retry: false, staleTime: Infinity } });
-    queryClient.setQueryData(["dashboard", "summary", undefined, undefined], { totalSpent: 10 });
+    queryClient.setQueryData(["dashboard", "summary", "asClassified", undefined, undefined], { totalSpent: 10 });
     queryClient.setQueryData(["dashboard", "earliest-receipt-year"], { year: 2026 });
     queryClient.setQueryData(["users", "list"], { data: [] });
     queryClient.setQueryData(["similarItems", "bread"], []);

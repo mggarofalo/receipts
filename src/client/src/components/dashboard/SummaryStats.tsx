@@ -1,9 +1,11 @@
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import type { DateRange } from "@/hooks/useDashboard";
+import type { CategoryReportView } from "@/lib/report-params";
 import { StatCard } from "./StatCard";
 
 interface SummaryStatsProps {
   dateRange: DateRange;
+  categoryView: CategoryReportView;
   className?: string;
 }
 
@@ -15,8 +17,12 @@ function formatCurrency(value: number | string | undefined): string {
   }).format(num);
 }
 
-export function SummaryStats({ dateRange, className }: SummaryStatsProps) {
-  const { data, isLoading } = useDashboardSummary(dateRange);
+export function SummaryStats({
+  dateRange,
+  categoryView,
+  className,
+}: SummaryStatsProps) {
+  const { data, isLoading } = useDashboardSummary(dateRange, categoryView);
 
   return (
     <div className={`kpis ${className ?? ""}`}>

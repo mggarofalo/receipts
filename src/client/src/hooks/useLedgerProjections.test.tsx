@@ -111,7 +111,7 @@ function ItemViews({ remote = false }: { remote?: boolean }) {
   const update = useUpdateReceiptItem();
   return (
     <>
-      <SummaryStats dateRange={{}} />
+      <SummaryStats dateRange={{}} categoryView="asClassified" />
       <output aria-label="Report discrepancy">
         {report.data?.totalDiscrepancy}
       </output>

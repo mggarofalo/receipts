@@ -99,7 +99,7 @@ public class DashboardCategoryReportingTests
 		Assign(db, AddItem(db, receipt.Id, "Legacy favourite"), revision, null);
 		await db.SaveChangesAsync();
 
-		var summary = await new DashboardService(factory).GetSummaryAsync(receipt.Date, receipt.Date, CancellationToken.None);
+		var summary = await new DashboardService(factory).GetSummaryAsync(receipt.Date, receipt.Date, CategoryReportView.CurrentHierarchy, CancellationToken.None);
 
 		summary.MostUsedCategory.Should().Be(new NameCountResult("Food", 3));
 	}
@@ -125,12 +125,45 @@ public class DashboardCategoryReportingTests
 		await db.SaveChangesAsync();
 		DashboardService service = new(factory);
 
-		var tie = await service.GetSummaryAsync(tied.Date, tied.Date, CancellationToken.None);
-		var none = await service.GetSummaryAsync(untyped.Date, untyped.Date, CancellationToken.None);
+		var tie = await service.GetSummaryAsync(tied.Date, tied.Date, CategoryReportView.CurrentHierarchy, CancellationToken.None);
+		var none = await service.GetSummaryAsync(untyped.Date, untyped.Date, CategoryReportView.CurrentHierarchy, CancellationToken.None);
 
 		tie.MostUsedCategory.Should().Be(new NameCountResult("Alpha", 1));
 		none.TotalReceipts.Should().Be(1);
 		none.MostUsedCategory.Should().Be(new NameCountResult(null, 0));
+	}
+
+	[Fact]
+	public async Task Summary_MostUsedCategory_FollowsTheSelectedView()
+	{
+		var factory = DbContextHelpers.CreateInMemoryContextFactory();
+		await using var db = factory.CreateDbContext();
+		var receipt = ReceiptEntityGenerator.Generate();
+		receipt.Date = new(2020, 3, 1);
+		db.Receipts.Add(receipt);
+		Guid recorded = Guid.NewGuid(), current = Guid.NewGuid();
+		Guid grocery = Guid.NewGuid(), snacks = Guid.NewGuid(), household = Guid.NewGuid();
+		db.TaxonomyHeads.Add(new() { Id = 1, RevisionId = current });
+		// Snacks was under Grocery when the items were classified, and has since moved to the root.
+		db.TaxonomyNodes.AddRange(
+			new() { RevisionId = recorded, CategoryId = grocery, Name = "Grocery" },
+			new() { RevisionId = recorded, CategoryId = snacks, ParentId = grocery, Name = "Snacks" },
+			new() { RevisionId = recorded, CategoryId = household, Name = "Household" },
+			new() { RevisionId = current, CategoryId = grocery, Name = "Grocery" },
+			new() { RevisionId = current, CategoryId = snacks, Name = "Snacks" },
+			new() { RevisionId = current, CategoryId = household, Name = "Household" });
+		foreach (Guid category in new[] { snacks, snacks, snacks, household, household })
+		{
+			Assign(db, AddItem(db, receipt.Id, "Legacy"), recorded, category);
+		}
+		await db.SaveChangesAsync();
+		DashboardService service = new(factory);
+
+		var asClassified = await service.GetSummaryAsync(receipt.Date, receipt.Date, CategoryReportView.AsClassified, CancellationToken.None);
+		var currentHierarchy = await service.GetSummaryAsync(receipt.Date, receipt.Date, CategoryReportView.CurrentHierarchy, CancellationToken.None);
+
+		asClassified.MostUsedCategory.Should().Be(new NameCountResult("Grocery", 3));
+		currentHierarchy.MostUsedCategory.Should().Be(new NameCountResult("Snacks", 3));
 	}
 
 	private static ReceiptItemEntity AddItem(ApplicationDbContext db, Guid receiptId, string legacyCategory)

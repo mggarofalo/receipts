@@ -2,6 +2,7 @@ using API.Controllers.Aggregates;
 using API.Generated.Dtos;
 using API.Http;
 using Application.Models.Dashboard;
+using Application.Models.Reports;
 using Application.Queries.Aggregates.Dashboard;
 using FluentAssertions;
 using Mediator;
@@ -147,6 +148,40 @@ public class DashboardControllerTests
 
 		// Assert
 		await act.Should().ThrowAsync<Exception>();
+	}
+
+	[Theory]
+	[InlineData(null, CategoryReportView.AsClassified)]
+	[InlineData("asClassified", CategoryReportView.AsClassified)]
+	[InlineData("currentHierarchy", CategoryReportView.CurrentHierarchy)]
+	public async Task GetDashboardSummary_PassesSelectedCategoryView(string? categoryView, CategoryReportView expected)
+	{
+		// Arrange
+		_mediatorMock.Setup(m => m.Send(It.IsAny<GetDashboardSummaryQuery>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new DashboardSummaryResult(0, 0m, 0m, new NameCountResult(null, 0), new NameCountResult(null, 0)));
+
+		// Act
+		Results<Ok<DashboardSummaryResponse>, BadRequestProblem> result =
+			await _controller.GetDashboardSummary(null, null, categoryView: categoryView);
+
+		// Assert
+		Assert.IsType<Ok<DashboardSummaryResponse>>(result.Result);
+		_mediatorMock.Verify(m => m.Send(
+			It.Is<GetDashboardSummaryQuery>(q => q.CategoryView == expected),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task GetDashboardSummary_ReturnsBadRequest_ForUnknownCategoryView()
+	{
+		// Act
+		Results<Ok<DashboardSummaryResponse>, BadRequestProblem> result =
+			await _controller.GetDashboardSummary(null, null, categoryView: "latest");
+
+		// Assert
+		BadRequestProblem badResult = Assert.IsType<BadRequestProblem>(result.Result);
+		badResult.Value!.Detail.Should().Be("categoryView must be asClassified or currentHierarchy");
+		_mediatorMock.Verify(m => m.Send(It.IsAny<GetDashboardSummaryQuery>(), It.IsAny<CancellationToken>()), Times.Never);
 	}
 
 	#endregion
