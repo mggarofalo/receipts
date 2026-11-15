@@ -12,7 +12,7 @@ public sealed record ApprovedMappingCandidate(Guid ItemId, HistoricalGroupKey So
 // Null availability/exclusion facts mean unknown, not an affirmative eligibility decision.
 public sealed record ApprovedMappingCurrent(Guid ItemId, HistoricalGroupKey Source, Guid ItemRevision,
 		Guid ReceiptRevision, PurchaseClassification? Assignment, Guid? AssignmentId,
-		bool? Available, bool? LeaveAsIs, bool? Suppressed, string? LegacyCategory, string? LegacySubcategory,
+		bool? Available, bool? LeaveAsIs, bool? Suppressed,
 		Guid TaxonomyRevisionId, Guid? MappingHeadId, CategoryMappingRevision? Mapping,
 		IReadOnlyList<TaxonomyNode>? TaxonomyNodes);
 
@@ -29,7 +29,6 @@ public static class ApprovedMappingApplicationPolicy
 				|| candidate.AssignmentId != current.AssignmentId || current.AssignmentId != current.Assignment?.Id
 				|| (current.Assignment != null && current.Assignment.ReceiptItemId != current.ItemId)
 				|| current.Available != true || current.LeaveAsIs != false || current.Suppressed != false
-				|| !string.IsNullOrWhiteSpace(current.LegacyCategory) || !string.IsNullOrWhiteSpace(current.LegacySubcategory)
 				|| OrganizationEffectPolicy.Eligibility(current.Assignment, true, false, false) != OrganizationEligibility.Eligible
 				|| candidate.MappingRevisionId == Guid.Empty || current.MappingHeadId != candidate.MappingRevisionId
 				|| current.Mapping?.Id != candidate.MappingRevisionId || candidate.TaxonomyRevisionId == Guid.Empty

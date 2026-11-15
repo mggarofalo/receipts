@@ -229,8 +229,6 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 							   receipt.Location,
 							   item.Description,
 							   Code = item.ReceiptItemCode,
-							   item.Category,
-							   item.Subcategory,
 							   Live = item.DeletedAt == null && receipt.DeletedAt == null
 						   }).ToListAsync(ct);
 		var assignments = await (from current in db.CurrentClassifications.AsNoTracking()
@@ -241,9 +239,8 @@ public sealed class OrganizationDiscoveryStore(IDbContextFactory<ApplicationDbCo
 			.Where(x => x.RunId == run.Id && ids.Contains(x.ItemId)).ToDictionaryAsync(x => x.ItemId, ct);
 		var factsById = facts.ToDictionary(x => x.Id);
 		// A null legacy observation is not a deliberate manual clear. Preserve every other
-		// assignment and raw label; discovery still grants no authority to apply an effect.
-		var candidatesById = facts.Where(x => x.Live && EligibleAssignment(assignments.GetValueOrDefault(x.Id)) &&
-	string.IsNullOrWhiteSpace(x.Category) && string.IsNullOrWhiteSpace(x.Subcategory)).ToDictionary(x => x.Id);
+		// assignment; discovery still grants no authority to apply an effect.
+		var candidatesById = facts.Where(x => x.Live && EligibleAssignment(assignments.GetValueOrDefault(x.Id))).ToDictionary(x => x.Id);
 		Guid[] candidateIds = candidatesById.Keys.ToArray();
 		// Two correlated existence checks produce a bounded set of IDs in one round trip.
 		HashSet<Guid> suppressed = (await db.Database.SqlQuery<Guid>($"""

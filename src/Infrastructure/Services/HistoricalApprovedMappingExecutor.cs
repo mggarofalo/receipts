@@ -82,7 +82,6 @@ internal sealed class HistoricalApprovedMappingExecutor(
 				item.DeletedAt == null && receipt.DeletedAt == null && item.ReceiptId == row.ReceiptId &&
 				item.NormalizationRevision == row.ItemRevision && receipt.NormalizationRevision == row.ReceiptRevision &&
 				receipt.Location == row.Store && item.Description == row.RawDescription && item.ReceiptItemCode == row.ItemCode &&
-				string.IsNullOrWhiteSpace(item.Category) && string.IsNullOrWhiteSpace(item.Subcategory) &&
 				assignment?.Id == row.ExpectedAssignmentId && eligibleAssignment && head.RevisionId == operation.TaxonomyRevisionId &&
 				resolution.Disposition == "approved" && resolution.MappingRevisionId == row.ApprovedMappingRevisionId &&
 				resolution.CategoryId == row.TargetCategoryId && resolution.CategoryId.HasValue && resolution.ApprovalTaxonomyRevisionId.HasValue;

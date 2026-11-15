@@ -1158,7 +1158,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 		row.SecondStageInputTokens.Should().BeNull(); row.SecondStageOutputTokens.Should().BeNull();
 	}
 
-	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description, int dailyLimit = 100)
+	private async Task<(string Actor, Guid ReceiptId, Guid ItemId, Guid Taxonomy, Guid CategoryId, CategoryAssistanceSettings Settings)> SeedAsync(string description, int dailyLimit = 100, string? legacyLabel = null)
 	{
 		string actor = "assistance-dispatch-" + Guid.NewGuid();
 		Guid receiptId = Guid.NewGuid(), itemId = Guid.NewGuid(), categoryId = Guid.NewGuid();
@@ -1195,7 +1195,7 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 				Id = itemId,
 				ReceiptId = receiptId,
 				Description = description,
-				Category = "",
+				Category = legacyLabel ?? "",
 				UnitPriceCurrency = Currency.USD,
 				TotalAmountCurrency = Currency.USD
 			});
@@ -1208,6 +1208,20 @@ public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
 			await tx.CommitAsync();
 		}
 		return (actor, receiptId, itemId, taxonomy, categoryId, settings);
+	}
+
+	[Fact]
+	public async Task StoredLegacyLabelDoesNotKeepAnUntypedItemFromDispatch()
+	{
+		var seed = await SeedAsync("labelled source " + Guid.NewGuid(), legacyLabel: "Groceries");
+		try
+		{
+			var store = Dispatch();
+			var work = await store.ClaimQueuedAsync(default);
+			work.Should().NotBeNull();
+			(await store.TryStartDispatchAsync(work!, Ready, DateTimeOffset.UtcNow, default)).Should().NotBeNull();
+		}
+		finally { await DisableAsync(seed.Actor); }
 	}
 
 	[Fact]

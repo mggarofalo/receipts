@@ -231,8 +231,7 @@ public sealed class CategoryAssistanceReadStore(IDbContextFactory<ApplicationDbC
 		var receipt = await db.Receipts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == row.ReceiptId, ct);
 		if (item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null ||
 			receipt.DeletedAt != null || item.NormalizationRevision != row.ItemRevision ||
-			receipt.NormalizationRevision != row.ReceiptRevision ||
-						marker.Evidence == "post_consent_no_choice_save" && (!string.IsNullOrWhiteSpace(item.Category) || !string.IsNullOrWhiteSpace(item.Subcategory)))
+			receipt.NormalizationRevision != row.ReceiptRevision)
 		{
 			return false;
 		}

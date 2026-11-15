@@ -113,14 +113,14 @@ public sealed partial class OrganizationDiscoveryTests
 	}
 
 	[Fact]
-	public async Task ManualNullLegacyDispositionPreferenceAndDeletedSourcesRemainProtectedAndUnchanged()
+	public async Task ManualNullDispositionPreferenceAndDeletedSourcesRemainProtectedAndLabelsDoNot()
 	{
 		var fixture = await server.CreateIsolatedAsync();
 		try
 		{
 			Guid receipt = Guid.NewGuid();
 			var items = Enumerable.Range(0, 6).Select(n => Item(receipt, Guid.NewGuid(), $"Source {n}")).ToArray();
-			items[1].Category = "Legacy category";
+			items[1].Category = "Groceries"; // A stored label alone protects nothing.
 			await Seed(fixture, items);
 			await using var db = fixture.CreateDbContext();
 			var head = await db.TaxonomyHeads.SingleAsync();
@@ -136,8 +136,9 @@ public sealed partial class OrganizationDiscoveryTests
 			var before = await db.ReceiptItems.IgnoreQueryFilters().AsNoTracking().OrderBy(x => x.Id).ToListAsync();
 			Guid run = await Start(fixture); await Drain(fixture, run, 3);
 			var manifest = await db.OrganizationItems.ToDictionaryAsync(x => x.ItemId);
-			foreach (var item in items.Take(4)) { manifest[item.Id].State.Should().Be("protected"); manifest[item.Id].SourceId.Should().BeNull(); }
+			foreach (var item in new[] { items[0], items[2], items[3] }) { manifest[item.Id].State.Should().Be("protected"); manifest[item.Id].SourceId.Should().BeNull(); }
 			manifest[items[4].Id].State.Should().Be("unavailable");
+			manifest[items[1].Id].State.Should().Be("observed");
 			manifest[items[5].Id].State.Should().Be("observed");
 			manifest[items[0].Id].ExpectedAssignmentId.Should().Be(manualNull);
 			manifest[items[0].Id].PreviousCategoryId.Should().BeNull();

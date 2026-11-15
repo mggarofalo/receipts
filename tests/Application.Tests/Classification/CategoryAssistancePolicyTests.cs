@@ -112,7 +112,7 @@ public class CategoryAssistancePolicyTests
 		CategoryAssistanceEligibility eligible = Unknown with { Classification = CategoryAssistancePolicy.ClassificationState(observed) };
 		Assert.Equal(CategoryAssistanceClassificationState.UnresolvedObservation, eligible.Classification);
 		Assert.Equal(CategoryAssistanceRoute.Suggest, CategoryAssistancePolicy.Route(eligible, true));
-		// Null legacy category alone does not prove enrollment: dirty/ambiguous labels or untouched history remain excluded.
+		// Null legacy category alone does not prove enrollment: untouched history without save evidence remains excluded.
 		Assert.Equal(CategoryAssistanceRoute.Skip, CategoryAssistancePolicy.Route(eligible with { IsEligibleUnknown = false }, true));
 		Assert.Equal(CategoryAssistanceClassificationState.ManualChoice, CategoryAssistancePolicy.ClassificationState(Assignment("manual", null)));
 		Assert.Equal(CategoryAssistanceClassificationState.ProtectedAssignment, CategoryAssistancePolicy.ClassificationState(Assignment("legacy_write", Guid.NewGuid(), "resolved_path")));

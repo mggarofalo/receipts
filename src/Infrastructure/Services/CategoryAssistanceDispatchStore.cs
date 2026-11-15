@@ -393,8 +393,7 @@ public sealed class CategoryAssistanceDispatchStore(IDbContextFactory<Applicatio
 		var item = await db.ReceiptItems.AsNoTracking().SingleOrDefaultAsync(x => x.Id == marker.ReceiptItemId, ct);
 		var receipt = await db.Receipts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == marker.ReceiptId, ct);
 		if (marker.Evidence is not ("post_consent_no_choice_save" or "explicit_history_request") || item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null || receipt.DeletedAt != null
-	|| item.NormalizationRevision != marker.ItemRevision || receipt.NormalizationRevision != marker.ReceiptRevision
-				|| marker.Evidence == "post_consent_no_choice_save" && (!string.IsNullOrWhiteSpace(item.Category) || !string.IsNullOrWhiteSpace(item.Subcategory)))
+	|| item.NormalizationRevision != marker.ItemRevision || receipt.NormalizationRevision != marker.ReceiptRevision)
 		{
 			return false;
 		}

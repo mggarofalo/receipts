@@ -19,15 +19,17 @@ public sealed partial class ClassificationTests
 	private HistoricalApprovedMappingExecutor ApprovedExecutor() => new(new Factory(fixture), TimeProvider.System,
 		Options.Create(new ClassificationOptions { WritesEnabled = true }));
 
-	private async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync(int extraItems = 0)
+	private async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync(int extraItems = 0, string? legacyLabel = null)
 	{
 		var seed = await HistoricalSeedAsync();
+		// The seed purchase shares the group; a person's choice keeps it out so only the new items are captured.
+		await Service().AssignAsync(Actor, seed.Item, new(seed.Root, seed.Revision, seed.Assignment, Guid.NewGuid(), "Fixture choice"));
 		var group = (await HistoricalRequest(seed.Item, seed.Revision, seed.Root)).Groups.Single().Group;
 		await using var db = fixture.CreateDbContext();
 		var original = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
 		var item = ReceiptItemEntityGenerator.Generate(original.ReceiptId);
 		item.Description = original.Description; item.ReceiptItemCode = original.ReceiptItemCode;
-		item.Category = ""; item.Subcategory = null;
+		item.Category = legacyLabel ?? ""; item.Subcategory = legacyLabel == null ? null : "Dairy";
 		var items = new List<Infrastructure.Entities.Core.ReceiptItemEntity> { item };
 		for (int n = 0; n < extraItems; n++)
 		{
@@ -65,6 +67,22 @@ public sealed partial class ClassificationTests
 		await using var db = fixture.CreateDbContext();
 		var row = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == captured.Request.OperationId);
 		row.AppliedAssignmentId.Should().Be(history.Items.First().Id);
+	}
+
+	[Fact]
+	public async Task ApprovedMappingCapturesAndAppliesToAnUntypedItemWithStoredLabels()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorStoredLabelCore();
+	}
+	private async Task ApprovedExecutorStoredLabelCore()
+	{
+		var captured = await CaptureExecutableAsync(legacyLabel: "Groceries");
+		var result = await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
+		result.Applied.Should().Be(1);
+		var history = await Service().HistoryAsync(captured.Item, null, 10);
+		history.Items.First().Source.Should().Be("approved_mapping");
+		history.Items.First().CategoryId.Should().Be(captured.Category);
 	}
 
 	[Fact]
