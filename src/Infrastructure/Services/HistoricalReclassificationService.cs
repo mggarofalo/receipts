@@ -255,11 +255,20 @@ public sealed class HistoricalReclassificationService(IDbContextFactory<Applicat
 	public Task<HistoricalProgress> ApplyChunkAsync(string actor, Guid id, int limit, CancellationToken ct = default) =>
 		RunChunkAsync(actor, id, null, limit, ct);
 
-	public async Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default)
+	public Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
+		UndoChunkAsync(actor, id, command, limit, automaticOnly: false, ct);
+
+	public Task<HistoricalProgress> UndoAutomaticChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default) =>
+		UndoChunkAsync(actor, id, command, limit, automaticOnly: true, ct);
+
+	private async Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit,
+		bool automaticOnly, CancellationToken ct)
 	{
 		ArgumentNullException.ThrowIfNull(command);
 		await using var db = await factory.CreateDbContextAsync(ct);
 		var operation = await OwnedAsync(db, actor, id, false, ct);
+		if (automaticOnly && !IsAutomatic(operation.Kind))
+		{ throw new TaxonomyException(403, "Only an Admin can undo a cleanup."); }
 		Guid? generation = IsAutomatic(operation.Kind)
 			? await db.CategoryAssistanceSettings.AsNoTracking().Select(x => (Guid?)x.RestoreGeneration).SingleAsync(ct) : null;
 		return await RunChunkAsync(actor, id, command, limit, ct, operation.Kind, generation);

@@ -7540,6 +7540,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     HistoricalReclassifications_SetDisposition: {
@@ -7575,6 +7582,13 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7667,6 +7681,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     HistoricalReclassifications_Preview: {
@@ -7706,6 +7727,13 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7769,6 +7797,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -7825,6 +7860,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -7872,6 +7914,13 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7941,6 +7990,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Not Found */
             404: {
                 headers: {
@@ -7994,6 +8050,13 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8062,6 +8125,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Administrator role required to undo a cleanup */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
             };
             /** @description Not Found */
             404: {
@@ -8174,6 +8246,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     CategoryAssistance_EnrollHistorical: {
@@ -8265,6 +8344,13 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Administrator role required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

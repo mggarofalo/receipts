@@ -93,6 +93,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
   /api/historical-reclassifications/groups/disposition:
     put:
       operationId: HistoricalReclassifications_SetDisposition
@@ -120,6 +122,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
         '409':
           description: Conflict
           content:
@@ -182,6 +186,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
     post:
       operationId: HistoricalReclassifications_Preview
       security: [{BearerAuth: []}, {ApiKey: []}]
@@ -220,6 +226,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
         '404':
           description: Not Found
           content:
@@ -265,6 +273,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
         '404':
           description: Not Found
           content:
@@ -303,6 +313,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
         '404':
           description: Not Found
           content:
@@ -360,6 +372,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
         '404':
           description: Not Found
           content:
@@ -417,6 +431,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
         '404':
           description: Not Found
           content:
@@ -462,6 +478,8 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required
         '404':
           description: Not Found
           content:
@@ -519,6 +537,12 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
         '401':
           description: Authentication required
+        '403':
+          description: Administrator role required to undo a cleanup
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: Not Found
           content:
@@ -614,6 +638,8 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
         "401": { description: Authentication required }
+        '403':
+          description: Administrator role required
   /api/category-assistance/historical-requests/{operationId}:
     get:
       tags: [CategoryAssistance]
@@ -634,6 +660,8 @@ paths:
             application/problem+json:
               schema: { $ref: "#/components/schemas/ProblemDetails" }
         "401": { description: Authentication required }
+        '403':
+          description: Administrator role required
         "404":
           description: Request unavailable to this actor
           content:

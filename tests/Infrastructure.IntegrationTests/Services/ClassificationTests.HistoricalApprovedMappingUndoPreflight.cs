@@ -1,5 +1,6 @@
 using System.Net;
 using Application.Taxonomy;
+using Common;
 using Domain.Taxonomy;
 using FluentAssertions;
 using Microsoft.AspNetCore.TestHost;
@@ -29,6 +30,8 @@ public sealed partial class ClassificationTests
 		await using var app = await HistoricalHttpHostAsync();
 		using var client = app.GetTestClient();
 		client.DefaultRequestHeaders.Add("X-Test-Actor", Actor);
+		// Automatic activity and its undo stay open to a non-Admin owner.
+		client.DefaultRequestHeaders.Add("X-Test-Role", AppRoles.User);
 		string route = $"/api/historical-reclassifications/{captured.Request.OperationId}/undo";
 		if (http)
 		{

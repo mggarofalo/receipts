@@ -193,13 +193,15 @@ export default function ClassificationWorkspace() {
         <Link className="underline" to="/categories">
           Browse categories
         </Link>
-        <Link className="underline" to="/categories/cleanup">
-          Clean up history
-        </Link>
         {isAdmin() && (
-          <Link className="underline" to="/admin/category-assistance">
-            Assistance settings
-          </Link>
+          <>
+            <Link className="underline" to="/categories/cleanup">
+              Clean up history
+            </Link>
+            <Link className="underline" to="/admin/category-assistance">
+              Assistance settings
+            </Link>
+          </>
         )}
       </nav>
       <AutomaticClassificationActivity />

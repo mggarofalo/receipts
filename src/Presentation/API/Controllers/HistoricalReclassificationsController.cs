@@ -2,6 +2,7 @@ using System.Security.Claims;
 using API.Http;
 using Application.Taxonomy;
 using Asp.Versioning;
+using Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -28,6 +29,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpGet("groups")]
 	[EndpointSummary("Browse live exact-source historical purchase groups")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public async Task<Results<Ok<HistoricalGroupPage>, BadRequestProblem>> Groups(
 		[FromQuery] int offset = 0, [FromQuery] int limit = 25, [FromQuery(Name = "q")] string? search = null,
 		[FromQuery] bool conflictsOnly = false, [FromQuery] bool migratedBroadOnly = false,
@@ -47,6 +50,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpGet]
 	[EndpointSummary("List own recent historical operations for resumption")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public Task<Results<Ok<HistoricalOperationPage>, BadRequestProblem>> List(
 			[FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default) =>
 			offset < 0 || limit is < 1 or > 25
@@ -60,6 +65,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpPut("groups/disposition")]
 	[EndpointSummary("Set own exact-source review disposition with compare-and-set version")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public async Task<Results<Ok<HistoricalDispositionRecord>, BadRequestProblem, ConflictProblem>> SetDisposition(
 			[FromBody] HistoricalDispositionRequest body, CancellationToken ct)
 	{
@@ -72,6 +79,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpPost]
 	[EndpointSummary("Capture an exact historical classification preview")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public Task<Results<Ok<HistoricalProgress>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Preview(
 			[FromBody] HistoricalPreviewBody body, CancellationToken ct) => Run(async () =>
 	{
@@ -91,6 +100,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpGet("{id:guid}")]
 	[EndpointSummary("Read historical classification progress")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public Task<Results<Ok<HistoricalProgress>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Read(
 			Guid id, CancellationToken ct) => Run(async () =>
 			id == Guid.Empty ? ApiProblem.BadRequest("Operation ID is required.") :
@@ -98,6 +109,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpGet("{id:guid}/summary")]
 	[EndpointSummary("Read own captured historical operation choices and progress")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public async Task<Results<Ok<HistoricalOperationSummary>, BadRequestProblem, NotFoundProblem>> Summary(
 			Guid id, CancellationToken ct)
 	{
@@ -109,6 +122,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpGet("{id:guid}/items")]
 	[EndpointSummary("Read paged frozen item evidence and outcomes")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public Task<Results<Ok<HistoricalItemPage>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Items(
 			Guid id, [FromQuery] int offset = 0, [FromQuery] int limit = 100, CancellationToken ct = default) => RunItems(async () =>
 			id == Guid.Empty || offset < 0 || limit is < 1 or > HistoricalReclassificationPolicy.MaximumChunkSize
@@ -117,6 +132,8 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpPost("{id:guid}/apply")]
 	[EndpointSummary("Apply the next bounded preview chunk")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public Task<Results<Ok<HistoricalProgress>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Apply(
 			Guid id, [FromBody] HistoricalChunkBody body, CancellationToken ct) => Run(async () =>
 			id == Guid.Empty || body.Limit is < 1 or > HistoricalReclassificationPolicy.MaximumChunkSize
@@ -125,20 +142,42 @@ public sealed class HistoricalReclassificationsController(IHistoricalOperationSe
 
 	[HttpPost("{id:guid}/cancel")]
 	[EndpointSummary("Cancel pending historical classification work")]
+	[Authorize(Policy = "RequireAdmin")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public Task<Results<Ok<HistoricalProgress>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Cancel(
 			Guid id, CancellationToken ct) => Run(async () =>
 			id == Guid.Empty ? ApiProblem.BadRequest("Operation ID is required.") :
 			TypedResults.Ok(await service.CancelAsync(Actor(), id, ct)));
 
+	// Shared with automatic activity: anyone may undo their own automatic entry, only an Admin a cleanup.
 	[HttpPost("{id:guid}/undo")]
 	[EndpointSummary("Conditionally undo the next bounded applied chunk")]
-	public Task<Results<Ok<HistoricalProgress>, BadRequestProblem, NotFoundProblem, ConflictProblem>> Undo(
-			Guid id, [FromBody] HistoricalUndoBody body, CancellationToken ct) => Run(async () =>
-			id == Guid.Empty || body.TaxonomyRevisionId == Guid.Empty || string.IsNullOrWhiteSpace(body.Reason) ||
-			body.Reason.Contains('\0') || body.Limit is < 1 or > HistoricalReclassificationPolicy.MaximumChunkSize
-					? ApiProblem.BadRequest("Operation ID, current taxonomy revision, reason and chunk limit between 1 and 100 are required.")
-					: TypedResults.Ok(await service.UndoChunkAsync(Actor(), id,
-							new(body.TaxonomyRevisionId, body.Reason), body.Limit, ct)));
+	public async Task<Results<Ok<HistoricalProgress>, BadRequestProblem, ForbiddenProblem, NotFoundProblem, ConflictProblem>> Undo(
+			Guid id, [FromBody] HistoricalUndoBody body, CancellationToken ct)
+	{
+		if (id == Guid.Empty || body.TaxonomyRevisionId == Guid.Empty || string.IsNullOrWhiteSpace(body.Reason) ||
+				body.Reason.Contains('\0') || body.Limit is < 1 or > HistoricalReclassificationPolicy.MaximumChunkSize)
+		{ return ApiProblem.BadRequest("Operation ID, current taxonomy revision, reason and chunk limit between 1 and 100 are required."); }
+		HistoricalUndoCommand command = new(body.TaxonomyRevisionId, body.Reason);
+		try
+		{
+			return TypedResults.Ok(User.IsInRole(AppRoles.Admin)
+					? await service.UndoChunkAsync(Actor(), id, command, body.Limit, ct)
+					: await service.UndoAutomaticChunkAsync(Actor(), id, command, body.Limit, ct));
+		}
+		catch (TaxonomyException error)
+		{
+			return error.Status switch
+			{
+				403 => new ForbiddenProblem(error.Message, "admin_required"),
+				404 => ApiProblem.NotFound(error.Message),
+				409 => ApiProblem.Conflict(error.Message, error.Extensions),
+				_ => ApiProblem.BadRequest(error.Message)
+			};
+		}
+		catch (ArgumentException error) { return ApiProblem.BadRequest(error.Message); }
+		catch (InvalidOperationException error) { return ApiProblem.Conflict(error.Message); }
+	}
 
 	private string Actor() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
 

@@ -36,4 +36,6 @@ public interface IHistoricalOperationService
 	Task<HistoricalProgress> ApplyChunkAsync(string actor, Guid id, int limit, CancellationToken ct = default);
 	Task<HistoricalProgress> CancelAsync(string actor, Guid id, CancellationToken ct = default);
 	Task<HistoricalProgress> UndoChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default);
+	/// <summary>Undoes only an automatic operation the actor owns; any other kind is refused with 403.</summary>
+	Task<HistoricalProgress> UndoAutomaticChunkAsync(string actor, Guid id, HistoricalUndoCommand command, int limit, CancellationToken ct = default);
 }

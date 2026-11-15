@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Application.Taxonomy;
+using Common;
 using FluentAssertions;
 using Infrastructure.Entities.CategoryAssistance;
 using Infrastructure.IntegrationTests.Fixtures;
@@ -53,6 +54,8 @@ public sealed partial class ClassificationTests
 		await using var app = await HistoricalHttpHostAsync(backgroundMappings: true);
 		using var client = app.GetTestClient();
 		client.DefaultRequestHeaders.Add("X-Test-Actor", Actor);
+		// Automatic activity and its undo stay open to a non-Admin owner.
+		client.DefaultRequestHeaders.Add("X-Test-Role", AppRoles.User);
 		const string route = "/api/historical-reclassifications";
 		JsonElement activity = default;
 		using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));

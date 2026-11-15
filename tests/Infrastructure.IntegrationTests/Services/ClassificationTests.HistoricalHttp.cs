@@ -28,7 +28,8 @@ public sealed partial class ClassificationTests
 		{
 			string actor = Request.Headers["X-Test-Actor"].ToString();
 			if (actor.Length == 0) { return Task.FromResult(AuthenticateResult.NoResult()); }
-			ClaimsIdentity identity = new([new(ClaimTypes.NameIdentifier, actor), new(ClaimTypes.Role, AppRoles.User)], Scheme.Name);
+			string role = Request.Headers["X-Test-Role"].ToString() is { Length: > 0 } requested ? requested : AppRoles.Admin;
+			ClaimsIdentity identity = new([new(ClaimTypes.NameIdentifier, actor), new(ClaimTypes.Role, role)], Scheme.Name);
 			return Task.FromResult(AuthenticateResult.Success(new(new ClaimsPrincipal(identity), Scheme.Name)));
 		}
 	}
@@ -181,6 +182,51 @@ public sealed partial class ClassificationTests
 		client.DefaultRequestHeaders.Add("X-Test-Actor", "stranger");
 		await HistoricalJson(await client.GetAsync(operation), HttpStatusCode.NotFound);
 		await HistoricalJson(await client.GetAsync(operation + "/items"), HttpStatusCode.NotFound);
+	}
+
+	[Fact]
+	public async Task HistoricalHttpCleanupIsAdminOnly()
+	{
+		var seed = await HistoricalSeedAsync();
+		var intent = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
+		await using WebApplication app = await HistoricalHttpHostAsync();
+		using HttpClient client = app.GetTestClient();
+		const string route = "/api/historical-reclassifications";
+		object body = new
+		{
+			intent.OperationId,
+			intent.TaxonomyRevisionId,
+			intent.Reason,
+			groups = intent.Groups.Select(x => new { group = x.Group, x.TargetCategoryId }).ToArray()
+		};
+		client.DefaultRequestHeaders.Add("X-Test-Actor", Actor);
+		await HistoricalJson(await client.PostAsync(route, HistoricalBody(body)));
+		await HistoricalJson(await client.PostAsync($"{route}/{intent.OperationId}/apply", HistoricalBody(new { limit = 1 })));
+		client.DefaultRequestHeaders.Add("X-Test-Role", AppRoles.User);
+		string operation = $"{route}/{intent.OperationId}";
+		HttpResponseMessage[] refused =
+		[
+			await client.PostAsync(route, HistoricalBody(body)),
+			await client.GetAsync(route),
+			await client.GetAsync(route + "/groups"),
+			await client.PutAsync(route + "/groups/disposition", HistoricalBody(new { })),
+			await client.GetAsync(operation),
+			await client.GetAsync(operation + "/summary"),
+			await client.GetAsync(operation + "/items"),
+			await client.PostAsync(operation + "/apply", HistoricalBody(new { limit = 1 })),
+			await client.PostAsync(operation + "/cancel", null),
+		];
+		refused.Should().OnlyContain(x => x.StatusCode == HttpStatusCode.Forbidden);
+		// Undo is shared with automatic activity, so it refuses a cleanup with a reasoned 403.
+		JsonElement forbidden = await HistoricalJson(await client.PostAsync(operation + "/undo",
+				HistoricalBody(new { taxonomyRevisionId = seed.Revision, reason = "Restore", limit = 1 })), HttpStatusCode.Forbidden);
+		forbidden.GetProperty("code").GetString().Should().Be("admin_required");
+		await HistoricalJson(await client.GetAsync(route + "/activity"));
+		await using (var db = fixture.CreateDbContext())
+		{
+			(await db.HistoricalOperations.AsNoTracking().SingleAsync(x => x.Id == intent.OperationId)).State
+				.Should().Be(Application.Taxonomy.HistoricalOperationState.Completed);
+		}
 	}
 
 	[Fact]

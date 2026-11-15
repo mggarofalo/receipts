@@ -412,9 +412,11 @@ export default function Taxonomy() {
         <span aria-current="page" className="font-semibold">
           Browse categories
         </span>
-        <Link className="underline" to="/categories/cleanup">
-          Clean up history
-        </Link>
+        {isAdmin() && (
+          <Link className="underline" to="/categories/cleanup">
+            Clean up history
+          </Link>
+        )}
       </nav>
       <PageHead
         title="Categories"

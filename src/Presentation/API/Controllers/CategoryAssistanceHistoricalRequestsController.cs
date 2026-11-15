@@ -11,7 +11,7 @@ namespace API.Controllers;
 
 [ApiVersion("1.0")]
 [ApiController]
-[Authorize]
+[Authorize(Policy = "RequireAdmin")]
 [Route("api/category-assistance/historical-requests")]
 [ProducesResponseType(StatusCodes.Status401Unauthorized)]
 public sealed class CategoryAssistanceHistoricalRequestsController(
@@ -37,6 +37,7 @@ public sealed class CategoryAssistanceHistoricalRequestsController(
 
 	[HttpGet("{operationId:guid}")]
 	[EndpointSummary("Read own historical assistance enrollment progress")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public async Task<Results<Ok<CategoryAssistanceHistoricalProgress>, BadRequestProblem,
 		NotFoundProblem>> Get(Guid operationId, CancellationToken ct)
 	{
@@ -51,6 +52,7 @@ public sealed class CategoryAssistanceHistoricalRequestsController(
 
 	[HttpGet]
 	[EndpointSummary("List own recent historical assistance requests")]
+	[ProducesResponseType(StatusCodes.Status403Forbidden)]
 	public async Task<Results<Ok<CategoryAssistanceHistoricalPage>, BadRequestProblem>> List(
 		[FromQuery] int offset = 0, [FromQuery] int limit = 25, CancellationToken ct = default)
 	{

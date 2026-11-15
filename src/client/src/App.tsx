@@ -58,7 +58,14 @@ export const routeConfig = [
           { path: "/cards", element: <Cards /> },
           { path: "/taxonomy", element: <CategoryRedirect preserveRevision /> },
           { path: "/categories", element: <Taxonomy /> },
-          { path: "/categories/cleanup", element: <HistoricalCleanup /> },
+          {
+            path: "/categories/cleanup",
+            element: (
+              <AdminRoute>
+                <HistoricalCleanup />
+              </AdminRoute>
+            ),
+          },
           { path: "/classification", element: <ClassificationWorkspace /> },
           {
             path: "/admin/category-assistance",

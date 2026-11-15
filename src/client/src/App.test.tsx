@@ -63,7 +63,14 @@ vi.mock("@/pages/settings/YnabSettings", () => ({
   default: () => <div data-testid="page-ynab-settings">YnabSettings</div>,
 }));
 vi.mock("@/pages/RestructureCategories", () => ({
-  default: () => <div data-testid="page-restructure">RestructureCategories</div>,
+  default: () => (
+    <div data-testid="page-restructure">RestructureCategories</div>
+  ),
+}));
+vi.mock("@/pages/HistoricalCleanup", () => ({
+  default: () => (
+    <div data-testid="page-historical-cleanup">HistoricalCleanup</div>
+  ),
 }));
 vi.mock("@/pages/BackupRestore", () => ({
   default: () => <div data-testid="page-backup-restore">BackupRestore</div>,
@@ -103,7 +110,9 @@ vi.mock("@/components/ProtectedRoute", () => ({
 }));
 
 vi.mock("@/components/AdminRoute", () => ({
-  AdminRoute: ({ children }: { children: ReactNode }) => <>{children}</>,
+  AdminRoute: ({ children }: { children: ReactNode }) => (
+    <div data-testid="admin-route">{children}</div>
+  ),
 }));
 
 vi.mock("@/components/ui/sonner", () => ({
@@ -164,6 +173,12 @@ describe("App router", () => {
   it('renders RestructureCategories page at "/admin/restructure" route', async () => {
     renderRoute("/admin/restructure");
     expect(await screen.findByTestId("page-restructure")).toBeInTheDocument();
+  });
+
+  it('guards HistoricalCleanup at "/categories/cleanup" as Admin-only', async () => {
+    renderRoute("/categories/cleanup");
+    const page = await screen.findByTestId("page-historical-cleanup");
+    expect(screen.getByTestId("admin-route")).toContainElement(page);
   });
 
   it("renders NotFound for deprecated redirect routes", async () => {

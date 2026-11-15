@@ -146,6 +146,9 @@ describe("Category tree", () => {
     expect(
       screen.queryByRole("button", { name: /^Add child category:/ }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Clean up history" }),
+    ).not.toBeInTheDocument();
     expect(mockClient.POST).not.toHaveBeenCalled();
   });
   it("loads history as read-only with revision details on demand", async () => {

@@ -5,8 +5,9 @@ import mockClient, { resetMockClient } from "@/test/mock-api-client";
 import ClassificationWorkspace from "./ClassificationWorkspace";
 
 vi.mock("@/lib/api-client", () => ({ default: mockClient }));
+const permissions = vi.hoisted(() => ({ admin: true }));
 vi.mock("@/hooks/usePermission", () => ({
-  usePermission: () => ({ isAdmin: () => true }),
+  usePermission: () => ({ isAdmin: () => permissions.admin }),
 }));
 
 const attemptId = "11111111-1111-4111-8111-111111111111";
@@ -95,6 +96,7 @@ const fail = (statusCode: number, detail: string) => ({
 });
 
 beforeEach(() => {
+  permissions.admin = true;
   resetMockClient();
   window.sessionStorage.clear();
   mockClient.GET.mockImplementation(async (path: string) => {
@@ -351,6 +353,29 @@ it("keeps manual browse available when assistance capability is absent", async (
     screen.getByRole("link", { name: "Browse categories" }),
   ).toHaveAttribute("href", "/categories");
   expect(mockClient.GET).toHaveBeenCalledTimes(1);
+});
+
+it("hides Admin-only links from a non-Admin", async () => {
+  permissions.admin = false;
+  mockClient.GET.mockImplementation(async (path: string) =>
+    path.endsWith("/status")
+      ? ok({
+          ...status,
+          capability: "unavailable",
+          suggestionsAvailable: false,
+        })
+      : fail(500, "Unexpected request"),
+  );
+  renderWithQueryClient(<ClassificationWorkspace />);
+  expect(
+    await screen.findByRole("link", { name: "Browse categories" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Clean up history" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "Assistance settings" }),
+  ).not.toBeInTheDocument();
 });
 
 it.each([

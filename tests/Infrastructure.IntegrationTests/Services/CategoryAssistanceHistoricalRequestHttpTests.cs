@@ -5,6 +5,7 @@ using System.Text.Encodings.Web;
 using API.Controllers;
 using Application.Classification;
 using Application.Taxonomy;
+using Common;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -30,7 +31,9 @@ public sealed partial class CategoryAssistanceHistoricalRequestStoreTests
 				return Task.FromResult(AuthenticateResult.NoResult());
 			}
 
-			var identity = new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, actor)], Scheme.Name);
+			var role = Request.Headers["X-Test-Role"].ToString() is { Length: > 0 } requested ? requested : AppRoles.Admin;
+			var identity = new ClaimsIdentity(
+				[new Claim(ClaimTypes.NameIdentifier, actor), new Claim(ClaimTypes.Role, role)], Scheme.Name);
 			return Task.FromResult(AuthenticateResult.Success(
 				new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name)));
 		}
@@ -45,7 +48,8 @@ public sealed partial class CategoryAssistanceHistoricalRequestStoreTests
 		builder.WebHost.UseTestServer();
 		builder.Services.AddAuthentication("HistoricalTest")
 			.AddScheme<AuthenticationSchemeOptions, HistoricalTestIdentity>("HistoricalTest", _ => { });
-		builder.Services.AddAuthorization();
+		builder.Services.AddAuthorization(options =>
+			options.AddPolicy("RequireAdmin", policy => policy.RequireRole(AppRoles.Admin)));
 		builder.Services.AddControllers().AddApplicationPart(typeof(CategoryAssistanceHistoricalRequestsController).Assembly);
 		builder.Services.AddSingleton<ICategoryAssistanceHistoricalRequestStore>(Store(fixture));
 		await using var app = builder.Build();
@@ -60,6 +64,13 @@ public sealed partial class CategoryAssistanceHistoricalRequestStoreTests
 
 		(await client.PostAsJsonAsync(route, request)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 		(await client.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+		client.DefaultRequestHeaders.Add("X-Test-Actor", seed.Actor);
+		client.DefaultRequestHeaders.Add("X-Test-Role", AppRoles.User);
+		(await client.PostAsJsonAsync(route, request)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+		(await client.GetAsync(route)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+		(await client.GetAsync($"{route}/{request.OperationId}")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+		client.DefaultRequestHeaders.Remove("X-Test-Role");
+		client.DefaultRequestHeaders.Remove("X-Test-Actor");
 		client.DefaultRequestHeaders.Add("X-Test-Actor", "inactive-writer");
 		var forbidden = await client.PostAsJsonAsync(route, request);
 		forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
