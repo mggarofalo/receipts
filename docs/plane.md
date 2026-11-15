@@ -46,8 +46,14 @@ Priority reflects **execution readiness**, not importance: Urgent = ready now, H
 
 ## Issue Workflow
 
-**Start:** `plane issue update <id> -p RECEIPTS --state "In Progress"` — branch as `<type>/receipts-<id>-<desc>`
+`plane issue update` and `plane issue get` take the issue's UUID via `--resource-id`. They do not resolve a sequence ID like `RECEIPTS-42`, so look the UUID up first:
 
-**Finish:** `plane issue update <id> -p RECEIPTS --state Done` — check if this unblocks downstream issues
+```bash
+UUID=$(plane issue list --all -p RECEIPTS -w dev | jq -r '.results[] | select(.sequence_id==42) | .id')
+```
+
+**Start:** `plane issue update --resource-id "$UUID" --state "In Progress" -p RECEIPTS -w dev` — branch as `<type>/receipts-<id>-<desc>`
+
+**Finish:** `plane issue update --resource-id "$UUID" --state Done -p RECEIPTS -w dev` — check if this unblocks downstream issues with `plane relation list --work-item-id "$UUID" -p RECEIPTS -w dev`
 
 **Create:** Always use `-p RECEIPTS`, attach a module via `plane module add-work-items` (see Modules section — default to `Maintenance Backlog` if no phase fits), set priority by readiness, add at least one layer label
