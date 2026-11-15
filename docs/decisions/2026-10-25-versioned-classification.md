@@ -1,6 +1,6 @@
 # Versioned categories and purchase classification
 
-Date: 2026-10-25. Status: design decision; storage and migration are not implemented by this ADR.
+Date: 2026-10-25. Status: accepted; implemented. Intended behaviour is specified in `openspec/specs/` (see [purchase-classification](../../openspec/specs/purchase-classification/spec.md)).
 Tracking: RECEIPTS-1044 in [Versioned Categories & Assisted Classification](https://plane.wallingford.me/dev/projects/aaac8dc9-bc4c-42db-ac99-eee7864c78e9/modules/08017dad-c99e-49a5-90aa-4d091ddb8353).
 
 ## Decision

@@ -3,7 +3,9 @@
 Design for RECEIPTS-1044; implementation is owned by the following stories.
 See the [ADR](decisions/2026-10-25-versioned-classification.md). All proposed APIs
 below require changes to `openapi/spec.yaml`, generated clients, and tests in
-their implementing PR. Existing behavior remains unchanged until that rollout.
+their implementing PR. Those stories have shipped; the intended behaviour is now
+specified in `openspec/specs/` (for example [purchase-classification](../openspec/specs/purchase-classification/spec.md)),
+and the specs win where this document disagrees.
 
 ## Identities and revisions
 
@@ -21,9 +23,11 @@ Name uniqueness applies to non-archived siblings (including roots). Archived
 identities may share a name; historical reads always disambiguate by ID. Use exact
 ordinal stored-name equality to preserve current legacy matching semantics;
 do not silently trim or case-fold imported names. New names reject leading or
-trailing whitespace. Equal names under different parents are valid. Do not impose
-two- or three-level depth. Any operational node/depth bound must be explicit in
-validation and the public contract, not a truncation in UI or traversal code.
+trailing whitespace. Equal names under different parents are valid. The tree has
+at most two levels, the depth category assistance and restructure plans support.
+The bound is explicit in validation and the public contract, not a truncation in
+UI or traversal code ([category-taxonomy](../openspec/specs/category-taxonomy/spec.md); editor
+enforcement is RECEIPTS-1119).
 
 Archive retains identity, names, and history. Archiving a node archives its entire
 subtree atomically, with affected counts in the preview; restoring a child requires
@@ -46,9 +50,10 @@ An assignment selects a category present and selectable in its pinned revision.
 Interactive assignment uses the expected current taxonomy revision; a stale head
 returns 409 and requires refresh rather than silently accepting changed meaning.
 Historical import can retain archived nodes through a separate validated import
-path. Manual, approved mapping, accepted provider suggestion, legacy import, and
-retrospective operation are distinct sources; unknown legacy origin is not proof
-of automatic or manual approval. A strong Jev match written automatically has source
+path. The sources are `manual`, `approved_mapping`, `jev`, `restructure`,
+`legacy_import` and `legacy_write`. Accepted suggestions, cleanup-campaign applies
+and every undo are `manual`. Unknown legacy origin is not proof of automatic or
+manual approval. A strong Jev match written automatically has source
 `jev` and a JSON reason with its probabilities and thresholds; an accepted suggestion
 remains `manual`. A purchase moved by a [category restructure](restructure-plans.md) has source
 `restructure` and a JSON reason naming the plan, the rule that decided it and that rule's inputs.
@@ -105,7 +110,7 @@ reusing the ID with a different body returns 409. Persist the operation record
 with the write. A timeout is not proof that a command was never committed.
 
 Historical preview captures explicit item IDs, expected item/source revisions,
-assignment IDs, target taxonomy revision, filters, and protected/eligible counts.
+assignment IDs, target taxonomy revision, filters, and eligible counts.
 It must include store scope when reuse is based on an exact source mapping. A
 mapping key is store + exact raw description + optional item code; a missing code
 is absence, never a wildcard. Fuzzy matching proposes candidates only. Existing
@@ -116,8 +121,10 @@ Confirmation applies that frozen set, not a new search. Default groups are 25
 distinct scoped descriptions ordered by affected purchase count, with a stable
 tie-breaker. Durable per-item outcomes permit restart/cancel without repeating
 completed writes. Changed source/receipt location, assignment, taxonomy head,
-permissions or deletion state makes an item stale; report skipped/protected
-counts. Explicit inclusion is required to replace manual or legacy assignments.
+permissions or deletion state makes an item stale; report skipped counts.
+Selecting an exact group is the explicit inclusion: its items are reclassified
+whatever their source, `manual` included
+([historical-reclassification](../openspec/specs/historical-reclassification/spec.md)).
 Undo only appends corrections where the current assignment is still the one
 written by that operation; later edits survive. UI must show partial completion
 and conditional undo, not imply an all-or-nothing historical rewrite.
@@ -134,7 +141,7 @@ Inventory at base `74507f17`:
 | `Domain/NormalizedDescriptions/NormalizedDescription.cs` and normalization catalog | Canonical receipt text, display labels, exact identity links and approved mappings remain separate. No mass conversion of labels into category leaves. RECEIPTS-1047/1049. |
 | `Domain/Core/ItemTemplate.cs` | Retired UI still has stored defaults and optional product links; preserve compatibility import/export, never use a template link as taxonomy evidence. RECEIPTS-1047/1060. |
 | `Infrastructure/Services/ReportService.cs` and purchase-search projections | Group/filter on category strings today; category trends and normalized price history are distinct. Add explicit report mode and invalidate projections after writes. RECEIPTS-1050. |
-| `YnabCategoryMappingService`, `YnabSplitCalculator` | Mapping is receipt category string + budget today. Introduce ID mapping with explicit current-path nearest mapped ancestor policy; conflicts require review. Preserve sent transaction records and avoid implicit repush on a move. RECEIPTS-1047/1050/1060. |
+| `YnabCategoryMappingService`, `YnabSplitCalculator` | Superseded: YNAB categories now resolve from each item's recorded envelope ([envelopes](envelopes.md#ynab)); node-keyed resolution is retired. Sent transaction records are preserved and never repushed. RECEIPTS-1047/1050/1060. |
 | `BackupService`, `BackupImportService`, `PortableBackupFormat` | Version 9 includes categories, subcategories, templates, receipt label snapshots and product data. A new format must round-trip revisions, history, crosswalks, operation provenance, and trash before cutover. Never export credentials. RECEIPTS-1047/1060. |
 | `openapi/spec.yaml`, generated client, aggregate receipt writes | Additive classification fields first; reconcile all writers and readers before retiring string contracts. RECEIPTS-1046/1047/1049/1060. |
 
@@ -209,7 +216,9 @@ before this change.
   With the writes retired, those columns can no longer change underneath the
   guards. The other side of this: an unresolved item that carries labels stays
   out of assistance and organization for good. Choosing its type by hand still
-  works.
+  works. *This lock-out is not intended:* eligibility depends only on the
+  current assignment ([purchase-classification](../openspec/specs/purchase-classification/spec.md));
+  the guard change is RECEIPTS-1120.
 
 What still touches the strings, by design:
 
@@ -225,8 +234,9 @@ What still touches the strings, by design:
   label. They go with those tables.
 
 Chips, search and suggestions name the item type as recorded on the
-assignment (its own revision), like the item rows; the dashboard's top category
-uses today's tree, like the other reports.
+assignment (its own revision), like the item rows. Every dashboard category figure,
+top category included, follows the page's selected view
+([category-reporting](../openspec/specs/category-reporting/spec.md); top category is RECEIPTS-1123).
 
 ## Spec-first endpoint/schema plan
 
@@ -242,16 +252,12 @@ reasoned 4xx use the project's RFC 9457 ProblemDetails contract.
 | PUT `/api/receipt-items/{id}/classification` | Nullable category ID, taxonomy revision, expected assignment ID, operation ID, source/reason; new assignment | 1046 |
 | Receipt aggregate create/update | Same assignment policy in the receipt transaction, optional classification, no provider requirement | 1046/1049 |
 | Category report queries | `hierarchyMode`, optional knowledge cutoff, captured current revision; metadata on every result | 1050 |
-| POST classification preview/commit/undo operations | Frozen scope and revisions, protected counts, per-item outcomes, durable progress/cancel, conditional compensation | 1051/1053 |
+| POST classification preview/commit/undo operations | Frozen scope and revisions, per-item outcomes, durable progress/cancel, conditional compensation | 1051/1053 |
 | Provider capability/status and admin connection check | Application-owned status, separate configured/verified/feature-enabled concepts; no inference on page render | 1054/1057 |
 
-API compatibility must reject contradictory new-ID and legacy-string assignments
-with a useful 409 rather than silently preferring one. On partial updates,
-omitting both leaves classification unchanged; explicit null clears it. Deep
-paths cannot be faithfully encoded as two strings: legacy response labels are a
-documented lossy projection only, never an authoritative round-trip. Legacy
-writes on items with deeper paths must reject ambiguous changes and direct the
-client to the new contract; no-op legacy echoes must not erase depth.
+Legacy `category` and `subcategory` request strings are accepted and ignored
+(RECEIPTS-1085, above); there is no contradiction check. On partial updates,
+omitting classification intent leaves it unchanged; explicit null clears it.
 
 ## Rollout, retention, and rollback
 

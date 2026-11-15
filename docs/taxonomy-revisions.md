@@ -10,7 +10,7 @@ classifications. Use the [legacy migration runbook](legacy-taxonomy-migration.md
 for in-place preflight/apply and deployment gates; keep classification writes
 disabled until the destination and deployed writers pass those gates.
 
-POST `/api/taxonomy/changes` accepts create, rename, move, define, archive and restore changes. Names compare exactly and ordinally; active siblings must be unique. Move carries descendants; archive archives the complete subtree. Restore is explicit per node and needs active ancestors in the resulting tree. Responses include every known identity, including archived nodes, so callers can reconstruct exact historical paths. No operational depth limit is imposed.
+POST `/api/taxonomy/changes` accepts create, rename, move, define, archive and restore changes. Names compare exactly and ordinally; active siblings must be unique. Move carries descendants; archive archives the complete subtree. Restore is explicit per node and needs active ancestors in the resulting tree. Responses include every known identity, including archived nodes, so callers can reconstruct exact historical paths. The tree has at most two levels ([category-taxonomy](../openspec/specs/category-taxonomy/spec.md)); editor enforcement is RECEIPTS-1119.
 
 Names contain at most 200 Unicode scalar values; definitions contain at most 4000. These bounds apply to API writes, domain validation and PostgreSQL constraints. The indexed name bound keeps even four-byte characters within PostgreSQL index entry limits. Change kind must be explicitly present in JSON.
 

@@ -52,9 +52,13 @@ aggregate receipt request replay prevent duplicate assignment evidence. Format 1
 preserves the reason and authoritative classification operation unchanged.
 
 Authenticated inspect/history and Admin approval/revocation HTTP contracts are available.
-The review UI remains required before the feature is enabled or released.
+The per-source **Remember category** panel (receipt items and the Classification workspace)
+is the review UI; no page listing every mapping is planned
+([approved-category-mappings](../openspec/specs/approved-category-mappings/spec.md)).
 
 ## Required before enabling or releasing
+
+*Done: the feature is enabled. Kept as the original release checklist.*
 
 - Portable format 11 now preserves the approval history and heads described below.
 - Add review UI for the explicit approval/revocation HTTP contracts, conflict handling

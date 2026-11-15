@@ -39,9 +39,14 @@ Persistence applies it at the write chokepoints (`Infrastructure.Services.ItemEn
 - **Item-type changes.** Every classification write appends through
   `ClassificationService.AppendAsync`, whichever path made it: manual choice,
   approved mapping at save, the background approved-mapping worker, historical
-  reclassification, category assistance or a legacy-label save. There, an item
+  reclassification or category assistance. There, an item
   whose source is `default`, or whose envelope is still unresolved, takes the
   new type's default. `receipt`, `item` and `historical` envelopes are kept.
+  *This is current behaviour, not the intended rule:* an envelope is fixed once
+  recorded and a classification change only fills an unresolved one
+  ([envelope-attribution](../openspec/specs/envelope-attribution/spec.md),
+  [ADR](decisions/2026-11-15-envelope-fixed-once-recorded.md)). Implementation is
+  RECEIPTS-1124.
   A [category restructure](restructure-plans.md) is the exception: it changes
   what a purchase is, not who paid, so it keeps every recorded envelope. Only
   an envelope merge in the plan moves purchases between envelopes.

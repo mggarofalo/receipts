@@ -3,7 +3,8 @@
 The shared `CategoryReportReader` and `CategoryReportProjection` power
 `GET /api/dashboard/spending-by-category`, including explicit historical and
 current-hierarchy views. Category trends now uses the same reader with a server-side
-period grouping dimension. Integration with exports and the remaining UI remains required. Focused PostgreSQL query-plan evidence lives
+period grouping dimension. Later consumers moved onto it as the legacy label reads were retired
+(see [classification contract](classification-contract.md#legacy-label-strings-reads-retired-receipts-1085)). Focused PostgreSQL query-plan evidence lives
 in the external RECEIPTS-1050 review/cutoff artifacts; production-scale acceptance remains open.
 
 ## Meaning of a view
@@ -154,5 +155,6 @@ or current paths, archive flags, and unresolved states for each page item. The
 category filter excludes unresolved evidence; an unfiltered search retains it.
 Classification cutoff captures knowledge only, while monetary facts stay live.
 
-Next consumers: dashboard summary most-used category; item-description,
-item-cost category and uncategorized reports; dashboard/report/search UI and CSV exports.
+The consumers once listed here as next have moved; see the
+[classification contract](classification-contract.md#legacy-label-strings-reads-retired-receipts-1085).
+Intended reporting behaviour is the [category-reporting](../openspec/specs/category-reporting/spec.md) spec.

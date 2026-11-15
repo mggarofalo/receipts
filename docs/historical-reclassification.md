@@ -3,7 +3,7 @@
 ## Authenticated operation API
 
 The Classification workspace includes a collapsed **Automatic classification activity**
-section. It lists the signed-in actor's approved-mapping batches with purchase
+section. It lists the signed-in actor's approved-mapping and Jev strong-match batches with purchase
 descriptions, stores, category paths and counts. Its optional Undo action completes
 bounded chunks with a fixed audit reason, retaining conditional checks so later edits
 are preserved. It works independently of assistance provider configuration.
@@ -47,7 +47,8 @@ The foundation originally defined contracts and pure policies; persistence and t
 authenticated operation API now implement the workflow described below. The service
 does not run Jev. Manual cleanup changes purchase assignments only when a user applies
 a captured preview; the background worker independently reuses explicit category
-approvals. Jev automatic classification remains unimplemented.
+approvals. Jev strong matches are written by the category assistance worker
+([ADR](decisions/2026-11-15-jev-strong-match-automatic-writes.md)) and share the activity list and undo.
 
 ## Explicit evidence and selection
 
