@@ -56,9 +56,9 @@ public static class CategoryAssistancePolicy
 	{
 		{ Source: "manual" } => CategoryAssistanceClassificationState.ManualChoice,
 		{ CategoryId: not null } => CategoryAssistanceClassificationState.ProtectedAssignment,
-		{ Source: "legacy_write", LegacyResolution: "unresolved_path" } => CategoryAssistanceClassificationState.UnresolvedObservation,
-		{ Source: "legacy_import" } => CategoryAssistanceClassificationState.UnresolvedObservation,
 		null => CategoryAssistanceClassificationState.Unassigned,
+		_ when AutomationEligibility.IsUntyped(current.Source, current.CategoryId, current.LegacyResolution)
+			=> CategoryAssistanceClassificationState.UnresolvedObservation,
 		_ => CategoryAssistanceClassificationState.Unknown
 	};
 

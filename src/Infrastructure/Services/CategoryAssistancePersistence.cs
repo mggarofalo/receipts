@@ -129,8 +129,7 @@ public static class CategoryAssistanceObservationWriter
 								join history in db.Classifications on current.AssignmentId equals history.Id
 								where current.ReceiptItemId == itemId
 								select history).AsNoTracking().SingleOrDefaultAsync(ct);
-		if (assignment != null && !(assignment.CategoryId == null && (assignment.Source == "legacy_import"
-			|| assignment.Source == "legacy_write" && assignment.LegacyResolution == "unresolved_path"))) { return false; }
+		if (assignment != null && !AutomationEligibility.IsUntyped(assignment.Source, assignment.CategoryId, assignment.LegacyResolution)) { return false; }
 		NormalizationSourceKey source;
 		try { source = NormalizationCatalogPolicy.Normalize(new(receipt.Location, item.Description, item.ReceiptItemCode)); }
 		catch (NormalizationCatalogException) { return false; }

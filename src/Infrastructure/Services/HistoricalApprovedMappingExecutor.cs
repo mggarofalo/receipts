@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using Application.Classification;
 using Application.Normalization;
 using Application.Taxonomy;
 using Infrastructure.Entities.Taxonomy;
@@ -76,8 +77,8 @@ internal sealed class HistoricalApprovedMappingExecutor(
 			var resolution = await CategoryMappingService.ResolveInTransactionAsync(db, source, fingerprint, head.RevisionId, null, ct);
 			Guid[]? excludedItems = await HistoricalApprovedMappingReviewProtection.ExcludedItemsAsync(db, source, ct);
 			bool protectedByPreference = excludedItems == null || excludedItems.Contains(row.ItemId);
-			bool eligibleAssignment = assignment == null || (assignment.CategoryId == null &&
-				(assignment.Source == "legacy_import" || (assignment.Source == "legacy_write" && assignment.LegacyResolution == "unresolved_path")));
+			bool eligibleAssignment = assignment == null
+				|| AutomationEligibility.IsUntyped(assignment.Source, assignment.CategoryId, assignment.LegacyResolution);
 			bool eligible = !deferred && !protectedByPreference && item != null && receipt != null &&
 				item.DeletedAt == null && receipt.DeletedAt == null && item.ReceiptId == row.ReceiptId &&
 				item.NormalizationRevision == row.ItemRevision && receipt.NormalizationRevision == row.ReceiptRevision &&

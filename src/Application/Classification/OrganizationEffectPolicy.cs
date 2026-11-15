@@ -35,9 +35,9 @@ public static class OrganizationEffectPolicy
 		{
 			{ Source: "manual" } => OrganizationEligibility.ManualChoice,
 			{ CategoryId: not null } => OrganizationEligibility.ExistingAssignment,
-			{ Source: "legacy_import" } => OrganizationEligibility.Eligible,
-			{ Source: "legacy_write", LegacyResolution: "unresolved_path" } => OrganizationEligibility.Eligible,
 			null => OrganizationEligibility.Eligible,
+			_ when AutomationEligibility.IsUntyped(current.Source, current.CategoryId, current.LegacyResolution)
+				=> OrganizationEligibility.Eligible,
 			_ => OrganizationEligibility.UnknownProvenance
 		};
 	}

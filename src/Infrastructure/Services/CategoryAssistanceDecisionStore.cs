@@ -341,9 +341,8 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 								join history in db.Classifications.AsNoTracking() on current.AssignmentId equals history.Id
 								where current.ReceiptItemId == item.Id
 								select history).SingleOrDefaultAsync(ct);
-		if (assignment?.Id != marker.AssignmentId || assignment != null && (uncategorizedOnly || marker.Evidence != "explicit_history_request") && !(assignment.CategoryId == null &&
-				(assignment.Source == "legacy_import" || assignment.Source == "legacy_write" &&
-				 assignment.LegacyResolution == "unresolved_path")))
+		if (assignment?.Id != marker.AssignmentId || assignment != null && (uncategorizedOnly || marker.Evidence != "explicit_history_request")
+				&& !AutomationEligibility.IsUntyped(assignment.Source, assignment.CategoryId, assignment.LegacyResolution))
 		{
 			return false;
 		}
