@@ -324,6 +324,7 @@ function ReceiptDetail() {
             location={trip.receipt.receipt.location}
             paidFromEnvelopeId={trip.receipt.receipt.paidFromEnvelopeId}
             occasionId={trip.receipt.receipt.occasionId}
+            persistedYnabStatus={persistedYnabStatus}
           />
 
           <AdjustmentsCard

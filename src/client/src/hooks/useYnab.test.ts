@@ -1661,11 +1661,9 @@ describe("useYnab", () => {
     );
   });
 
-  it("useYnabSplitComparison requests and caches the optional current hierarchy preview separately", async () => {
+  it("useYnabSplitComparison caches one recorded split per receipt", async () => {
     (client.GET as Mock).mockResolvedValue({
       data: {
-        categoryView: "currentHierarchy",
-        capturedCurrentRevisionId: "revision-1",
         canComputeExpected: true,
         unmappedCategories: [],
         transactionComparisons: [],
@@ -1677,32 +1675,14 @@ describe("useYnab", () => {
       defaultOptions: { queries: { retry: false } },
     });
     const { result } = renderHook(
-      () => useYnabSplitComparison("receipt-1", true, "currentHierarchy"),
+      () => useYnabSplitComparison("receipt-1", true),
       { wrapper: createWrapper(queryClient) },
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith(
-      "/api/ynab/receipts/{receiptId}/split-comparison",
-      {
-        middleware: expect.any(Array),
-        params: {
-          path: { receiptId: "receipt-1" },
-          query: { categoryView: "currentHierarchy" },
-        },
-      },
-    );
-    expect(
-      queryClient.getQueryData([
-        "ynab",
-        "split-comparison",
-        "receipt-1",
-        "currentHierarchy",
-      ]),
-    ).toEqual(result.current.data);
     expect(
       queryClient.getQueryData(["ynab", "split-comparison", "receipt-1"]),
-    ).toBeUndefined();
+    ).toEqual(result.current.data);
   });
 
   it("useYnabSplitComparison is disabled when receiptId is undefined", () => {

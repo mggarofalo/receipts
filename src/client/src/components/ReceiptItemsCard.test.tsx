@@ -77,6 +77,7 @@ const budget = vi.hoisted(() => ({
   }[],
   setReceipt: vi.fn(),
   setItem: vi.fn(),
+  setAutomatic: vi.fn(),
 }));
 vi.mock("@/hooks/useEnvelopes", () => ({
   useEnvelopes: () => ({
@@ -109,6 +110,8 @@ vi.mock("@/hooks/useBudgetChoices", () => ({
     mockMutationResult({ mutate: budget.setReceipt }),
   useSetReceiptItemBudgetChoices: () =>
     mockMutationResult({ mutate: budget.setItem }),
+  useSetReceiptItemEnvelopeAutomatic: () =>
+    mockMutationResult({ mutate: budget.setAutomatic }),
 }));
 
 const mockItems = [
@@ -729,6 +732,7 @@ describe("budget choices", () => {
   beforeEach(() => {
     budget.setReceipt.mockClear();
     budget.setItem.mockClear();
+    budget.setAutomatic.mockClear();
     budget.envelopes = [
       { id: "env-groceries", name: "Groceries", isActive: true },
       { id: "env-gifts", name: "Gifts", isActive: true },
@@ -766,6 +770,7 @@ describe("budget choices", () => {
         receiptId="receipt-1"
         items={items}
         subtotal={46}
+        persistedYnabStatus="notSynced"
         paidFromEnvelopeId={null}
         occasionId="occ-birthday"
       />,
@@ -789,6 +794,7 @@ describe("budget choices", () => {
         receiptId="receipt-1"
         items={items}
         subtotal={46}
+        persistedYnabStatus="notSynced"
         paidFromEnvelopeId="env-groceries"
         occasionId="occ-birthday"
       />,
@@ -809,6 +815,7 @@ describe("budget choices", () => {
         receiptId="receipt-1"
         items={items}
         subtotal={46}
+        persistedYnabStatus="notSynced"
         paidFromEnvelopeId="env-groceries"
       />,
     );
@@ -874,6 +881,7 @@ describe("budget choices", () => {
           receiptId="receipt-1"
           items={descriptions.map((d) => byName[d])}
           subtotal={63}
+          persistedYnabStatus="notSynced"
           paidFromEnvelopeId={null}
         />,
       );
@@ -893,6 +901,7 @@ describe("budget choices", () => {
         receiptId="receipt-1"
         items={items}
         subtotal={46}
+        persistedYnabStatus="notSynced"
         paidFromEnvelopeId={null}
       />,
     );
@@ -914,28 +923,27 @@ describe("budget choices", () => {
     expect(budget.setReceipt).not.toHaveBeenCalled();
   });
 
-  it("shows an item-type envelope as automatic in the row menu", async () => {
-    const user = userEvent.setup();
-    renderWithQueryClient(
-      <ReceiptItemsCard
-        receiptId="receipt-1"
-        items={items}
-        subtotal={46}
-        paidFromEnvelopeId={null}
-      />,
-    );
+  it.each(["default", "item"] as const)(
+    "offers Automatic for a %s-sourced item and calls the Automatic action",
+    async (source) => {
+      const user = userEvent.setup();
+      renderWithQueryClient(
+        <ReceiptItemsCard
+          receiptId="receipt-1"
+          items={[{ ...items[0], envelopeSource: source }]}
+          subtotal={46}
+          persistedYnabStatus="notSynced"
+          paidFromEnvelopeId={null}
+        />,
+      );
 
-    await user.click(
-      screen.getByRole("button", { name: "More actions for Widget A" }),
-    );
-    expect(
-      screen.getByRole("menuitemradio", { name: "Automatic" }),
-    ).toHaveAttribute("aria-checked", "true");
-    await user.click(screen.getByRole("menuitemradio", { name: "Gifts" }));
-    expect(budget.setItem).toHaveBeenCalledWith({
-      itemId: "item-1",
-      envelopeId: "env-gifts",
-      occasionId: null,
-    });
-  });
+      await user.click(
+        screen.getByRole("button", { name: "More actions for Widget A" }),
+      );
+      await user.click(screen.getByRole("menuitem", { name: /Automatic/ }));
+
+      expect(budget.setAutomatic).toHaveBeenCalledWith({ itemId: "item-1" });
+      expect(budget.setItem).not.toHaveBeenCalled();
+    },
+  );
 });

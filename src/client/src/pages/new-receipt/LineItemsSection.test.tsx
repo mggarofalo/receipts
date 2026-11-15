@@ -803,7 +803,7 @@ describe("envelope display", () => {
     await user.click(
       screen.getByRole("button", { name: "More actions for Gift bag" }),
     );
-    await user.click(screen.getByRole("menuitemradio", { name: "Automatic" }));
+    await user.click(screen.getByRole("menuitem", { name: /Automatic/ }));
 
     const update = onChange.mock.calls[0][0] as (
       current: ReceiptLineItem[],

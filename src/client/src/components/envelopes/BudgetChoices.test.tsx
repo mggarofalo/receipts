@@ -237,14 +237,16 @@ describe("EnvelopeBadge", () => {
 });
 
 describe("EnvelopeOverrideMenu", () => {
-  it("offers Automatic and the active envelopes for the row", async () => {
+  it("offers Automatic and the active envelopes, and reports an override", async () => {
     const user = userEvent.setup();
-    const onChange = vi.fn();
+    const onOverride = vi.fn();
+    const onAutomatic = vi.fn();
     renderWithProviders(
       <EnvelopeOverrideMenu
         envelopes={envelopes}
         value={null}
-        onChange={onChange}
+        onOverride={onOverride}
+        onAutomatic={onAutomatic}
         itemLabel="Milk"
       />,
     );
@@ -253,23 +255,51 @@ describe("EnvelopeOverrideMenu", () => {
     );
     expect(screen.getByText("Paid from")).toBeVisible();
     expect(
-      screen.getByRole("menuitemradio", { name: "Automatic" }),
-    ).toHaveAttribute("aria-checked", "true");
+      screen.getByRole("menuitem", { name: /Automatic/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitemradio", { name: "Gifts" }),
+    ).toHaveAttribute("aria-checked", "false");
     expect(
       screen.queryByRole("menuitemradio", { name: "Old budget" }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitemradio", { name: "Gifts" }));
-    expect(onChange).toHaveBeenCalledWith("env-gifts");
+    expect(onOverride).toHaveBeenCalledWith("env-gifts");
+    expect(onAutomatic).not.toHaveBeenCalled();
   });
 
-  it("returns an overridden row to automatic", async () => {
+  it.each([null, "env-gifts"])(
+    "offers Automatic as an action whatever the source (override %s)",
+    async (value) => {
+      const user = userEvent.setup();
+      const onOverride = vi.fn();
+      const onAutomatic = vi.fn();
+      renderWithProviders(
+        <EnvelopeOverrideMenu
+          envelopes={envelopes}
+          value={value}
+          onOverride={onOverride}
+          onAutomatic={onAutomatic}
+          itemLabel="Milk"
+        />,
+      );
+      await user.click(
+        screen.getByRole("button", { name: "More actions for Milk" }),
+      );
+      await user.click(screen.getByRole("menuitem", { name: /Automatic/ }));
+      expect(onAutomatic).toHaveBeenCalledTimes(1);
+      expect(onOverride).not.toHaveBeenCalled();
+    },
+  );
+
+  it("marks the item's override", async () => {
     const user = userEvent.setup();
-    const onChange = vi.fn();
     renderWithProviders(
       <EnvelopeOverrideMenu
         envelopes={envelopes}
         value="env-gifts"
-        onChange={onChange}
+        onOverride={vi.fn()}
+        onAutomatic={vi.fn()}
         itemLabel="Milk"
       />,
     );
@@ -279,7 +309,5 @@ describe("EnvelopeOverrideMenu", () => {
     expect(
       screen.getByRole("menuitemradio", { name: "Gifts" }),
     ).toHaveAttribute("aria-checked", "true");
-    await user.click(screen.getByRole("menuitemradio", { name: "Automatic" }));
-    expect(onChange).toHaveBeenCalledWith(null);
   });
 });

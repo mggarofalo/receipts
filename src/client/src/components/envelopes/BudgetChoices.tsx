@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -197,17 +198,25 @@ export function EnvelopeBadge({
   );
 }
 
-/** The row menu's per-item override. Automatic follows the receipt, then the item type. */
+/**
+ * The row menu's envelope actions. Choosing an envelope records a per-item
+ * override. Automatic is an action, offered whatever the source: it re-derives
+ * the envelope once from the receipt's paid-from, else the item type's
+ * default. Changing the item type never moves a recorded envelope.
+ */
 export function EnvelopeOverrideMenu({
   envelopes,
   value,
-  onChange,
+  onOverride,
+  onAutomatic,
   disabled,
   itemLabel,
 }: {
   envelopes: Choice[];
+  /** The item's override, or null when it has none. */
   value: string | null;
-  onChange: (envelopeId: string | null) => void;
+  onOverride: (envelopeId: string) => void;
+  onAutomatic: () => void;
   disabled?: boolean;
   itemLabel: string;
 }) {
@@ -226,11 +235,21 @@ export function EnvelopeOverrideMenu({
       <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
         <DropdownMenuLabel>Paid from</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onAutomatic}>
+          <span className="flex flex-col">
+            <span>Automatic</span>
+            <span className="text-xs text-muted-foreground">
+              Paid-from, else the item type's default
+            </span>
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
-          value={value ?? AUTO}
-          onValueChange={(next) => onChange(next === AUTO ? null : next)}
+          value={value ?? ""}
+          onValueChange={(next) => {
+            if (next) onOverride(next);
+          }}
         >
-          <DropdownMenuRadioItem value={AUTO}>Automatic</DropdownMenuRadioItem>
           {selectable(envelopes, value).map((envelope) => (
             <DropdownMenuRadioItem
               key={envelope.id}

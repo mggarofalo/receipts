@@ -591,8 +591,6 @@ export type TransactionSplitComparisonDto =
   components["schemas"]["TransactionSplitComparison"];
 export type ReceiptYnabSplitComparisonResponse =
   components["schemas"]["ReceiptYnabSplitComparisonResponse"];
-export type YnabSplitCategoryView =
-  ReceiptYnabSplitComparisonResponse["categoryView"];
 
 /**
  * Fetches the YNAB split comparison for a receipt.
@@ -604,28 +602,17 @@ export type YnabSplitCategoryView =
 export function useYnabSplitComparison(
   receiptId: string | undefined,
   enabled = true,
-  categoryView: YnabSplitCategoryView = "asClassified",
 ) {
   return useQuery({
     ...localErrorPolicy.query,
-    queryKey: [
-      "ynab",
-      "split-comparison",
-      receiptId,
-      ...(categoryView === "currentHierarchy" ? [categoryView] : []),
-    ],
+    queryKey: ["ynab", "split-comparison", receiptId],
     queryFn: async (): Promise<ReceiptYnabSplitComparisonResponse> => {
       if (!receiptId) throw new Error("Receipt ID is required");
       const { data, error } = await client.GET(
         "/api/ynab/receipts/{receiptId}/split-comparison",
         {
           ...localErrorPolicy.request,
-          params: {
-            path: { receiptId },
-            ...(categoryView === "currentHierarchy"
-              ? { query: { categoryView } }
-              : {}),
-          },
+          params: { path: { receiptId } },
         },
       );
       if (error) throw error;
