@@ -107,7 +107,7 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
               AND (CAST({after} AS uuid) IS NULL OR i."Id" > CAST({after} AS uuid))
               -- Keep in step with AutomationEligibility.IsUntyped.
               AND (c."AssignmentId" IS NULL OR (a."CategoryId" IS NULL AND
-                   (a."Source" = 'legacy_import' OR (a."Source" = 'legacy_write' AND a."LegacyResolution" = 'unresolved_path'))))
+                   (a."Source" IN ('legacy_import', 'restructure') OR (a."Source" = 'legacy_write' AND a."LegacyResolution" = 'unresolved_path'))))
             ORDER BY i."Id"
             LIMIT {(paged ? 100 : 101)}
             """, ct);

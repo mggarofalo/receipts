@@ -10,7 +10,7 @@ public static class AutomationEligibility
 	public static bool IsUntyped(string? source, Guid? categoryId, string? legacyResolution) =>
 		categoryId == null && source switch
 		{
-			"legacy_import" => true,
+			"legacy_import" or "restructure" => true,
 			"legacy_write" => legacyResolution == "unresolved_path",
 			_ => false
 		};

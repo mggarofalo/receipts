@@ -8,6 +8,7 @@ public sealed class AutomationEligibilityTests
 	[Theory]
 	[InlineData("legacy_import", null)]
 	[InlineData("legacy_write", "unresolved_path")]
+	[InlineData("restructure", null)]
 	public void UntypedObservationIsEligible(string source, string? resolution) =>
 		AutomationEligibility.IsUntyped(source, null, resolution).Should().BeTrue();
 
@@ -26,6 +27,7 @@ public sealed class AutomationEligibilityTests
 	[InlineData("legacy_import")]
 	[InlineData("legacy_write")]
 	[InlineData("manual")]
+	[InlineData("restructure")]
 	public void AnyCategoryIsProtected(string source) =>
 		AutomationEligibility.IsUntyped(source, Guid.NewGuid(), "unresolved_path").Should().BeFalse();
 }

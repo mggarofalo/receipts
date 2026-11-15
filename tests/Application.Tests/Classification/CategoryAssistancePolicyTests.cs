@@ -117,6 +117,8 @@ public class CategoryAssistancePolicyTests
 		Assert.Equal(CategoryAssistanceClassificationState.ManualChoice, CategoryAssistancePolicy.ClassificationState(Assignment("manual", null)));
 		Assert.Equal(CategoryAssistanceClassificationState.ProtectedAssignment, CategoryAssistancePolicy.ClassificationState(Assignment("legacy_write", Guid.NewGuid(), "resolved_path")));
 		Assert.Equal(CategoryAssistanceClassificationState.UnresolvedObservation, CategoryAssistancePolicy.ClassificationState(Assignment("legacy_import", null)));
+		Assert.Equal(CategoryAssistanceRoute.Suggest, CategoryAssistancePolicy.Route(Unknown with { Classification = CategoryAssistancePolicy.ClassificationState(Assignment("restructure", null)) }, true));
+		Assert.Equal(CategoryAssistanceClassificationState.ProtectedAssignment, CategoryAssistancePolicy.ClassificationState(Assignment("restructure", Guid.NewGuid())));
 		Assert.Equal(CategoryAssistanceClassificationState.Unassigned, CategoryAssistancePolicy.ClassificationState(null));
 		Assert.Equal(CategoryAssistanceRoute.Skip, CategoryAssistancePolicy.Route(Unknown with { Classification = CategoryAssistancePolicy.ClassificationState(Assignment("future-source", null)) }, true));
 	}

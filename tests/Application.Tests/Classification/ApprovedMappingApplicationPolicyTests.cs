@@ -28,6 +28,7 @@ public sealed class ApprovedMappingApplicationPolicyTests
 	[Theory]
 	[InlineData("legacy_import", null)]
 	[InlineData("legacy_write", "unresolved_path")]
+	[InlineData("restructure", null)]
 	public void KnownUnresolvedObservationIsEligible(string source, string? resolution)
 	{
 		PurchaseClassification assignment = Assignment(source, null, resolution);

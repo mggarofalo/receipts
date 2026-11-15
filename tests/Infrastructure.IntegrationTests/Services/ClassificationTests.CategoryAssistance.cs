@@ -50,6 +50,25 @@ public sealed partial class ClassificationTests
 	}
 
 	[Fact]
+	public async Task RestructureClearedItemEnrollsForAssistance()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).RestructureClearedEnrollmentCore();
+	}
+	private async Task RestructureClearedEnrollmentCore()
+	{
+		var seed = await SeedAsync();
+		var store = new CategoryAssistanceSettingsStore(new Factory(fixture), TimeProvider.System);
+		var settings = await store.GetAsync();
+		await store.UpdateAsync(Actor, settings.Revision, settings with { Enabled = true, Provider = "jev", Model = "jev-1.14.0" });
+		await RestructureClearAsync(seed.Item, seed.Revision, seed.Assignment);
+		await using var db = fixture.CreateDbContext();
+		await using var tx = await db.Database.BeginTransactionAsync();
+		(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, Actor, Guid.NewGuid(), seed.Item, false, false)).Should().BeTrue();
+		await tx.RollbackAsync();
+	}
+
+	[Fact]
 	public async Task ConsentedNoChoiceEntryRecordsObservationFenceWhileExplicitClearDoesNot()
 	{
 		var seed = await SeedAsync();

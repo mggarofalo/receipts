@@ -21,7 +21,7 @@ public enum OrganizationEligibility
 public static class OrganizationEffectPolicy
 {
 	/// <summary>
-	/// Only absent assignments and known unresolved legacy observations are eligible. A deliberate
+	/// Only absent and untyped assignments (see AutomationEligibility) are eligible. A deliberate
 	/// manual null is a choice, not an unresolved observation. Existing automation is preserved here;
 	/// correction of still-owned effects requires a separate explicit reconciliation policy.
 	/// </summary>

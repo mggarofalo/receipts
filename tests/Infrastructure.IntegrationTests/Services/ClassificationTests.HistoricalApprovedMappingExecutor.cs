@@ -19,7 +19,7 @@ public sealed partial class ClassificationTests
 	private HistoricalApprovedMappingExecutor ApprovedExecutor() => new(new Factory(fixture), TimeProvider.System,
 		Options.Create(new ClassificationOptions { WritesEnabled = true }));
 
-	private async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync(int extraItems = 0, string? legacyLabel = null)
+	private async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync(int extraItems = 0, string? legacyLabel = null, bool restructureCleared = false)
 	{
 		var seed = await HistoricalSeedAsync();
 		// The seed purchase shares the group; a person's choice keeps it out so only the new items are captured.
@@ -39,6 +39,7 @@ public sealed partial class ClassificationTests
 		}
 		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).CreateAsync(items, default);
 		var assignment = (await Service().HistoryAsync(item.Id, null, 1)).Items.Single().Id;
+		if (restructureCleared) { assignment = await RestructureClearAsync(item.Id, seed.Revision, assignment); }
 		var source = new NormalizationSourceKey(group.Store, group.RawDescription, group.ItemCode);
 		var mapping = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor,
 			new(source, NormalizationCatalogPolicy.Hash(source), null, seed.Revision, seed.Root, Guid.NewGuid(), "Approve"));
@@ -78,6 +79,33 @@ public sealed partial class ClassificationTests
 	private async Task ApprovedExecutorStoredLabelCore()
 	{
 		var captured = await CaptureExecutableAsync(legacyLabel: "Groceries");
+		var result = await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
+		result.Applied.Should().Be(1);
+		var history = await Service().HistoryAsync(captured.Item, null, 10);
+		history.Items.First().Source.Should().Be("approved_mapping");
+		history.Items.First().CategoryId.Should().Be(captured.Category);
+	}
+
+	private async Task<Guid> RestructureClearAsync(Guid itemId, Guid revision, Guid expected)
+	{
+		await using var db = fixture.CreateDbContext();
+		await using var tx = await db.Database.BeginTransactionAsync();
+		var written = await ClassificationService.AssignRestructureInTransactionAsync(db, Actor,
+			[(itemId, new ClassificationCommand(null, revision, expected, Guid.NewGuid(), "Restructure cleared"))], true, TimeProvider.System, default);
+		await tx.CommitAsync();
+		return written[itemId];
+	}
+
+	[Fact]
+	public async Task ApprovedMappingCapturesAndAppliesToARestructureClearedItem()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorRestructureClearedCore();
+	}
+	private async Task ApprovedExecutorRestructureClearedCore()
+	{
+		var captured = await CaptureExecutableAsync(restructureCleared: true);
+		(await Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Source.Should().Be("restructure");
 		var result = await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
 		result.Applied.Should().Be(1);
 		var history = await Service().HistoryAsync(captured.Item, null, 10);

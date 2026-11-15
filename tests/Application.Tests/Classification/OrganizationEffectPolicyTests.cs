@@ -14,6 +14,7 @@ public sealed class OrganizationEffectPolicyTests
 	[Theory]
 	[InlineData("legacy_import", null)]
 	[InlineData("legacy_write", "unresolved_path")]
+	[InlineData("restructure", null)]
 	public void UnresolvedLegacyObservationIsEligible(string source, string? resolution) =>
 		OrganizationEffectPolicy.Eligibility(Assignment(source, null, resolution), true, false, false)
 			.Should().Be(OrganizationEligibility.Eligible);
@@ -30,6 +31,7 @@ public sealed class OrganizationEffectPolicyTests
 	[InlineData("legacy_write")]
 	[InlineData("approved_mapping")]
 	[InlineData("automation")]
+	[InlineData("restructure")]
 	[InlineData("unknown")]
 	public void AnySelectedCategoryIsProtected(string source) =>
 		OrganizationEffectPolicy.Eligibility(Assignment(source, Guid.NewGuid(), "unresolved_path"), true, false, false)
