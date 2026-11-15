@@ -115,8 +115,9 @@ public sealed class ClassificationEntryHttpTests(PostgresFixture fixture) : ICla
 		var tree = new TaxonomyService(new Factory(fixture), TimeProvider.System);
 		var head = (await tree.ReadAsync(null))!;
 		var root = seedRoot = Guid.NewGuid(); var parent = Guid.NewGuid(); var leaf = Guid.NewGuid();
-		return await tree.ChangeAsync(Actor, new(head.Id, Guid.NewGuid(), "HTTP entry fixture",
-				[new TaxonomyEdit("create", root, Name: "Root " + root), new TaxonomyEdit("create", parent, root, "Parent"), new TaxonomyEdit("create", leaf, parent, "Leaf")]));
+		await tree.ChangeAsync(Actor, new(head.Id, Guid.NewGuid(), "HTTP entry fixture",
+				[new TaxonomyEdit("create", root, Name: "Root " + root), new TaxonomyEdit("create", parent, root, "Parent")]));
+		return await LegacyTaxonomy.AppendAsync(fixture, Actor, new TaxonomyNode(leaf, parent, "Leaf", null, false));
 	}
 
 	[Theory]

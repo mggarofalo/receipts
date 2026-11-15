@@ -3,6 +3,7 @@ using Application.Taxonomy;
 using Domain.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using SampleData.Entities;
@@ -19,10 +20,8 @@ public sealed partial class ClassificationTests
 		string leafName = "Recorded-" + Guid.NewGuid().ToString("N");
 		string staleLegacy = "Stale-" + Guid.NewGuid().ToString("N");
 		Guid firstLeaf = Guid.NewGuid(), secondLeaf = Guid.NewGuid();
-		TaxonomyRevision revision = await Tree().ChangeAsync(Actor, new(second.Revision,
-			Guid.NewGuid(), "Create equal leaves in separate branches",
-			[new TaxonomyEdit("create", firstLeaf, first.Child, leafName),
-			 new TaxonomyEdit("create", secondLeaf, second.Child, leafName)]));
+		TaxonomyRevision revision = await LegacyTaxonomy.AppendAsync(fixture, Actor,
+			new TaxonomyNode(firstLeaf, first.Child, leafName, null, false), new TaxonomyNode(secondLeaf, second.Child, leafName, null, false));
 
 		PurchaseClassification firstAssignment = await Service().AssignAsync(Actor, first.Item,
 			new(firstLeaf, revision.Id, first.Assignment, Guid.NewGuid(), "First leaf"));

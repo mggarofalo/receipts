@@ -100,8 +100,10 @@ public sealed class TaxonomyTests(PostgresFixture fixture)
 		TaxonomyRevision start = await StartAsync();
 		Guid root = Guid.NewGuid(), other = Guid.NewGuid(), child = Guid.NewGuid(), leaf = Guid.NewGuid();
 		string suffix = Guid.NewGuid().ToString();
-		TaxonomyRevision first = await Service().ChangeAsync(Actor, Command(start.Id, new TaxonomyEdit("create", root, Name: "Grocery" + suffix),
-			new TaxonomyEdit("create", other, Name: "Chilled" + suffix), new TaxonomyEdit("create", child, root, "Dairy"), new TaxonomyEdit("create", leaf, child, "Milk")));
+		await Service().ChangeAsync(Actor, Command(start.Id, new TaxonomyEdit("create", root, Name: "Grocery" + suffix),
+			new TaxonomyEdit("create", other, Name: "Chilled" + suffix), new TaxonomyEdit("create", child, root, "Dairy")));
+		// A move carries a legacy third level, which the editor accepts because it gets no deeper.
+		TaxonomyRevision first = await LegacyTaxonomy.AppendAsync(fixture, Actor, new TaxonomyNode(leaf, child, "Milk", null, false));
 		TaxonomyRevision second = await Service().ChangeAsync(Actor, Command(first.Id, new TaxonomyEdit("move", child, other), new TaxonomyEdit("rename", root, Name: "Food" + suffix), new TaxonomyEdit("define", child, Definition: "Dairy products")));
 		TaxonomyRevision historical = (await Service().ReadAsync(first.Id))!;
 		historical.Nodes.Single(node => node.Id == child).ParentId.Should().Be(root);
