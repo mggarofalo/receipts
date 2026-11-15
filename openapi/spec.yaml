@@ -8195,6 +8195,14 @@ paths:
             type: string
             format: date
           description: End date (ISO date string). Defaults to today.
+        - name: categoryView
+          in: query
+          required: false
+          description: Classification view for the most-used category. Defaults to asClassified.
+          schema:
+            type: string
+            enum: [asClassified, currentHierarchy]
+            default: asClassified
       responses:
         "200":
           description: OK

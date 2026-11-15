@@ -9,6 +9,6 @@ public class GetDashboardSummaryQueryHandler(IDashboardService dashboardService)
 {
 	public async ValueTask<DashboardSummaryResult> Handle(GetDashboardSummaryQuery request, CancellationToken cancellationToken)
 	{
-		return await dashboardService.GetSummaryAsync(request.StartDate, request.EndDate, cancellationToken);
+		return await dashboardService.GetSummaryAsync(request.StartDate, request.EndDate, request.CategoryView, cancellationToken);
 	}
 }

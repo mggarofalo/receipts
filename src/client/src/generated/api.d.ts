@@ -16236,6 +16236,8 @@ export interface operations {
                 startDate?: string;
                 /** @description End date (ISO date string). Defaults to today. */
                 endDate?: string;
+                /** @description Classification view for the most-used category. Defaults to asClassified. */
+                categoryView?: "asClassified" | "currentHierarchy";
             };
             header?: never;
             path?: never;

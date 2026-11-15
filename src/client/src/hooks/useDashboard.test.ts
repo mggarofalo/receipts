@@ -47,8 +47,68 @@ describe("useDashboard hooks", () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data).toEqual(mockData);
       expect(mockClient.GET).toHaveBeenCalledWith("/api/dashboard/summary", {
-        params: { query: dateRange },
+        params: { query: { ...dateRange, categoryView: "asClassified" } },
       });
+    });
+
+    it("requests the selected category view", async () => {
+      mockClient.GET.mockResolvedValue({
+        data: { totalReceipts: 1 },
+        error: undefined,
+        response: {} as Response,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const { result } = renderHook(
+        () => useDashboardSummary(dateRange, "currentHierarchy"),
+        { wrapper: createQueryWrapper() },
+      );
+
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(mockClient.GET).toHaveBeenCalledWith("/api/dashboard/summary", {
+        params: { query: { ...dateRange, categoryView: "currentHierarchy" } },
+      });
+    });
+
+    it("refetches when the category view changes", async () => {
+      mockClient.GET.mockImplementation(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        async (_path: string, init: any) =>
+          ({
+            data: {
+              mostUsedCategory: {
+                name: init.params.query.categoryView,
+                count: 1,
+              },
+            },
+            error: undefined,
+            response: {} as Response,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }) as any,
+      );
+
+      const { result, rerender } = renderHook(
+        ({ view }: { view: "asClassified" | "currentHierarchy" }) =>
+          useDashboardSummary(dateRange, view),
+        {
+          wrapper: createQueryWrapper(),
+          initialProps: { view: "asClassified" },
+        },
+      );
+      await waitFor(() =>
+        expect(result.current.data?.mostUsedCategory?.name).toBe(
+          "asClassified",
+        ),
+      );
+
+      rerender({ view: "currentHierarchy" });
+
+      await waitFor(() =>
+        expect(result.current.data?.mostUsedCategory?.name).toBe(
+          "currentHierarchy",
+        ),
+      );
+      expect(mockClient.GET).toHaveBeenCalledTimes(2);
     });
 
     it("throws when API returns an error", async () => {
@@ -83,7 +143,13 @@ describe("useDashboard hooks", () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(mockClient.GET).toHaveBeenCalledWith("/api/dashboard/summary", {
-        params: { query: { startDate: undefined, endDate: undefined } },
+        params: {
+          query: {
+            startDate: undefined,
+            endDate: undefined,
+            categoryView: "asClassified",
+          },
+        },
       });
     });
   });

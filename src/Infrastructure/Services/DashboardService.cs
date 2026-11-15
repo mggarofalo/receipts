@@ -8,7 +8,7 @@ namespace Infrastructure.Services;
 
 public class DashboardService(IDbContextFactory<ApplicationDbContext> contextFactory) : IDashboardService
 {
-	public async Task<DashboardSummaryResult> GetSummaryAsync(DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken)
+	public async Task<DashboardSummaryResult> GetSummaryAsync(DateOnly startDate, DateOnly endDate, CategoryReportView view, CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
 
@@ -48,13 +48,14 @@ public class DashboardService(IDbContextFactory<ApplicationDbContext> contextFac
 			? new NameCountResult(mostUsedAccountData.AccountName, mostUsedAccountData.Count)
 			: new NameCountResult(null, 0);
 
-		// Most-used category = the top-level item type with the most purchases in range, in today's tree
+		// Most-used category = the top-level item type with the most purchases in range, in the selected view.
+		// Group by bucket identity (revision + category) so as-classified roots match the spending chart.
 		CategoryReportResult roots = await CategoryReportReader.ReadAsync(context, context.ReceiptItems,
-			startDate, endDate, CategoryReportView.CurrentHierarchy, CategoryReportRollup.Root,
+			startDate, endDate, view, CategoryReportRollup.Root,
 			cancellationToken: cancellationToken);
 		NameCountResult mostUsedCategory = roots.Buckets
 			.Where(bucket => bucket.State == CategoryReportState.Classified && bucket.Path.Count > 0)
-			.GroupBy(bucket => bucket.CategoryId)
+			.GroupBy(bucket => (bucket.PathRevisionId, bucket.CategoryId))
 			.Select(group => new NameCountResult(group.First().Path[0].Name, group.Sum(bucket => bucket.PurchaseCount)))
 			.OrderByDescending(result => result.Count).ThenBy(result => result.Name, StringComparer.Ordinal)
 			.FirstOrDefault() ?? new NameCountResult(null, 0);

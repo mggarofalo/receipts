@@ -2,6 +2,7 @@ import { queryKeys } from "@/lib/query-invalidation";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import client from "@/lib/api-client";
 import type { operations } from "@/generated/api";
+import type { CategoryReportView } from "@/lib/report-params";
 
 export type CategoryReportOptions = Omit<
   NonNullable<operations["GetSpendingByCategory"]["parameters"]["query"]>,
@@ -13,11 +14,15 @@ export interface DateRange {
   endDate?: string;
 }
 
-export function useDashboardSummary(dateRange: DateRange) {
+export function useDashboardSummary(
+  dateRange: DateRange,
+  categoryView: CategoryReportView = "asClassified",
+) {
   return useQuery({
     queryKey: [
       ...queryKeys.dashboard,
       "summary",
+      categoryView,
       dateRange.startDate,
       dateRange.endDate,
     ],
@@ -28,6 +33,7 @@ export function useDashboardSummary(dateRange: DateRange) {
           query: {
             startDate: dateRange.startDate,
             endDate: dateRange.endDate,
+            categoryView,
           },
         },
       });
