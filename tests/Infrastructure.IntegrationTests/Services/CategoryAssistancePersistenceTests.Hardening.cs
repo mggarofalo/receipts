@@ -115,7 +115,7 @@ public sealed partial class CategoryAssistancePersistenceTests
 	}
 
 	[Fact]
-	public async Task EnrollmentRejectsDirtyLabelsDeletedSourcesAndInactiveActors()
+	public async Task EnrollmentAdmitsStoredLabelsButRejectsDeletedSourcesAndInactiveActors()
 	{
 		string actor = await Admin(); var settings = await Store().GetAsync();
 		await Store().UpdateAsync(actor, settings.Revision, settings with { Enabled = true, Provider = "jev", Model = "jev-1.14.0" });
@@ -124,23 +124,23 @@ public sealed partial class CategoryAssistancePersistenceTests
 			await using var db = fixture.CreateDbContext();
 			Guid receiptId = Guid.NewGuid(), itemId = Guid.NewGuid();
 			var receipt = new Infrastructure.Entities.Core.ReceiptEntity { Id = receiptId, Location = "Store", Date = new(2020, 1, 1), TaxAmountCurrency = Common.Currency.USD };
-			var item = new Infrastructure.Entities.Core.ReceiptItemEntity { Id = itemId, ReceiptId = receiptId, Description = "Unknown", Category = "Ambiguous label", UnitPriceCurrency = Common.Currency.USD, TotalAmountCurrency = Common.Currency.USD };
+			var item = new Infrastructure.Entities.Core.ReceiptItemEntity { Id = itemId, ReceiptId = receiptId, Description = "Unknown", Category = "Groceries", Subcategory = "Dairy", UnitPriceCurrency = Common.Currency.USD, TotalAmountCurrency = Common.Currency.USD };
 			db.Receipts.Add(receipt); db.ReceiptItems.Add(item); await db.SaveChangesAsync();
 			await using var tx = await db.Database.BeginTransactionAsync();
 			async Task<bool> Observe(string writer) => await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, writer, Guid.NewGuid(), itemId, false, false);
-			(await Observe(actor)).Should().BeFalse();
-			item.Category = ""; item.Subcategory = "Ambiguous child"; await db.SaveChangesAsync();
-			(await Observe(actor)).Should().BeFalse();
-			item.Subcategory = null; item.DeletedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync();
+			item.DeletedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync();
 			(await Observe(actor)).Should().BeFalse();
 			item.DeletedAt = null; await db.SaveChangesAsync();
 			receipt.DeletedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync();
 			(await Observe(actor)).Should().BeFalse();
 			receipt.DeletedAt = null; await db.SaveChangesAsync();
 			(await Observe("missing-" + Guid.NewGuid())).Should().BeFalse();
+			(await db.CategoryAssistanceObservations.AnyAsync(x => x.ReceiptItemId == itemId)).Should().BeFalse();
+			// Stored legacy labels are history, not a choice; they do not keep the item out.
+			(await Observe(actor)).Should().BeTrue();
 			var user = await db.Users.SingleAsync(x => x.Id == actor); user.LockoutEnabled = true; user.LockoutEnd = DateTimeOffset.UtcNow.AddDays(1); await db.SaveChangesAsync();
 			(await Observe(actor)).Should().BeFalse();
-			(await db.CategoryAssistanceObservations.AnyAsync(x => x.ReceiptItemId == itemId)).Should().BeFalse();
+			(await db.CategoryAssistanceObservations.CountAsync(x => x.ReceiptItemId == itemId)).Should().Be(1);
 			await tx.RollbackAsync();
 		}
 		finally

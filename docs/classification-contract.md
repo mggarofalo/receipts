@@ -209,16 +209,11 @@ before this change.
   (`unresolved_path`, no category, empty label evidence), which keeps it
   eligible for category assistance and organization.
 - The eligibility guards (category assistance enrolment, dispatch, read and
-  decision stores, historical approved mappings, organization discovery) still
-  treat non-blank stored labels as an earlier human choice. They stay on the
-  item columns because `legacy_import` assignments carry no label evidence of
-  their own: the columns are the only record of what an imported item said.
-  With the writes retired, those columns can no longer change underneath the
-  guards. The other side of this: an unresolved item that carries labels stays
-  out of assistance and organization for good. Choosing its type by hand still
-  works. *This lock-out is not intended:* eligibility depends only on the
-  current assignment ([purchase-classification](../openspec/specs/purchase-classification/spec.md));
-  the guard change is RECEIPTS-1120.
+  decision stores, historical approved mappings, organization discovery) read
+  only the current assignment. Stored labels play no part: an unresolved item
+  that still says "Groceries" is as eligible as one with no label at all
+  ([purchase-classification](../openspec/specs/purchase-classification/spec.md)).
+  A label is history, not a choice; a person's choice is a `manual` assignment.
 
 What still touches the strings, by design:
 

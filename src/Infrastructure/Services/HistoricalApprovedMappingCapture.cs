@@ -105,7 +105,6 @@ internal sealed class HistoricalApprovedMappingCapture(IDbContextFactory<Applica
               AND NOT (i."Id" = ANY ({excluded}))
               AND NOT {protectedSource} AND NOT (i."Id" = ANY ({protectedItems}))
               AND (CAST({after} AS uuid) IS NULL OR i."Id" > CAST({after} AS uuid))
-              AND nullif(btrim(i."Category"), '') IS NULL AND nullif(btrim(i."Subcategory"), '') IS NULL
               AND (c."AssignmentId" IS NULL OR (a."CategoryId" IS NULL AND
                    (a."Source" = 'legacy_import' OR (a."Source" = 'legacy_write' AND a."LegacyResolution" = 'unresolved_path'))))
             ORDER BY i."Id"

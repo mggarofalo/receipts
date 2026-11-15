@@ -24,7 +24,7 @@ public sealed partial class OrganizationDiscoveryTests
 			};
 
 	[Fact]
-	public async Task LegacyNullProvenanceSurvivesPagingAndRestartWhileChoicesLabelsAndSuppressionStayProtected()
+	public async Task LegacyNullProvenanceSurvivesPagingAndRestartWhileChoicesAndSuppressionStayProtected()
 	{
 		var fixture = await server.CreateIsolatedAsync();
 		try
@@ -32,7 +32,8 @@ public sealed partial class OrganizationDiscoveryTests
 			Guid receipt = Guid.NewGuid();
 			var items = Enumerable.Range(0, 11).Select(n => Item(receipt,
 					Guid.Parse($"00000000-0000-0000-0000-{n + 1:D12}"), $"Legacy source {n}")).ToArray();
-			items[5].Category = "Retained raw category";
+			// Stored legacy labels are history, not a choice: these unresolved imports stay eligible.
+			items[5].Category = "Groceries";
 			items[6].Subcategory = "Retained raw subcategory";
 			await Seed(fixture, items);
 			await using var db = fixture.CreateDbContext();
@@ -109,15 +110,16 @@ public sealed partial class OrganizationDiscoveryTests
 			(await Start(fixture)).Should().Be(run);
 			await Drain(fixture, run, 2);
 			var manifest = await db.OrganizationItems.AsNoTracking().ToDictionaryAsync(x => x.ItemId);
+			int[] observed = [0, 1, 5, 6];
 			foreach (int n in Enumerable.Range(0, items.Length))
 			{
-				manifest[items[n].Id].State.Should().Be(n < 2 ? "observed" : "protected", $"case {n}");
+				manifest[items[n].Id].State.Should().Be(observed.Contains(n) ? "observed" : "protected", $"case {n}");
 				manifest[items[n].Id].ExpectedAssignmentId.Should().Be(assignments[n].Id);
 				manifest[items[n].Id].PreviousCategoryId.Should().Be(assignments[n].CategoryId);
-				if (n < 2) { manifest[items[n].Id].SourceId.Should().NotBeNull(); }
+				if (observed.Contains(n)) { manifest[items[n].Id].SourceId.Should().NotBeNull(); }
 				else { manifest[items[n].Id].SourceId.Should().BeNull(); }
 			}
-			(await db.OrganizationSources.CountAsync()).Should().Be(2);
+			(await db.OrganizationSources.CountAsync()).Should().Be(observed.Length);
 			(await db.ReceiptItems.AsNoTracking().OrderBy(x => x.Id).ToListAsync()).Should().BeEquivalentTo(before);
 			(await db.Classifications.AsNoTracking().OrderBy(x => x.Id).ToListAsync()).Should().BeEquivalentTo(history);
 		}

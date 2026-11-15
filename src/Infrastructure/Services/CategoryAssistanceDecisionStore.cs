@@ -322,9 +322,7 @@ public sealed class CategoryAssistanceDecisionStore(IDbContextFactory<Applicatio
 		var receipt = await db.Receipts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == marker.ReceiptId, ct);
 		if (item == null || receipt == null || item.ReceiptId != receipt.Id || item.DeletedAt != null ||
 			receipt.DeletedAt != null || item.NormalizationRevision != marker.ItemRevision ||
-						receipt.NormalizationRevision != marker.ReceiptRevision ||
-						(uncategorizedOnly || marker.Evidence == "post_consent_no_choice_save") && (!string.IsNullOrEmpty(item.Category) ||
-						!string.IsNullOrEmpty(item.Subcategory)))
+						receipt.NormalizationRevision != marker.ReceiptRevision)
 		{
 			return false;
 		}

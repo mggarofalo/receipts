@@ -121,9 +121,12 @@ public sealed partial class OrganizationDiscoveryTests
 		{
 			Guid receipt = Guid.NewGuid();
 			var items = Enumerable.Range(0, 5).Select(_ => Item(receipt, Guid.NewGuid())).ToArray();
-			items[2].Category = "Synthetic protected";
 			await Seed(fixture, items);
 			await using var db = fixture.CreateDbContext();
+			Guid manual = Guid.NewGuid();
+			db.Classifications.Add(new Infrastructure.Entities.Taxonomy.PurchaseClassificationEntity { Id = manual, ReceiptItemId = items[2].Id, TaxonomyRevisionId = (await db.TaxonomyHeads.SingleAsync()).RevisionId, Sequence = 1, Source = "manual", Actor = "synthetic", OperationId = Guid.NewGuid(), RecordedAt = DateTimeOffset.UtcNow });
+			db.CurrentClassifications.Add(new Infrastructure.Entities.Taxonomy.CurrentClassificationEntity { ReceiptItemId = items[2].Id, AssignmentId = manual });
+			await db.SaveChangesAsync();
 			// Legacy/imported invalid facts bypass the write-path validator.
 			await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"ReceiptItems\" SET \"Description\" = ' ' WHERE \"Id\" = {items[4].Id}");
 			await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE receipts.\"ReceiptItems\" SET \"DeletedAt\" = now() WHERE \"Id\" = {items[3].Id}");

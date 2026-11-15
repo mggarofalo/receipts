@@ -446,6 +446,24 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 	}
 
 	[Fact]
+	public async Task UnresolvedImportWithStoredLabelIsCurrentAndAcceptable()
+	{
+		await using var fixture = await server.CreateIsolatedAsync();
+		var seed = await SeedAsync(fixture, "Groceries");
+		var suggestion = await new CategoryAssistanceReadStore(new Factory(fixture), TimeProvider.System)
+			.GetSuggestionAsync(seed.Attempt, CancellationToken.None);
+		suggestion!.IsCurrent.Should().BeTrue();
+
+		var accepted = await CreateStore(fixture).AcceptAsync(seed.Actor, seed.Attempt,
+			new(Guid.NewGuid(), seed.Taxonomy, [seed.Item]), CancellationToken.None);
+
+		accepted.CategoryId.Should().Be(seed.Category);
+		await using var db = fixture.CreateDbContext();
+		var current = await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == seed.Item);
+		(await db.Classifications.SingleAsync(x => x.Id == current.AssignmentId)).CategoryId.Should().Be(seed.Category);
+	}
+
+	[Fact]
 	public async Task LatestObservationControlsPageCountAndRejectsStaleAcceptance()
 	{
 		await using var fixture = await server.CreateIsolatedAsync();
@@ -722,7 +740,7 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 	}
 
 	private static async Task<(string Actor, Guid Taxonomy, Guid Category, Guid Attempt, Guid Item)> SeedAsync(
-		PostgresFixture fixture)
+		PostgresFixture fixture, string? legacyLabel = null)
 	{
 		var actor = $"test-{Guid.NewGuid():N}";
 		var taxonomy = Guid.NewGuid();
@@ -760,6 +778,7 @@ public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
 			Id = itemId,
 			ReceiptId = receiptId,
 			Description = "Bread",
+			Category = legacyLabel ?? "",
 			UnitPriceCurrency = Currency.USD,
 			TotalAmountCurrency = Currency.USD
 		});

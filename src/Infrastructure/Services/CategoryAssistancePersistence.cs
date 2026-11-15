@@ -122,7 +122,7 @@ public static class CategoryAssistanceObservationWriter
 		if (!settings.Enabled || !await db.Users.AnyAsync(u => u.Id == actor && !(u.LockoutEnabled && u.LockoutEnd > now), ct)) { return false; }
 		if (await db.CategoryAssistanceObservations.AnyAsync(x => x.SaveId == saveId && x.ReceiptItemId == itemId, ct)) { return false; }
 		ReceiptItemEntity? item = await db.ReceiptItems.AsNoTracking().SingleOrDefaultAsync(x => x.Id == itemId, ct);
-		if (item == null || item.DeletedAt != null || !string.IsNullOrWhiteSpace(item.Category) || !string.IsNullOrWhiteSpace(item.Subcategory)) { return false; }
+		if (item == null || item.DeletedAt != null) { return false; }
 		ReceiptEntity? receipt = await db.Receipts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == item.ReceiptId, ct);
 		if (receipt == null || receipt.DeletedAt != null) { return false; }
 		var assignment = await (from current in db.CurrentClassifications

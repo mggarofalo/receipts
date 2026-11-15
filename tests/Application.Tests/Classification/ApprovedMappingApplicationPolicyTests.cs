@@ -19,7 +19,7 @@ public sealed class ApprovedMappingApplicationPolicyTests
 			CategoryMappingPolicy.SemanticFingerprint([Node], Category), "reviewer", Guid.NewGuid(), "reason", DateTimeOffset.UtcNow);
 	private static readonly ApprovedMappingCandidate Candidate = new(Item, Source, Guid.NewGuid(), Guid.NewGuid(), null, Mapping.Id, Taxonomy);
 	private static readonly ApprovedMappingCurrent Current = new(Item, Source, Candidate.ItemRevision, Candidate.ReceiptRevision,
-			null, null, true, false, false, null, null, Taxonomy, Mapping.Id, Mapping, [Node]);
+			null, null, true, false, false, Taxonomy, Mapping.Id, Mapping, [Node]);
 
 	[Fact]
 	public void ExactCurrentApprovalForAbsentPurchaseIsEligible() =>
@@ -62,7 +62,6 @@ public sealed class ApprovedMappingApplicationPolicyTests
 				Current with { Available = null }, Current with { Available = false },
 						Current with { LeaveAsIs = null }, Current with { LeaveAsIs = true },
 						Current with { Suppressed = null }, Current with { Suppressed = true },
-						Current with { LegacyCategory = "Food" }, Current with { LegacySubcategory = "Other" },
 						Current with { AssignmentId = Guid.NewGuid() }, Current with { ItemId = Guid.NewGuid() },
 						Current with { ItemRevision = Guid.NewGuid() }, Current with { ReceiptRevision = Guid.NewGuid() },
 						Current with { Source = Source with { RawDescription = "Milk" } },
