@@ -5,6 +5,7 @@ using Application.Taxonomy;
 using Domain.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -18,8 +19,7 @@ public sealed partial class ClassificationTests
 	public async Task EntryWirePayloadsPersistNoChoiceClearRootParentAndDeepChildWithStableReplay()
 	{
 		var seed = await SeedAsync();
-		var revision = await Tree().ChangeAsync(Actor, new(seed.Revision, Guid.NewGuid(), "Deep entry fixture",
-			[new TaxonomyEdit("create", Guid.NewGuid(), seed.Child, "Deep child")]));
+		var revision = await LegacyTaxonomy.AppendAsync(fixture, Actor, new TaxonomyNode(Guid.NewGuid(), seed.Child, "Deep child", null, false));
 		var deep = revision.Nodes.Single(x => x.Name == "Deep child");
 		string rootName = revision.Nodes.Single(x => x.Id == seed.Root).Name;
 		var factory = new ActorFactory(fixture);

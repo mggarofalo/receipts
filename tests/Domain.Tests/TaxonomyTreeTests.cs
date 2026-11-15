@@ -73,9 +73,31 @@ public sealed class TaxonomyTreeTests
 	[Fact]
 	public void ExactNamesAllowCaseDifferencesAndSameNameUnderDifferentParentsAndArchivedSiblings()
 	{
-		IReadOnlyList<TaxonomyNode> actual = TaxonomyTree.Apply(Tree, [new("create", Guid.NewGuid(), Name: "food"),
-			new("create", Guid.NewGuid(), Child, "Dairy"), new("archive", Child), new("create", Guid.NewGuid(), Root, "Dairy")]);
+		Guid food = Guid.NewGuid();
+		IReadOnlyList<TaxonomyNode> actual = TaxonomyTree.Apply(Tree, [new("create", food, Name: "food"),
+			new("create", Guid.NewGuid(), food, "Dairy"), new("archive", Child), new("create", Guid.NewGuid(), Root, "Dairy")]);
 		actual.Should().HaveCount(6);
+	}
+
+	[Fact]
+	public void CreatingBelowAChildIsRefused()
+	{
+		Guid dairy = Guid.NewGuid();
+		TaxonomyNode[] tree = [new(Root, null, "Grocery", null, false), new(dairy, Root, "Dairy", null, false)];
+		Action actual = () => TaxonomyTree.Apply(tree, [new("create", Guid.NewGuid(), dairy, "Whole Milk")]);
+		actual.Should().Throw<TaxonomyValidationException>().WithMessage("*at most 2 levels*");
+	}
+
+	[Fact]
+	public void MovingAParentBelowARootIsRefusedBecauseItsChildrenWouldBeAThirdLevel()
+	{
+		Guid dairy = Guid.NewGuid();
+		TaxonomyNode[] tree = [new(Root, null, "Grocery", null, false), new(dairy, null, "Dairy", null, false),
+			new(Leaf, dairy, "Milk", null, false)];
+		Action actual = () => TaxonomyTree.Apply(tree, [new("move", dairy, Root)]);
+		actual.Should().Throw<TaxonomyValidationException>().WithMessage("*at most 2 levels*");
+		TaxonomyTree.Apply(tree, [new("move", Leaf, Root), new("move", dairy, Root)])
+			.Single(node => node.Id == dairy).ParentId.Should().Be(Root);
 	}
 
 	[Fact]

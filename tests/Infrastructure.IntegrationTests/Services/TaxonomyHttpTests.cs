@@ -129,4 +129,37 @@ public sealed class TaxonomyHttpTests(PostgresFixture fixture)
 		conflict.RootElement.GetProperty("detail").GetString().Should().Contain("Refresh");
 		(await client.GetAsync($"/api/taxonomy/revisions/{revision}")).StatusCode.Should().Be(HttpStatusCode.OK);
 	}
+
+	[Fact]
+	public async Task ChangesThatWouldMakeAThirdLevelAreRefusedWithoutARevision()
+	{
+		await using WebApplication app = await HostAsync();
+		using HttpClient client = app.GetTestClient();
+		client.DefaultRequestHeaders.Add("X-Test-Role", AppRoles.Admin);
+		using JsonDocument initial = JsonDocument.Parse(await client.GetStringAsync("/api/taxonomy"));
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+		Guid grocery = Guid.NewGuid(), dairy = Guid.NewGuid(), produce = Guid.NewGuid();
+		using HttpResponseMessage seeded = await client.PostAsync("/api/taxonomy/changes", Body(initial.RootElement.GetProperty("id").GetGuid(), [
+			new { kind = "create", categoryId = grocery, name = $"Grocery {suffix}" },
+			new { kind = "create", categoryId = dairy, parentId = grocery, name = "Dairy" },
+			new { kind = "create", categoryId = produce, name = $"Produce {suffix}" },
+			new { kind = "create", categoryId = Guid.NewGuid(), parentId = produce, name = "Apples" }]));
+		seeded.StatusCode.Should().Be(HttpStatusCode.OK);
+		using JsonDocument seededRevision = JsonDocument.Parse(await seeded.Content.ReadAsStringAsync());
+		Guid revision = seededRevision.RootElement.GetProperty("id").GetGuid();
+		object[][] refused = [
+			[new { kind = "create", categoryId = Guid.NewGuid(), parentId = dairy, name = "Whole Milk" }],
+			[new { kind = "move", categoryId = produce, parentId = grocery }]
+		];
+		foreach (object[] changes in refused)
+		{
+			using HttpResponseMessage response = await client.PostAsync("/api/taxonomy/changes", Body(revision, changes));
+			response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+			response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+			using JsonDocument problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+			problem.RootElement.GetProperty("detail").GetString().Should().Contain("at most 2 levels");
+		}
+		using JsonDocument head = JsonDocument.Parse(await client.GetStringAsync("/api/taxonomy"));
+		head.RootElement.GetProperty("id").GetGuid().Should().Be(revision);
+	}
 }

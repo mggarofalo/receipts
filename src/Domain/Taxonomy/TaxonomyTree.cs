@@ -8,9 +8,12 @@ public static class TaxonomyTree
 {
 	public const int MaximumNameLength = 200;
 	public const int MaximumDefinitionLength = 4000;
+	/// <summary>Roots and their direct children: the depth category assistance and restructure plans support.</summary>
+	public const int MaximumLevels = 2;
 	public static IReadOnlyList<TaxonomyNode> Apply(IReadOnlyList<TaxonomyNode> original, IReadOnlyList<TaxonomyEdit> changes)
 	{
-		Dictionary<Guid, TaxonomyNode> nodes = original.ToDictionary(node => node.Id);
+		Dictionary<Guid, TaxonomyNode> before = original.ToDictionary(node => node.Id);
+		Dictionary<Guid, TaxonomyNode> nodes = new(before);
 		foreach (TaxonomyEdit edit in changes)
 		{
 			if (edit.CategoryId == Guid.Empty) { throw new TaxonomyValidationException("Category ID must not be empty."); }
@@ -65,7 +68,18 @@ public static class TaxonomyTree
 				if (!path.Add(parent)) { throw new TaxonomyValidationException("Category hierarchy cannot contain a cycle."); }
 				if (!node.Archived && current.Archived) { throw new TaxonomyValidationException("Active categories require active ancestors."); }
 			}
+			// Trees recorded before the limit may already be deeper, so a batch is refused only when it makes a placement deeper.
+			if (path.Count > MaximumLevels && (!before.ContainsKey(node.Id) || path.Count > Levels(before, node.Id)))
+			{ throw new TaxonomyValidationException($"Categories may have at most {MaximumLevels} levels, so nothing can be placed below a child category."); }
 		}
 		return nodes.Values.OrderBy(node => node.Id).ToArray();
+	}
+
+	private static int Levels(Dictionary<Guid, TaxonomyNode> nodes, Guid id)
+	{
+		int levels = 1;
+		TaxonomyNode current = nodes[id];
+		while (current.ParentId is Guid parent && levels <= nodes.Count && nodes.TryGetValue(parent, out current!)) { levels++; }
+		return levels;
 	}
 }

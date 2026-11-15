@@ -14,7 +14,6 @@ public static class RestructurePlanner
 	public const int MaximumEvidenceLength = 2000;
 	public const int MaximumOccasionNameLength = 200;
 	public const int MaximumReasonLength = 4000;
-	public const int MaximumTreeDepth = 2;
 
 	/// <summary>Assignments these sources made after the plan's snapshot are someone's later decision.</summary>
 	public static readonly IReadOnlySet<string> ProtectedSources = new HashSet<string>(StringComparer.Ordinal)
@@ -179,10 +178,10 @@ public static class RestructurePlanner
 			.Select(node => PathOf(after, node.Id)).Order(StringComparer.Ordinal).ToList();
 		if (undefined.Count > 0)
 		{ errors.Add($"Every active category needs a definition (\"includes … / not …\"); {undefined.Count} have none, e.g. {Sample(undefined)}."); }
-		List<string> deep = active.Where(node => Depth(after, node) >= MaximumTreeDepth)
+		List<string> deep = active.Where(node => Depth(after, node) >= TaxonomyTree.MaximumLevels)
 			.Select(node => PathOf(after, node.Id)).Order(StringComparer.Ordinal).ToList();
 		if (deep.Count > 0)
-		{ errors.Add($"Item types may have at most {MaximumTreeDepth} levels, which is what category assistance can ask about; {deep.Count} are deeper, e.g. {Sample(deep)}."); }
+		{ errors.Add($"Item types may have at most {TaxonomyTree.MaximumLevels} levels, which is what category assistance can ask about; {deep.Count} are deeper, e.g. {Sample(deep)}."); }
 	}
 
 	private static int Depth(Dictionary<Guid, TaxonomyNode> nodes, TaxonomyNode node)

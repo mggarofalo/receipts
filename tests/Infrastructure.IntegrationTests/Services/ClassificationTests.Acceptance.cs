@@ -44,8 +44,7 @@ public sealed partial class ClassificationTests
 	{
 		var seed = await SeedAsync();
 		Guid leaf = Guid.NewGuid();
-		var deep = await Tree().ChangeAsync(Actor, new(seed.Revision, Guid.NewGuid(), "Add deep node",
-				[new TaxonomyEdit("create", leaf, seed.Child, "Deep leaf")]));
+		var deep = await LegacyTaxonomy.AppendAsync(fixture, Actor, new TaxonomyNode(leaf, seed.Child, "Deep leaf", null, false));
 		await using var db = fixture.CreateDbContext();
 		var item = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
 		(string Category, string? Subcategory) storedLabels = (item.Category, item.Subcategory);
