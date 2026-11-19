@@ -50,6 +50,10 @@ describe("YNAB committed-change invalidation", () => {
       affected: Object.values(cacheKeys).filter((key) => key[0] === "ynab"),
     },
     {
+      change: "ynab-connection",
+      affected: Object.values(cacheKeys).filter((key) => key[0] === "ynab"),
+    },
+    {
       change: "ynab-mapping",
       affected: [
         cacheKeys.accountMappings,

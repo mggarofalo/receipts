@@ -22,6 +22,10 @@ const UNTRACKABLE_PREFIXES = [
   "/login",
   "/change-password",
   "/onboarding",
+  // Arrives with a single-use authorization code and state in the query
+  // string; neither may be written to storage, and the page is not a place to
+  // land on later.
+  "/settings/ynab/callback",
 ];
 
 export function isTrackableRoute(pathname: string): boolean {

@@ -62,6 +62,12 @@ vi.mock("@/pages/new-receipt/NewReceiptPage", () => ({
 vi.mock("@/pages/settings/YnabSettings", () => ({
   default: () => <div data-testid="page-ynab-settings">YnabSettings</div>,
 }));
+vi.mock("@/pages/settings/YnabOAuthCallback", () => ({
+  default: () => <div data-testid="page-ynab-callback">YnabOAuthCallback</div>,
+}));
+vi.mock("@/pages/PrivacyPolicy", () => ({
+  default: () => <div data-testid="page-privacy">PrivacyPolicy</div>,
+}));
 vi.mock("@/pages/RestructureCategories", () => ({
   default: () => (
     <div data-testid="page-restructure">RestructureCategories</div>
@@ -161,6 +167,35 @@ describe("App router", () => {
   it('renders YnabSettings page at "/settings/ynab" route', async () => {
     renderRoute("/settings/ynab");
     expect(await screen.findByTestId("page-ynab-settings")).toBeInTheDocument();
+  });
+
+  it("renders the YNAB OAuth callback inside the authenticated layout", async () => {
+    renderRoute("/settings/ynab/callback?code=c&state=s");
+    const page = await screen.findByTestId("page-ynab-callback");
+    expect(screen.getByTestId("layout")).toContainElement(page);
+  });
+
+  it("keeps the YNAB OAuth callback behind authentication", async () => {
+    session.authenticated = false;
+    renderRoute("/settings/ynab/callback?code=c&state=s");
+    expect(await screen.findByTestId("page-login")).toBeInTheDocument();
+    expect(screen.queryByTestId("page-ynab-callback")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["signed out", false],
+    ["signed in", true],
+  ])("renders the privacy policy in the public layout while %s, without redirecting", async (_name, authenticated) => {
+    session.authenticated = authenticated;
+    const router = createMemoryRouter(routeConfig, {
+      initialEntries: ["/privacy"],
+    });
+    render(<RouterProvider router={router} />);
+    const page = await screen.findByTestId("page-privacy");
+    expect(screen.getByTestId("public-layout")).toContainElement(page);
+    expect(screen.queryByTestId("layout")).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/privacy");
+    router.dispose();
   });
 
   it('renders BackupRestore page at "/admin/backup" route', async () => {

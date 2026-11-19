@@ -21,6 +21,7 @@ vi.mock("sonner", () => ({
 }));
 
 import client from "@/lib/api-client";
+import type { components } from "@/generated/api";
 import createClient, { type Middleware } from "openapi-fetch";
 import { getRequestErrorPresentation } from "@/lib/request-error-policy";
 import { toast } from "sonner";
@@ -106,9 +107,13 @@ beforeEach(() => {
 
 describe("useYnab", () => {
   it("useYnabConnectionStatus returns connection status on success", async () => {
-    const status = {
+    const status: components["schemas"]["YnabConnectionStatusResponse"] = {
       isConfigured: true,
       isConnected: true,
+      credentialSource: "oauth",
+      oauthAvailable: true,
+      reconnectRequired: false,
+      oauthConnectedAtUtc: "2026-04-01T08:00:00Z",
       lastSuccessfulSyncUtc: "2026-04-05T12:00:00Z",
     };
     (client.GET as Mock).mockResolvedValue({ data: status, error: undefined });
@@ -120,6 +125,10 @@ describe("useYnab", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.isConfigured).toBe(true);
     expect(result.current.isConnected).toBe(true);
+    expect(result.current.credentialSource).toBe("oauth");
+    expect(result.current.oauthAvailable).toBe(true);
+    expect(result.current.reconnectRequired).toBe(false);
+    expect(result.current.oauthConnectedAtUtc).toBe("2026-04-01T08:00:00Z");
     expect(result.current.lastSuccessfulSyncUtc).toBe("2026-04-05T12:00:00Z");
     expect(client.GET).toHaveBeenCalledWith(
       "/api/ynab/connection-status",
@@ -148,7 +157,33 @@ describe("useYnab", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.isConfigured).toBe(false);
     expect(result.current.isConnected).toBe(false);
+    expect(result.current.credentialSource).toBe("none");
+    expect(result.current.oauthAvailable).toBe(false);
+    expect(result.current.reconnectRequired).toBe(false);
+    expect(result.current.oauthConnectedAtUtc).toBeNull();
     expect(result.current.lastSuccessfulSyncUtc).toBeNull();
+  });
+
+  it("useYnabConnectionStatus reports a reconnect-required status", async () => {
+    const status: components["schemas"]["YnabConnectionStatusResponse"] = {
+      isConfigured: false,
+      isConnected: false,
+      credentialSource: "none",
+      oauthAvailable: true,
+      reconnectRequired: true,
+      oauthConnectedAtUtc: null,
+      lastSuccessfulSyncUtc: null,
+    };
+    (client.GET as Mock).mockResolvedValue({ data: status, error: undefined });
+
+    const { result } = renderHook(() => useYnabConnectionStatus(), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.reconnectRequired).toBe(true);
+    expect(result.current.oauthAvailable).toBe(true);
+    expect(result.current.isConfigured).toBe(false);
   });
 
   it.each([

@@ -87,6 +87,10 @@ import {
 const CONFIGURED = {
   isConfigured: true,
   isConnected: true,
+  credentialSource: "personalAccessToken",
+  oauthAvailable: false,
+  reconnectRequired: false,
+  oauthConnectedAtUtc: null,
   lastSuccessfulSyncUtc: "2026-06-01T00:00:00Z",
   isLoading: false,
 };
@@ -122,15 +126,26 @@ describe("Ynab", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the not-configured empty state when no PAT is set", () => {
+  it("shows the not-configured empty state, naming both ways to enable YNAB, when no credential exists", () => {
     vi.mocked(useYnabConnectionStatus).mockReturnValue({
       isConfigured: false,
       isConnected: false,
+      credentialSource: "none",
+      oauthAvailable: false,
+      reconnectRequired: false,
+      oauthConnectedAtUtc: null,
       lastSuccessfulSyncUtc: null,
       isLoading: false,
     } as never);
 
     renderWithProviders(<Ynab />);
+
+    expect(screen.getByText(/operator of this deployment/i)).toHaveTextContent(
+      "The operator of this deployment enables the integration by adding the YNAB OAuth settings (recommended) or by setting the YNAB_PAT environment variable.",
+    );
+    expect(
+      screen.queryByText(/^Set the YNAB_PAT environment variable/),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.queryByText("Integration health and recent sync activity"),
