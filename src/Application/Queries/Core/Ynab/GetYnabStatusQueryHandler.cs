@@ -5,11 +5,12 @@ using Mediator;
 namespace Application.Queries.Core.Ynab;
 
 public class GetYnabStatusQueryHandler(
-	IYnabApiClient ynabApiClient,
+	IYnabCredentialSource credentialSource,
 	IYnabSyncEventService ynabSyncEventService) : IRequestHandler<GetYnabStatusQuery, YnabStatus>
 {
 	public async ValueTask<YnabStatus> Handle(GetYnabStatusQuery request, CancellationToken cancellationToken)
 	{
-		return await ynabSyncEventService.GetStatusAsync(ynabApiClient.IsConfigured, cancellationToken);
+		YnabCredentialState state = await credentialSource.GetStateAsync(cancellationToken);
+		return await ynabSyncEventService.GetStatusAsync(state.IsUsable, cancellationToken);
 	}
 }

@@ -3361,6 +3361,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ynab/oauth/authorization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a YNAB OAuth authorization
+         * @description Creates a single-use authorization attempt, valid for ten minutes and bound to the calling Admin, and returns the YNAB address the browser must visit. Admin-only.
+         */
+        post: operations["StartYnabAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ynab/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete a YNAB OAuth authorization
+         * @description Exchanges the code YNAB returned for tokens and stores them as the deployment's YNAB connection. Must be called by the Admin who started the attempt. Admin-only.
+         */
+        post: operations["CompleteYnabAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ynab/oauth/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect the YNAB OAuth connection
+         * @description Asks YNAB to revoke the grant, then removes the stored tokens whether or not YNAB could be reached. Admin-only.
+         */
+        delete: operations["DisconnectYnab"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ynab/events": {
         parameters: {
             query?: never;
@@ -7067,18 +7127,54 @@ export interface components {
             data: components["schemas"]["YnabBudgetSummary"][];
         };
         YnabConnectionStatusResponse: {
-            /** @description Whether the YNAB personal access token is set. */
+            /** @description Whether a usable YNAB credential exists (an OAuth connection or a personal access token). */
             isConfigured: boolean;
-            /** @description Whether the YNAB API is reachable with the configured token. */
+            /** @description Whether the YNAB API is reachable with the credential in use. */
             isConnected: boolean;
+            credentialSource: components["schemas"]["YnabCredentialSource"];
+            /** @description Whether this deployment has the OAuth client settings needed to start a connection. */
+            oauthAvailable: boolean;
+            /** @description Whether an OAuth connection existed and can no longer be used, so an Admin must reconnect. */
+            reconnectRequired: boolean;
+            /**
+             * Format: date-time
+             * @description When the OAuth connection was made, or null when there is none.
+             */
+            oauthConnectedAtUtc?: string | null;
             /**
              * Format: date-time
              * @description The timestamp of the last successful YNAB sync operation, or null if no syncs have completed.
              */
             lastSuccessfulSyncUtc?: string | null;
         };
+        /**
+         * @description Which credential YNAB requests are sent with.
+         * @enum {string}
+         */
+        YnabCredentialSource: "none" | "oauth" | "personalAccessToken";
+        YnabAuthorizationStartResponse: {
+            /**
+             * Format: uri
+             * @description The YNAB address the browser must visit to approve the connection.
+             */
+            authorizationUrl: string;
+        };
+        CompleteYnabAuthorizationRequest: {
+            /** @description The authorization code YNAB returned. */
+            code: string;
+            /** @description The state value YNAB returned unchanged. */
+            state: string;
+        };
+        /**
+         * @description What happened when YNAB was asked to revoke the grant. `succeeded` means YNAB accepted the request.
+         * @enum {string}
+         */
+        YnabRemoteRevocation: "succeeded" | "failed" | "notAttempted";
+        YnabDisconnectResponse: {
+            remoteRevocation: components["schemas"]["YnabRemoteRevocation"];
+        };
         YnabStatusResponse: {
-            /** @description Whether the YNAB personal access token is set. */
+            /** @description Whether a usable YNAB credential exists (an OAuth connection or a personal access token). */
             isConfigured: boolean;
             /**
              * Format: date-time
@@ -16578,6 +16674,116 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["YnabStatusResponse"];
                 };
+            };
+        };
+    };
+    StartYnabAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabAuthorizationStartResponse"];
+                };
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description YNAB OAuth is not configured on this deployment */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+        };
+    };
+    CompleteYnabAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteYnabAuthorizationRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabConnectionStatusResponse"];
+                };
+            };
+            /** @description The authorization attempt is not valid, or YNAB rejected the code */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ProblemDetails"];
+                };
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description YNAB could not be reached; the same attempt can be completed again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DisconnectYnab: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YnabDisconnectResponse"];
+                };
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

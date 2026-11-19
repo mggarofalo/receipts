@@ -4,11 +4,9 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Application.Interfaces.Services;
 using Application.Models.Ynab;
-using Common;
 using Infrastructure.Ynab;
 using Infrastructure.Ynab.Models;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Polly.CircuitBreaker;
 
@@ -17,7 +15,7 @@ namespace Infrastructure.Services;
 public class YnabApiClient(
 	HttpClient httpClient,
 	IMemoryCache memoryCache,
-	IConfiguration configuration,
+	IYnabCredentialSource credentialSource,
 	IYnabRateLimitTracker rateLimitTracker,
 	IYnabResponseContext responseContext,
 	ILogger<YnabApiClient> logger) : IYnabApiClient
@@ -26,25 +24,13 @@ public class YnabApiClient(
 
 	private const string CacheKeyPrefix = "ynab:";
 
-	private string PatCachePrefix
+	// Cached YNAB data is namespaced by credential identity so a changed credential never
+	// serves the previous one's data.
+	private async ValueTask<string> CachePrefixAsync(CancellationToken cancellationToken)
 	{
-		get
-		{
-			string? pat = Pat;
-			if (string.IsNullOrEmpty(pat))
-			{
-				return CacheKeyPrefix;
-			}
-			// Use first 8 chars of SHA256 hash to namespace cache keys by PAT identity.
-			// Avoids stale data after PAT rotation without exposing the token in memory.
-			byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(pat));
-			return $"{CacheKeyPrefix}{Convert.ToHexString(hash)[..8]}:";
-		}
+		YnabBearerCredential? credential = await credentialSource.GetCredentialAsync(cancellationToken);
+		return credential is null ? CacheKeyPrefix : $"{CacheKeyPrefix}{credential.CacheIdentity}:";
 	}
-
-	private string BudgetsCacheKey => $"{PatCachePrefix}budgets";
-	private string AccountsCacheKey(string budgetId) => $"{PatCachePrefix}accounts:{budgetId}";
-	private string CategoriesCacheKey(string budgetId) => $"{PatCachePrefix}categories:{budgetId}";
 
 	private static readonly HashSet<string> ExcludedCategoryGroups = new(StringComparer.OrdinalIgnoreCase)
 	{
@@ -54,13 +40,10 @@ public class YnabApiClient(
 
 	private readonly YnabClientOptions _options = new();
 
-	private string? Pat => configuration[ConfigurationVariables.YnabPat];
-
-	public bool IsConfigured => !string.IsNullOrWhiteSpace(Pat);
-
 	public async Task<List<YnabBudget>> GetBudgetsAsync(CancellationToken cancellationToken)
 	{
-		if (memoryCache.TryGetValue(BudgetsCacheKey, out List<YnabBudget>? cached) && cached is not null)
+		string cacheKey = $"{await CachePrefixAsync(cancellationToken)}budgets";
+		if (memoryCache.TryGetValue(cacheKey, out List<YnabBudget>? cached) && cached is not null)
 		{
 			return cached;
 		}
@@ -71,13 +54,13 @@ public class YnabApiClient(
 			.Select(b => new YnabBudget(b.Id, b.Name))
 			.ToList();
 
-		memoryCache.Set(BudgetsCacheKey, budgets, TimeSpan.FromSeconds(_options.BudgetCacheTtlSeconds));
+		memoryCache.Set(cacheKey, budgets, TimeSpan.FromSeconds(_options.BudgetCacheTtlSeconds));
 		return budgets;
 	}
 
 	public async Task<List<YnabAccount>> GetAccountsAsync(string budgetId, CancellationToken cancellationToken)
 	{
-		string cacheKey = AccountsCacheKey(budgetId);
+		string cacheKey = $"{await CachePrefixAsync(cancellationToken)}accounts:{budgetId}";
 		if (memoryCache.TryGetValue(cacheKey, out List<YnabAccount>? cached) && cached is not null)
 		{
 			return cached;
@@ -97,7 +80,7 @@ public class YnabApiClient(
 
 	public async Task<List<YnabCategory>> GetCategoriesAsync(string budgetId, CancellationToken cancellationToken)
 	{
-		string cacheKey = CategoriesCacheKey(budgetId);
+		string cacheKey = $"{await CachePrefixAsync(cancellationToken)}categories:{budgetId}";
 		if (memoryCache.TryGetValue(cacheKey, out List<YnabCategory>? cached) && cached is not null)
 		{
 			return cached;
@@ -312,12 +295,7 @@ public class YnabApiClient(
 
 	private async Task<T> GetAsync<T>(string path, CancellationToken cancellationToken)
 	{
-		using HttpRequestMessage request = new(HttpMethod.Get, path);
-		ApplyAuth(request);
-
-		using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
-		rateLimitTracker.RecordRequest();
-		CaptureResponseMetadata(response);
+		using HttpResponseMessage response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, path), cancellationToken);
 		await EnsureSuccessAsync(response, cancellationToken);
 
 		T result = await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken)
@@ -328,13 +306,9 @@ public class YnabApiClient(
 
 	private async Task<TResponse> PostAsync<TBody, TResponse>(string path, TBody body, CancellationToken cancellationToken)
 	{
-		using HttpRequestMessage request = new(HttpMethod.Post, path);
-		ApplyAuth(request);
-		request.Content = JsonContent.Create(body, options: JsonOptions);
-
-		using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
-		rateLimitTracker.RecordRequest();
-		CaptureResponseMetadata(response);
+		using HttpResponseMessage response = await SendAsync(
+			() => new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body, options: JsonOptions) },
+			cancellationToken);
 		await EnsureSuccessAsync(response, cancellationToken);
 
 		TResponse result = await response.Content.ReadFromJsonAsync<TResponse>(JsonOptions, cancellationToken)
@@ -345,14 +319,57 @@ public class YnabApiClient(
 
 	private async Task PatchAsync<TBody>(string path, TBody body, CancellationToken cancellationToken)
 	{
-		using HttpRequestMessage request = new(HttpMethod.Patch, path);
-		ApplyAuth(request);
-		request.Content = JsonContent.Create(body, options: JsonOptions);
+		using HttpResponseMessage response = await SendAsync(
+			() => new HttpRequestMessage(HttpMethod.Patch, path) { Content = JsonContent.Create(body, options: JsonOptions) },
+			cancellationToken);
+		await EnsureSuccessAsync(response, cancellationToken);
+	}
 
-		using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+	// Every YNAB request goes through here: one place attaches the credential and records the
+	// response. The request is built by a factory because a message cannot be sent twice.
+	private async Task<HttpResponseMessage> SendAsync(Func<HttpRequestMessage> createRequest, CancellationToken cancellationToken)
+	{
+		YnabBearerCredential credential = await credentialSource.GetCredentialAsync(cancellationToken)
+			?? throw new YnabAuthException("YNAB is not connected. Connect YNAB or set a personal access token.");
+
+		HttpResponseMessage response = await SendOnceAsync(createRequest, credential, cancellationToken);
+		if (response.StatusCode != HttpStatusCode.Unauthorized)
+		{
+			return response;
+		}
+
+		// A 401 means YNAB did not apply the request, so sending it again is safe even for a
+		// write. An OAuth access token can be renewed once; a personal access token cannot.
+		YnabBearerCredential? renewed;
+		try
+		{
+			renewed = await credentialSource.RenewAfterRejectionAsync(credential, cancellationToken);
+		}
+		catch
+		{
+			response.Dispose();
+			throw;
+		}
+
+		if (renewed is null)
+		{
+			return response;
+		}
+
+		response.Dispose();
+		return await SendOnceAsync(createRequest, renewed, cancellationToken);
+	}
+
+	private async Task<HttpResponseMessage> SendOnceAsync(
+		Func<HttpRequestMessage> createRequest, YnabBearerCredential credential, CancellationToken cancellationToken)
+	{
+		using HttpRequestMessage request = createRequest();
+		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
+
+		HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
 		rateLimitTracker.RecordRequest();
 		CaptureResponseMetadata(response);
-		await EnsureSuccessAsync(response, cancellationToken);
+		return response;
 	}
 
 	// Parse YNAB's X-Rate-Limit ("used/limit") into the tracker and record status + request id
@@ -377,17 +394,6 @@ public class YnabApiClient(
 		responseContext.Record((int)response.StatusCode, requestId);
 	}
 
-	private void ApplyAuth(HttpRequestMessage request)
-	{
-		string? pat = Pat;
-		if (string.IsNullOrWhiteSpace(pat))
-		{
-			throw new YnabAuthException("YNAB personal access token is not configured.");
-		}
-
-		request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", pat);
-	}
-
 	private async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
 	{
 		if (response.IsSuccessStatusCode)
@@ -402,7 +408,7 @@ public class YnabApiClient(
 		{
 			case HttpStatusCode.Unauthorized:
 				logger.LogWarning("YNAB API returned 401 Unauthorized");
-				throw new YnabAuthException("YNAB authentication failed. Check your personal access token.");
+				throw new YnabAuthException("YNAB authentication failed. Reconnect YNAB or check your personal access token.");
 
 			case HttpStatusCode.NotFound:
 				logger.LogWarning("YNAB API returned 404: {Body}", truncatedBody);

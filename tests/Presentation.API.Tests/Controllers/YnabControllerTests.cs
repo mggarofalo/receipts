@@ -88,11 +88,10 @@ public class YnabControllerTests
 	public async Task GetConnectionStatus_ReturnsConnected_WhenConfiguredAndReachable()
 	{
 		// Arrange
-		_ynabClientMock.Setup(c => c.IsConfigured).Returns(true);
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetYnabConnectionStatusQuery>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new YnabConnectionStatus(true, true, DateTimeOffset.UtcNow));
+			.ReturnsAsync(new YnabConnectionStatus(true, true, DateTimeOffset.UtcNow, new YnabCredentialState(YnabCredentialKind.PersonalAccessToken)));
 
 		// Act
 		Ok<YnabConnectionStatusResponse> result = await _controller.GetConnectionStatus(CancellationToken.None);
@@ -154,7 +153,7 @@ public class YnabControllerTests
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetYnabConnectionStatusQuery>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new YnabConnectionStatus(false, false, null));
+			.ReturnsAsync(new YnabConnectionStatus(false, false, null, new YnabCredentialState(YnabCredentialKind.None)));
 
 		// Act
 		Ok<YnabConnectionStatusResponse> result = await _controller.GetConnectionStatus(CancellationToken.None);
@@ -173,7 +172,7 @@ public class YnabControllerTests
 		_mediatorMock.Setup(m => m.Send(
 			It.IsAny<GetYnabConnectionStatusQuery>(),
 			It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new YnabConnectionStatus(true, false, null));
+			.ReturnsAsync(new YnabConnectionStatus(true, false, null, new YnabCredentialState(YnabCredentialKind.PersonalAccessToken)));
 
 		// Act
 		Ok<YnabConnectionStatusResponse> result = await _controller.GetConnectionStatus(CancellationToken.None);

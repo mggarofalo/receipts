@@ -44,6 +44,13 @@ public class AdminAuthorizationAttributeTests
 	}
 
 	[Fact]
+	public void YnabOAuthController_RequiresAdminPolicy_AtClassLevel()
+	{
+		HasRequireAdmin(typeof(YnabOAuthController).GetCustomAttributes<AuthorizeAttribute>())
+			.Should().BeTrue("connecting or disconnecting YNAB changes the credential every user's YNAB requests are sent with");
+	}
+
+	[Fact]
 	public void AuthAuditGetRecent_RequiresAdminPolicy()
 	{
 		MethodInfo action = GetAction(typeof(AuthAuditController), nameof(AuthAuditController.GetRecent));

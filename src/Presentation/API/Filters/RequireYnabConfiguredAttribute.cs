@@ -11,13 +11,13 @@ public class RequireYnabConfiguredAttribute : TypeFilterAttribute
 	{
 	}
 
-	private class RequireYnabConfiguredFilter(IYnabApiClient ynabClient, ILogger<RequireYnabConfiguredAttribute> logger) : IAsyncActionFilter
+	private class RequireYnabConfiguredFilter(IYnabCredentialSource credentialSource, ILogger<RequireYnabConfiguredAttribute> logger) : IAsyncActionFilter
 	{
 		public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
 		{
-			if (!ynabClient.IsConfigured)
+			if (!(await credentialSource.GetStateAsync(context.HttpContext.RequestAborted)).IsUsable)
 			{
-				logger.LogWarning("YNAB API client is not configured — missing personal access token");
+				logger.LogWarning("YNAB is not connected — no OAuth connection and no personal access token");
 				context.Result = new StatusCodeResult(StatusCodes.Status503ServiceUnavailable);
 				return;
 			}

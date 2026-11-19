@@ -38,7 +38,7 @@ public class YnabApiClientTests
 			.Build();
 
 		Mock<ILogger<YnabApiClient>> logger = new();
-		return new YnabApiClient(httpClient, cache, configuration, rateLimitTracker, new YnabResponseContext(), logger.Object);
+		return new YnabApiClient(httpClient, cache, Infrastructure.Tests.Ynab.YnabCredentialSourceFactory.PatOnly(configuration), rateLimitTracker, new YnabResponseContext(), logger.Object);
 	}
 
 	private static HttpMessageHandler CreateHandler(HttpStatusCode statusCode, string content)
@@ -337,23 +337,22 @@ public class YnabApiClientTests
 	}
 
 	[Fact]
-	public void IsConfigured_ReturnsFalse_WhenPatIsMissing()
+	public async Task GetBudgetsAsync_WhenPatIsMissing_ThrowsYnabAuthExceptionWithoutSending()
 	{
 		// Arrange
-		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, "{}"), pat: null);
+		Mock<HttpMessageHandler> handlerMock = new();
+		YnabApiClient client = CreateClient(handlerMock.Object, pat: null);
 
-		// Act & Assert
-		client.IsConfigured.Should().BeFalse();
-	}
+		// Act
+		Func<Task> act = () => client.GetBudgetsAsync(CancellationToken.None);
 
-	[Fact]
-	public void IsConfigured_ReturnsTrue_WhenPatIsPresent()
-	{
-		// Arrange
-		YnabApiClient client = CreateClient(CreateHandler(HttpStatusCode.OK, "{}"), pat: "test-pat");
-
-		// Act & Assert
-		client.IsConfigured.Should().BeTrue();
+		// Assert
+		await act.Should().ThrowAsync<YnabAuthException>();
+		handlerMock.Protected().Verify(
+			"SendAsync",
+			Times.Never(),
+			ItExpr.IsAny<HttpRequestMessage>(),
+			ItExpr.IsAny<CancellationToken>());
 	}
 
 	[Fact]

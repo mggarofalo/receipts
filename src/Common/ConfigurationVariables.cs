@@ -21,5 +21,8 @@ public static class ConfigurationVariables
 	public const string AdminSeedLastName = "AdminSeed:LastName";
 
 	public const string YnabPat = "YNAB_PAT";
+	public const string YnabOAuthClientId = "YNAB_OAUTH_CLIENT_ID";
+	public const string YnabOAuthClientSecret = "YNAB_OAUTH_CLIENT_SECRET";
+	public const string YnabOAuthRedirectUri = "YNAB_OAUTH_REDIRECT_URI";
 }
 

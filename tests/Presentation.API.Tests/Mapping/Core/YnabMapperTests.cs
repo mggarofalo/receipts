@@ -136,4 +136,127 @@ public class YnabMapperTests
 		// Assert
 		Assert.Equal(["Groceries", "Electronics"], result.Data.Select(m => m.EnvelopeName));
 	}
+
+	[Fact]
+	public void ToConnectionStatusResponse_ConnectedWithOAuth_ReportsOAuthAndWhenItWasConnected()
+	{
+		// Arrange
+		DateTimeOffset connectedAt = new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
+		DateTimeOffset lastSync = new(2026, 11, 19, 13, 30, 0, TimeSpan.Zero);
+		YnabConnectionStatus status = new(
+			true, true, lastSync, new YnabCredentialState(YnabCredentialKind.OAuth, OAuthAvailable: true, OAuthConnectedAtUtc: connectedAt));
+
+		// Act
+		YnabConnectionStatusResponse result = _mapper.ToConnectionStatusResponse(status);
+
+		// Assert
+		Assert.Equal(YnabCredentialSource.Oauth, result.CredentialSource);
+		Assert.True(result.IsConfigured);
+		Assert.True(result.IsConnected);
+		Assert.True(result.OauthAvailable);
+		Assert.False(result.ReconnectRequired);
+		Assert.Equal(connectedAt, result.OauthConnectedAtUtc);
+		Assert.Equal(lastSync, result.LastSuccessfulSyncUtc);
+	}
+
+	[Fact]
+	public void ToConnectionStatusResponse_PersonalAccessTokenOnly_ReportsThePatAndKeepsExistingProperties()
+	{
+		// Arrange
+		DateTimeOffset lastSync = new(2026, 11, 19, 13, 30, 0, TimeSpan.Zero);
+		YnabConnectionStatus status = new(
+			true, true, lastSync, new YnabCredentialState(YnabCredentialKind.PersonalAccessToken));
+
+		// Act
+		YnabConnectionStatusResponse result = _mapper.ToConnectionStatusResponse(status);
+
+		// Assert
+		Assert.Equal(YnabCredentialSource.PersonalAccessToken, result.CredentialSource);
+		Assert.True(result.IsConfigured);
+		Assert.True(result.IsConnected);
+		Assert.False(result.OauthAvailable);
+		Assert.False(result.ReconnectRequired);
+		Assert.Null(result.OauthConnectedAtUtc);
+		Assert.Equal(lastSync, result.LastSuccessfulSyncUtc);
+	}
+
+	[Fact]
+	public void ToConnectionStatusResponse_OAuthAvailableButNotConnected_ReportsNoCredentialAndOAuthAvailable()
+	{
+		// Arrange
+		YnabConnectionStatus status = new(
+			false, false, null, new YnabCredentialState(YnabCredentialKind.None, OAuthAvailable: true));
+
+		// Act
+		YnabConnectionStatusResponse result = _mapper.ToConnectionStatusResponse(status);
+
+		// Assert
+		Assert.Equal(YnabCredentialSource.None, result.CredentialSource);
+		Assert.False(result.IsConfigured);
+		Assert.False(result.IsConnected);
+		Assert.True(result.OauthAvailable);
+		Assert.False(result.ReconnectRequired);
+		Assert.Null(result.OauthConnectedAtUtc);
+		Assert.Null(result.LastSuccessfulSyncUtc);
+	}
+
+	[Fact]
+	public void ToConnectionStatusResponse_ReconnectRequired_ReportsItWithNoCredentialInUse()
+	{
+		// Arrange
+		YnabConnectionStatus status = new(
+			false, false, null, new YnabCredentialState(YnabCredentialKind.OAuthReconnectRequired, OAuthAvailable: true));
+
+		// Act
+		YnabConnectionStatusResponse result = _mapper.ToConnectionStatusResponse(status);
+
+		// Assert
+		Assert.True(result.ReconnectRequired);
+		Assert.False(result.IsConnected);
+		Assert.False(result.IsConfigured);
+		Assert.Equal(YnabCredentialSource.None, result.CredentialSource);
+		Assert.True(result.OauthAvailable);
+		Assert.Null(result.OauthConnectedAtUtc);
+	}
+
+	[Theory]
+	[InlineData(YnabCredentialKind.None)]
+	[InlineData(YnabCredentialKind.PersonalAccessToken)]
+	[InlineData(YnabCredentialKind.OAuth)]
+	[InlineData(YnabCredentialKind.OAuthReconnectRequired)]
+	public void ToConnectionStatusResponse_Serialized_HasOnlyTheDocumentedMembersAndNoneThatCouldCarryASecret(YnabCredentialKind kind)
+	{
+		// Arrange
+		YnabConnectionStatus status = new(
+			true, true, DateTimeOffset.UnixEpoch, new YnabCredentialState(kind, OAuthAvailable: true, OAuthConnectedAtUtc: DateTimeOffset.UnixEpoch));
+
+		// Act
+		string json = System.Text.Json.JsonSerializer.Serialize(_mapper.ToConnectionStatusResponse(status));
+
+		// Assert
+		using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(json);
+		string[] members = [.. document.RootElement.EnumerateObject().Select(member => member.Name)];
+		Assert.Equal(
+			["credentialSource", "isConfigured", "isConnected", "lastSuccessfulSyncUtc", "oauthAvailable", "oauthConnectedAtUtc", "reconnectRequired"],
+			members.Order(StringComparer.Ordinal));
+		Assert.DoesNotContain(members, member =>
+			member.Contains("token", StringComparison.OrdinalIgnoreCase)
+			|| member.Contains("secret", StringComparison.OrdinalIgnoreCase)
+			|| member.Contains("code", StringComparison.OrdinalIgnoreCase)
+			|| member.Contains("refresh", StringComparison.OrdinalIgnoreCase));
+	}
+
+	[Theory]
+	[InlineData(Application.Models.Ynab.YnabRemoteRevocation.Succeeded, global::API.Generated.Dtos.YnabRemoteRevocation.Succeeded)]
+	[InlineData(Application.Models.Ynab.YnabRemoteRevocation.Failed, global::API.Generated.Dtos.YnabRemoteRevocation.Failed)]
+	[InlineData(Application.Models.Ynab.YnabRemoteRevocation.NotAttempted, global::API.Generated.Dtos.YnabRemoteRevocation.NotAttempted)]
+	public void ToDisconnectResponse_MapsEachRemoteRevocationOutcome(
+		Application.Models.Ynab.YnabRemoteRevocation source, global::API.Generated.Dtos.YnabRemoteRevocation expected)
+	{
+		// Act
+		YnabDisconnectResponse result = _mapper.ToDisconnectResponse(source);
+
+		// Assert
+		Assert.Equal(expected, result.RemoteRevocation);
+	}
 }

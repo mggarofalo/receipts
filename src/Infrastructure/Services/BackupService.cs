@@ -76,6 +76,9 @@ public class BackupService(
 			//   - YnabServerKnowledge: the YNAB delta-sync cursor. It is re-fetchable from YNAB on
 			//     the next sync (regenerable derived data, like the embedding vectors also omitted),
 			//     so restoring a stale cursor would only risk a bad delta window.
+			//   - YnabOAuthConnections: the deployment's YNAB OAuth connection. Its
+			//     tokens are encrypted with this deployment's Data Protection keys, so they are a
+			//     credential, not portable data. Restore never touches the table either.
 			//   - ASP.NET Identity users and authentication settings: excluded for security.
 			//   - category_assistance settings, connection, audit, observations, attempts and usage:
 			//     deployment-local consent/operational state; never transfer through portable archives.

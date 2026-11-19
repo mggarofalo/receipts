@@ -11,6 +11,7 @@ public sealed class BackupBootstrapTests
 {
 	[Theory]
 	[InlineData("pristine", true)]
+	[InlineData("ynab oauth connection", true)]
 	[InlineData("template edit", false)]
 	[InlineData("category edit", false)]
 	[InlineData("trash", false)]
@@ -28,6 +29,21 @@ public sealed class BackupBootstrapTests
 			setup.AuditingEnabled = false;
 			switch (scenario)
 			{
+				// A credential, not business data: a deployment that has only connected YNAB is still pristine.
+				case "ynab oauth connection":
+					setup.YnabOAuthConnections.Add(new YnabOAuthConnectionEntity
+					{
+						Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+						Status = YnabOAuthConnectionStatus.Connected,
+						ProtectedTokens = "protected-tokens",
+						AccessTokenExpiresAtUtc = DateTimeOffset.UtcNow.AddHours(2),
+						ConnectionId = Guid.NewGuid(),
+						ConnectedAtUtc = DateTimeOffset.UtcNow,
+						ConnectedByUserId = "admin-1",
+						StatusChangedAtUtc = DateTimeOffset.UtcNow,
+						ConcurrencyStamp = Guid.NewGuid(),
+					});
+					break;
 				case "template edit": (await setup.ItemTemplates.FirstAsync()).DefaultItemCode = ""; break;
 				case "category edit": (await setup.Categories.FirstAsync()).Description = "edited"; break;
 				case "trash": (await setup.Categories.FirstAsync()).DeletedAt = DateTimeOffset.UtcNow; break;

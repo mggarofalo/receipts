@@ -241,7 +241,7 @@ public static class ApplicationConfiguration
 				}
 			};
 
-			// 503 on YNAB endpoints is expected when YNAB_PAT is not configured — log as Warning not Error
+			// 503 on YNAB endpoints is expected when YNAB is not connected — log as Warning not Error
 			options.GetLevel = (httpContext, elapsed, ex) =>
 			{
 				if (httpContext.Response.StatusCode == 503
