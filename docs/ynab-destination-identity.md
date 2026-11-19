@@ -10,7 +10,7 @@ An uncertain send is lookup-only on retry. If its reference cannot be found (for
 
 ## Destination scoping
 
-Receipts supports one configured YNAB personal access token at a time. Within that connection, the selected budget is part of the identity of every account mapping, category mapping and synchronization record. A local account, category or payment can therefore have independent history in more than one budget.
+Receipts supports one YNAB connection at a time (see [YNAB connection](ynab-connection.md)). Within that connection, the selected budget is part of the identity of every account mapping, category mapping and synchronization record. A local account, category or payment can therefore have independent history in more than one budget.
 
 Changing the selected budget does not rewrite or delete prior mappings or sync records. Current mapping lists, unmapped-category results, receipt status projections, split comparisons, transaction pushes and memo synchronization all capture and query only the selected budget. A successful export to budget A does not make the same payment appear synchronized after switching to budget B; exporting to B creates a separate record and may create a separate remote transaction.
 

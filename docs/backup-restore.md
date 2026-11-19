@@ -58,6 +58,7 @@ They exclude operational/security logs, credentials and regenerable values:
 | `AuditLogs`, `AuthAuditLogs` | Append-only audit/activity logs. Re-importing historical log rows onto another instance would misrepresent when actions actually occurred there. |
 | `YnabSyncEvents` | The YNAB sync activity log — the same class of data as the audit logs (an append-only history of push attempts, **not** state). Distinct from `YnabSyncRecords`, the current sync state, which **is** included above. |
 | `YnabServerKnowledge` | The YNAB delta-sync cursor. It is re-fetchable from YNAB on the next sync (regenerable derived data, like the omitted embedding vectors), so restoring a stale value would only risk a bad delta window. |
+| `YnabOAuthConnections` | The deployment's YNAB OAuth connection: encrypted tokens that only this deployment's Data Protection keys can read. A credential, not business data. Restoring a backup leaves the current connection in place; see [YNAB connection](ynab-connection.md). |
 | Normalized-description embedding vectors | Regenerable derived data whose dimension is a build-time constant; see the vector recovery limitation below. |
 | ASP.NET Identity users and authentication settings | Excluded for security reasons. |
 | `PendingNamePromotions`, `PendingNamePromotionEntries` | The log of bulk name promotions. Promoted names keep their Active status in the backup, but a promotion cannot be undone after a restore. |

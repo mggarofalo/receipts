@@ -304,6 +304,10 @@ Benefits:
 - Catches mapping errors in tests
 - Simpler test setup
 
+## YNAB credentials
+
+`IYnabCredentialSource` is the one place that decides which credential a YNAB request uses: a stored OAuth connection, otherwise the `YNAB_PAT` personal access token, otherwise none. `YnabApiClient` asks it for a bearer token and for the identity that namespaces cached YNAB data, and never reads configuration itself. The Infrastructure implementation is a singleton that also owns the stored connection: it renews the access token under a single gate and commits the new pair before returning it. See [YNAB connection](ynab-connection.md).
+
 ## YNAB memo matching ownership
 
 `YnabMemoSyncService` plans automatic matches using the selected budget, the authoritative card account and operation-wide target reservations. See [YNAB memo matching](ynab-memo-sync.md) for identity rules, explicit confirmation and the boundary with durable integration recovery.
