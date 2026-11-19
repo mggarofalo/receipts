@@ -321,7 +321,7 @@ public class YnabMemoMatchingOwnershipTests
 			Http = new Handler(this);
 			_httpClient = new(Http) { BaseAddress = new("https://ynab.test/v1/") };
 			IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["YNAB_PAT"] = "synthetic-test-token" }).Build();
-			YnabApiClient api = new(_httpClient, _cache, configuration, Mock.Of<IYnabRateLimitTracker>(), new YnabResponseContext(), NullLogger<YnabApiClient>.Instance);
+			YnabApiClient api = new(_httpClient, _cache, Infrastructure.Tests.Ynab.YnabCredentialSourceFactory.PatOnly(configuration), Mock.Of<IYnabRateLimitTracker>(), new YnabResponseContext(), NullLogger<YnabApiClient>.Instance);
 			Mock<IYnabBudgetSelectionService> budget = new();
 			budget.Setup(service => service.GetSelectedBudgetIdAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => { BudgetReads++; return "budget-1"; });
 			Mock<IYnabAccountMappingService> mappings = new();

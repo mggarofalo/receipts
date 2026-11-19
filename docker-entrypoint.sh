@@ -67,6 +67,13 @@ Jwt__Key="$(cat /secrets/jwt_key)"
 export AdminSeed__Password
 AdminSeed__Password="$(cat /secrets/admin_password)"
 
+# Optional: the YNAB OAuth client secret (docs/ynab-connection.md). Unlike the secrets
+# above it is not generated and not required; an explicit environment value wins.
+if [ -z "${YNAB_OAUTH_CLIENT_SECRET:-}" ] && [ -f /secrets/ynab_oauth_client_secret ]; then
+    export YNAB_OAUTH_CLIENT_SECRET
+    YNAB_OAUTH_CLIENT_SECRET="$(cat /secrets/ynab_oauth_client_secret)"
+fi
+
 echo "Secrets loaded from /secrets volume"
 
 # Operator commands share the application's configuration and private auth volume,

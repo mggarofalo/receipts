@@ -251,6 +251,58 @@ public class AuditLogCaptureTests
 	}
 
 	[Fact]
+	public async Task SaveChanges_YnabOAuthConnectionLifecycle_WritesNoAuditLog()
+	{
+		// The connection's field values are the encrypted tokens. An audit row would keep them
+		// after a disconnect and add one for every renewal. Every write the repository makes goes
+		// through the same audit pass that records the card below.
+		(IDbContextFactory<ApplicationDbContext> contextFactory, MockCurrentUserAccessor _) = DbContextWithUserHelpers.CreateInMemoryContextFactoryWithUser();
+		Infrastructure.Repositories.YnabOAuthConnectionRepository repository = new(contextFactory);
+		DateTimeOffset now = new(2026, 11, 19, 12, 0, 0, TimeSpan.Zero);
+		List<(string Step, int AuditRows)> auditRowsAfter = [];
+
+		async Task RecordAsync(string step)
+		{
+			await using ApplicationDbContext context = contextFactory.CreateDbContext();
+			auditRowsAfter.Add((step, await context.AuditLogs.CountAsync()));
+		}
+
+		// Act
+		YnabOAuthConnectionEntity first = await repository.SaveConnectedAsync(
+			"protected-tokens-sentinel-1", now.AddHours(2), "admin-1", now, CancellationToken.None);
+		await RecordAsync("connect");
+		(await repository.TryReplaceTokensAsync(
+			first.ConcurrencyStamp, "protected-tokens-sentinel-2", now.AddHours(4), now.AddHours(2), CancellationToken.None)).Should().BeTrue();
+		await RecordAsync("renew");
+		(await repository.MarkReconnectRequiredAsync(first.ConnectionId, now.AddHours(3), CancellationToken.None)).Should().BeTrue();
+		await RecordAsync("reconnect required");
+		await repository.SaveConnectedAsync("protected-tokens-sentinel-3", now.AddHours(6), "admin-1", now.AddHours(4), CancellationToken.None);
+		await RecordAsync("reconnect");
+		(await repository.DeleteAsync(CancellationToken.None)).Should().BeTrue();
+		await RecordAsync("disconnect");
+
+		// Assert
+		auditRowsAfter.Should().Equal(
+			("connect", 0), ("renew", 0), ("reconnect required", 0), ("reconnect", 0), ("disconnect", 0));
+
+		// Control: the audit pass is live on this factory, so the zeros above are the exclusion at work.
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			await context.Cards.AddAsync(CardEntityGenerator.Generate());
+			await context.SaveChangesAsync();
+		}
+
+		await using (ApplicationDbContext context = contextFactory.CreateDbContext())
+		{
+			List<AuditLogEntity> auditLogs = await context.AuditLogs.ToListAsync();
+			auditLogs.Should().ContainSingle().Which.EntityType.Should().Be("Card");
+			auditLogs.Should().NotContain(log => log.ChangesJson.Contains("protected-tokens-sentinel"));
+		}
+
+		contextFactory.ResetDatabase();
+	}
+
+	[Fact]
 	public async Task SaveChanges_DistinctDescriptionEntity_NotAudited()
 	{
 		// DistinctDescription uses Description (string) as its PK, so an EF-tracked

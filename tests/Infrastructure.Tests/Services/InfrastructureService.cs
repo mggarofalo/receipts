@@ -420,6 +420,36 @@ public class InfrastructureServiceTests
 		runtime.IsReady.Should().BeFalse();
 	}
 
+	[Fact]
+	public void RegisterInfrastructureServices_YnabCredentialSourceAndConnectionStore_AreOneSingleton()
+	{
+		// Arrange — the credential source keeps the access token in memory and is the only writer
+		// of the stored connection. Connecting or disconnecting through a second instance would
+		// leave the first one serving a token that is no longer the stored one.
+		ServiceCollection services = new();
+		services.AddLogging();
+		IConfiguration configuration = BuildPostgresConfiguration();
+		services.AddSingleton(configuration);
+
+		// Act
+		services.RegisterInfrastructureServices(configuration);
+		using ServiceProvider serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+		// Assert
+		IYnabCredentialSource credentialSource = serviceProvider.GetRequiredService<IYnabCredentialSource>();
+		Infrastructure.Ynab.IYnabOAuthConnectionStore connectionStore =
+			serviceProvider.GetRequiredService<Infrastructure.Ynab.IYnabOAuthConnectionStore>();
+		connectionStore.Should().BeSameAs(credentialSource);
+		credentialSource.Should().BeOfType<Infrastructure.Ynab.YnabCredentialSource>();
+
+		using IServiceScope scope = serviceProvider.CreateScope();
+		scope.ServiceProvider.GetRequiredService<IYnabCredentialSource>().Should().BeSameAs(credentialSource);
+		scope.ServiceProvider.GetRequiredService<Infrastructure.Ynab.IYnabOAuthConnectionStore>().Should().BeSameAs(credentialSource);
+
+		serviceProvider.GetRequiredService<IYnabConnectionService>()
+			.Should().BeOfType<Infrastructure.Ynab.OAuth.YnabConnectionService>();
+	}
+
 	#endregion
 
 	#region Helpers

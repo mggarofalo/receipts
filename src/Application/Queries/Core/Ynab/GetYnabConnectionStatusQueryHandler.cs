@@ -8,6 +8,7 @@ namespace Application.Queries.Core.Ynab;
 
 public class GetYnabConnectionStatusQueryHandler(
 	IYnabApiClient ynabApiClient,
+	IYnabCredentialSource credentialSource,
 	IYnabSyncRecordService syncRecordService,
 	IYnabBudgetSelectionService budgetSelectionService,
 	IYnabSyncEventService ynabSyncEventService,
@@ -16,11 +17,12 @@ public class GetYnabConnectionStatusQueryHandler(
 {
 	public async ValueTask<YnabConnectionStatus> Handle(GetYnabConnectionStatusQuery request, CancellationToken cancellationToken)
 	{
-		bool isConfigured = ynabApiClient.IsConfigured;
+		YnabCredentialState credential = await credentialSource.GetStateAsync(cancellationToken);
+		bool isConfigured = credential.IsUsable;
 
 		if (!isConfigured)
 		{
-			return new YnabConnectionStatus(false, false, null);
+			return new YnabConnectionStatus(false, false, null, credential);
 		}
 
 		bool isConnected;
@@ -66,6 +68,9 @@ public class GetYnabConnectionStatusQueryHandler(
 			? null
 			: await syncRecordService.GetLatestSuccessfulSyncTimestampAsync(budgetId, cancellationToken);
 
-		return new YnabConnectionStatus(isConfigured, isConnected, lastSync);
+		// The live check can itself end the connection (a refused refresh token), so the
+		// credential is read again to report what is true now.
+		credential = await credentialSource.GetStateAsync(cancellationToken);
+		return new YnabConnectionStatus(credential.IsUsable, isConnected && credential.IsUsable, lastSync, credential);
 	}
 }

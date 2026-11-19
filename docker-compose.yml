@@ -107,6 +107,13 @@ services:
       - AdminSeed__LastName=User
       - SENTRY_DSN=${SENTRY_DSN:-}
       - SENTRY_BACKEND_DSN=${SENTRY_BACKEND_DSN:-}
+      # Connect to YNAB with OAuth: register an OAuth application with YNAB, uncomment
+      # and fill these in, then click Connect on /settings/ynab. See
+      # docs/ynab-connection.md. The secret may instead be the file
+      # /secrets/ynab_oauth_client_secret; keep its real value out of git.
+      # - YNAB_OAUTH_CLIENT_ID=
+      # - YNAB_OAUTH_CLIENT_SECRET=${YNAB_OAUTH_CLIENT_SECRET:-}
+      # - YNAB_OAUTH_REDIRECT_URI=https://receipts.example.com/settings/ynab/callback
       # Telemetry is off unless OTEL_EXPORTER_OTLP_ENDPOINT is set. To send traces,
       # metrics and logs to an external OTel collector, uncomment this block and see
       # docs/observability.md. The header is a secret: keep the real value out of git.

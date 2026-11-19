@@ -87,6 +87,7 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 	public virtual DbSet<YnabCategoryMappingEntity> YnabCategoryMappings { get; set; } = null!;
 	public virtual DbSet<YnabServerKnowledgeEntity> YnabServerKnowledge { get; set; } = null!;
 	public virtual DbSet<YnabSyncEventEntity> YnabSyncEvents { get; set; } = null!;
+	public virtual DbSet<YnabOAuthConnectionEntity> YnabOAuthConnections { get; set; } = null!;
 
 	protected override void OnModelCreating(ModelBuilder modelBuilder)
 	{
@@ -430,7 +431,9 @@ public partial class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 		// click. It also keeps the two write paths consistent — the Postgres path inserts via raw
 		// ON CONFLICT SQL, which bypasses the change tracker and could never have been audited anyway.
 		// Replay tombstones and the reconciled review queue are bookkeeping; business/evidence mutations retain their item/catalog audits.
-		HashSet<Type> excludedTypes = [typeof(Infrastructure.Entities.Organization.OrganizationDirtySourceEntity), typeof(Infrastructure.Entities.Organization.OrganizationRunEntity), typeof(Infrastructure.Entities.Organization.OrganizationSourceEntity), typeof(Infrastructure.Entities.Organization.OrganizationItemEntity), typeof(Infrastructure.Entities.Organization.OrganizationDirtyItemEntity), typeof(ReceiptWriteRequestEntity), typeof(NormalizationReviewWorkEntity), typeof(NormalizationAssistanceAttemptEntity), typeof(NormalizationAiRunEntity), typeof(NormalizationAiProposalEntity), typeof(NormalizationAiConnectionEntity), typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
+		// The YNAB OAuth connection is never audited: its field values are the encrypted tokens, and an
+		// audit row would keep them after a disconnect and add a row for every two-hourly renewal.
+		HashSet<Type> excludedTypes = [typeof(YnabOAuthConnectionEntity), typeof(Infrastructure.Entities.Organization.OrganizationDirtySourceEntity), typeof(Infrastructure.Entities.Organization.OrganizationRunEntity), typeof(Infrastructure.Entities.Organization.OrganizationSourceEntity), typeof(Infrastructure.Entities.Organization.OrganizationItemEntity), typeof(Infrastructure.Entities.Organization.OrganizationDirtyItemEntity), typeof(ReceiptWriteRequestEntity), typeof(NormalizationReviewWorkEntity), typeof(NormalizationAssistanceAttemptEntity), typeof(NormalizationAiRunEntity), typeof(NormalizationAiProposalEntity), typeof(NormalizationAiConnectionEntity), typeof(AuditLogEntity), typeof(AuthAuditLogEntity), typeof(SeedHistoryEntry), typeof(YnabSyncRecordEntity), typeof(YnabSelectedBudgetEntity), typeof(YnabAccountMappingEntity), typeof(YnabCategoryMappingEntity), typeof(YnabServerKnowledgeEntity), typeof(YnabSyncEventEntity), typeof(DistinctDescriptionEntity), typeof(ApiKeyEntity), typeof(AcceptedDuplicatePairEntity)];
 		List<AuditEntry> auditEntries = [];
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 

@@ -62,7 +62,7 @@ Local similarity matching uses sentence embeddings (`bge-large-en-v1.5` via ONNX
 
 ### 🔗 YNAB integration
 
-Two-way sync with [You Need A Budget](https://www.youneedabudget.com/): push receipt detail into YNAB transaction memos and keep categorization aligned.
+Two-way sync with [You Need A Budget](https://www.youneedabudget.com/): push receipt detail into YNAB transaction memos and keep categorization aligned. An admin connects the deployment from the app with OAuth; see [YNAB connection](docs/ynab-connection.md).
 
 ### 🛠️ Built to be operated
 

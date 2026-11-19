@@ -24,6 +24,7 @@ function harness(initialEntry: string) {
         <Route path="/receipts/abc-123" element={<Probe />} />
         <Route path="/cards" element={<Probe />} />
         <Route path="/login" element={<Probe />} />
+        <Route path="/settings/ynab/callback" element={<Probe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -37,6 +38,8 @@ describe("isTrackableRoute", () => {
     ["/change-password", false],
     ["/onboarding", false],
     ["/onboarding/step-2", false],
+    ["/settings/ynab/callback", false],
+    ["/settings/ynab", true],
     ["/receipts", true],
     ["/receipts/abc-123", true],
     ["/cards", true],
@@ -64,6 +67,12 @@ describe("useLastRoutePersistence", () => {
   it("does not write when on an untrackable route", () => {
     harness("/login");
     expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("never stores the YNAB callback address or its code and state", () => {
+    window.localStorage.setItem(STORAGE_KEY, "/cards");
+    harness("/settings/ynab/callback?code=secret-code&state=secret-state");
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("/cards");
   });
 
   it("does not write when on root", () => {

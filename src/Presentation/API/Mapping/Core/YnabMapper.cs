@@ -22,6 +22,29 @@ public partial class YnabMapper
 			IsConfigured = source.IsConfigured,
 			IsConnected = source.IsConnected,
 			LastSuccessfulSyncUtc = source.LastSuccessfulSyncUtc,
+			CredentialSource = source.Credential.Kind switch
+			{
+				YnabCredentialKind.OAuth => YnabCredentialSource.Oauth,
+				YnabCredentialKind.PersonalAccessToken => YnabCredentialSource.PersonalAccessToken,
+				// Reconnect required: no credential is in use until an Admin reconnects.
+				_ => YnabCredentialSource.None,
+			},
+			OauthAvailable = source.Credential.OAuthAvailable,
+			ReconnectRequired = source.Credential.Kind == YnabCredentialKind.OAuthReconnectRequired,
+			OauthConnectedAtUtc = source.Credential.OAuthConnectedAtUtc,
+		};
+	}
+
+	public YnabDisconnectResponse ToDisconnectResponse(Application.Models.Ynab.YnabRemoteRevocation source)
+	{
+		return new YnabDisconnectResponse
+		{
+			RemoteRevocation = source switch
+			{
+				Application.Models.Ynab.YnabRemoteRevocation.Succeeded => API.Generated.Dtos.YnabRemoteRevocation.Succeeded,
+				Application.Models.Ynab.YnabRemoteRevocation.Failed => API.Generated.Dtos.YnabRemoteRevocation.Failed,
+				_ => API.Generated.Dtos.YnabRemoteRevocation.NotAttempted,
+			},
 		};
 	}
 

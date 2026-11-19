@@ -92,7 +92,7 @@ public class YnabApiClientCreateTransactionTests
 		using MemoryCache cache = new(new MemoryCacheOptions());
 		IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(
 			new Dictionary<string, string?> { ["YNAB_PAT"] = "test-pat" }).Build();
-		YnabApiClient client = new(http, cache, configuration, Mock.Of<IYnabRateLimitTracker>(),
+		YnabApiClient client = new(http, cache, Infrastructure.Tests.Ynab.YnabCredentialSourceFactory.PatOnly(configuration), Mock.Of<IYnabRateLimitTracker>(),
 			new YnabResponseContext(), Mock.Of<ILogger<YnabApiClient>>());
 
 		YnabCreateTransactionResponse response = await client.CreateTransactionAsync("budget-1", request, CancellationToken.None);

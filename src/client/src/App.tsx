@@ -28,6 +28,8 @@ import BackupRestore from "@/pages/BackupRestore";
 import NormalizedDescriptions from "@/pages/NormalizedDescriptions";
 import NewReceipt from "@/pages/new-receipt/NewReceiptPage";
 import YnabSettings from "@/pages/settings/YnabSettings";
+import YnabOAuthCallback from "@/pages/settings/YnabOAuthCallback";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import EnvelopeSettings from "@/pages/settings/EnvelopeSettings";
 import Ynab from "@/pages/Ynab";
 import Settings from "@/pages/Settings";
@@ -44,6 +46,9 @@ export const routeConfig = [
         children: [
           { path: "/login", element: <Login /> },
           { path: "/change-password", element: <ChangePassword /> },
+          // Readable signed out and signed in: PublicLayout does not redirect
+          // (Login redirects signed-in users itself).
+          { path: "/privacy", element: <PrivacyPolicy /> },
         ],
       },
       {
@@ -97,6 +102,10 @@ export const routeConfig = [
           { path: "/security", element: <SecurityLog /> },
           { path: "/settings", element: <Settings /> },
           { path: "/settings/ynab", element: <YnabSettings /> },
+          // Redirect URI registered with YNAB. It sits inside the
+          // authenticated area because completing the authorization needs the
+          // Admin's bearer token.
+          { path: "/settings/ynab/callback", element: <YnabOAuthCallback /> },
           { path: "/settings/envelopes", element: <EnvelopeSettings /> },
           { path: "/ynab", element: <Ynab /> },
           {

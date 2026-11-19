@@ -54,6 +54,9 @@ public class YnabHttpResilienceTests
 		services.AddLogging();
 		services.AddSingleton(configuration);
 		services.RegisterInfrastructureServices(configuration);
+		// The credential source looks for a stored OAuth connection before using YNAB_PAT. This
+		// test has no database, so it gets a repository that holds no connection.
+		services.AddSingleton(Moq.Mock.Of<Infrastructure.Interfaces.Repositories.IYnabOAuthConnectionRepository>());
 		CountingHandler handler = new(true);
 		services.AddHttpClient<IYnabApiClient, YnabApiClient>()
 			.ConfigurePrimaryHttpMessageHandler(() => handler);

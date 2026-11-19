@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate } from "react-router";
+import { Link, Navigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -134,6 +134,11 @@ function Login() {
           />
         </form>
       </Form>
+      <p className="mt-4 text-center text-sm">
+        <Link to="/privacy" className="text-primary hover:underline">
+          Privacy policy
+        </Link>
+      </p>
     </div>
   );
 }

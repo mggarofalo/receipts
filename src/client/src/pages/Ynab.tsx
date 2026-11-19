@@ -121,8 +121,10 @@ export default function Ynab() {
           title="YNAB is not configured"
           body={
             <>
-              Set the <code>YNAB_PAT</code> environment variable to enable the
-              integration, then choose a budget in{" "}
+              The operator of this deployment enables the integration by adding
+              the YNAB OAuth settings (recommended) or by setting the{" "}
+              <code>YNAB_PAT</code> environment variable. With OAuth, an
+              administrator then connects YNAB and chooses a budget in{" "}
               <Link
                 to="/settings/ynab"
                 className="text-primary hover:underline"

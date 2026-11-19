@@ -1946,6 +1946,48 @@ namespace Infrastructure.Migrations
                     b.ToTable("YnabCategoryMappings", "ynab");
                 });
 
+            modelBuilder.Entity("Infrastructure.Entities.Core.YnabOAuthConnectionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("AccessTokenExpiresAtUtc")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ConnectedAtUtc")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("ConnectedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("ConnectionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProtectedTokens")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RefreshedAtUtc")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("StatusChangedAtUtc")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("YnabOAuthConnections", "ynab");
+                });
+
             modelBuilder.Entity("Infrastructure.Entities.Core.YnabSelectedBudgetEntity", b =>
                 {
                     b.Property<Guid>("Id")

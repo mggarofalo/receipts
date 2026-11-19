@@ -6,6 +6,7 @@ using Infrastructure.Interfaces.Repositories;
 using Infrastructure.Mapping;
 using Infrastructure.Repositories;
 using Infrastructure.Ynab;
+using Infrastructure.Ynab.OAuth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -202,6 +203,25 @@ public static class InfrastructureService
 			new YnabRateLimitTracker(
 				sp.GetRequiredService<YnabClientOptions>(),
 				sp.GetService<TimeProvider>() ?? TimeProvider.System));
+		// YNAB credentials (docs/ynab-connection.md). The credential source is a singleton that
+		// owns the stored OAuth connection, so everything it depends on is a singleton too.
+		// Data Protection is configured by the API host, not here: registering it would add a
+		// hosted service to the tools that share this registration. It is resolved on first use.
+		services.AddSingleton<YnabOAuthSettingsProvider>();
+		services.AddSingleton(sp => new YnabOAuthTokenProtector(
+			() => sp.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>()));
+		services.AddSingleton<YnabAuthorizationAttemptStore>();
+		services.AddSingleton<IYnabOAuthConnectionRepository, YnabOAuthConnectionRepository>();
+		services.AddHttpClient(YnabOAuthClient.HttpClientName, client =>
+		{
+			client.BaseAddress = new Uri(ynabOptions.OAuthBaseUrl.TrimEnd('/') + "/");
+			client.Timeout = TimeSpan.FromSeconds(15);
+		});
+		services.AddSingleton<IYnabOAuthClient, YnabOAuthClient>();
+		services.AddSingleton<YnabCredentialSource>();
+		services.AddSingleton<IYnabCredentialSource>(sp => sp.GetRequiredService<YnabCredentialSource>());
+		services.AddSingleton<IYnabOAuthConnectionStore>(sp => sp.GetRequiredService<YnabCredentialSource>());
+		services.AddSingleton<IYnabConnectionService, YnabConnectionService>();
 		services.AddHttpClient<IYnabApiClient, YnabApiClient>(client =>
 		{
 			client.BaseAddress = new Uri(ynabOptions.BaseUrl.TrimEnd('/') + "/");

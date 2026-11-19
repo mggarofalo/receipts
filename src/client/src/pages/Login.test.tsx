@@ -28,6 +28,13 @@ describe("Login", () => {
     expect(screen.getByLabelText(/^password/i)).toBeInTheDocument();
   });
 
+  it("links to the privacy policy", () => {
+    renderWithProviders(<Login />);
+    expect(
+      screen.getByRole("link", { name: "Privacy policy" }),
+    ).toHaveAttribute("href", "/privacy");
+  });
+
   it("renders the sign in button", () => {
     renderWithProviders(<Login />);
     expect(

@@ -194,6 +194,9 @@ const DOMAIN_CHANGE_QUERY_KEYS = {
   "normalized-description": NORMALIZED_DESCRIPTION_CHANGE_QUERY_KEYS,
   "duplicate-acceptance": DUPLICATE_ACCEPTANCE_CHANGE_QUERY_KEYS,
   "ynab-budget": [queryKeys.ynab],
+  // Connecting or disconnecting swaps the credential every YNAB read depends on
+  // (status, budgets, selected budget, accounts, categories, mappings, rate limit).
+  "ynab-connection": [queryKeys.ynab],
   "ynab-mapping": YNAB_MAPPING_CHANGE_QUERY_KEYS,
   "ynab-sync-record": YNAB_SYNC_RECORD_CHANGE_QUERY_KEYS,
   "ynab-sync-event": YNAB_SYNC_EVENT_CHANGE_QUERY_KEYS,

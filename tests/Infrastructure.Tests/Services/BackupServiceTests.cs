@@ -414,6 +414,86 @@ public class BackupServiceTests : IDisposable
 		tables.Should().NotContain("ynab_server_knowledge");
 	}
 
+	[Fact]
+	public async Task ExportToSqliteAsync_WithYnabOAuthConnection_ContainsNoTableOrValueFromIt()
+	{
+		// Arrange — every text value of the connection row is recognisable if it leaks.
+		const string protectedTokens = "protected-tokens-sentinel-7e1f9a";
+		const string connectedBy = "oauth-admin-sentinel-4b2c8d";
+		Guid connectionId = Guid.Parse("5a1e7c0d-3b2f-4e6a-9d8c-1f2e3d4c5b6a");
+		Guid concurrencyStamp = Guid.Parse("0c9b8a7f-6e5d-4c3b-a291-8f7e6d5c4b3a");
+		await using (ApplicationDbContext ctx = await _dbContextFactory.CreateDbContextAsync())
+		{
+			ctx.YnabOAuthConnections.Add(new YnabOAuthConnectionEntity
+			{
+				Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+				Status = YnabOAuthConnectionStatus.Connected,
+				ProtectedTokens = protectedTokens,
+				AccessTokenExpiresAtUtc = new DateTimeOffset(2026, 11, 19, 14, 0, 0, TimeSpan.Zero),
+				ConnectionId = connectionId,
+				ConnectedAtUtc = new DateTimeOffset(2026, 11, 19, 12, 0, 0, TimeSpan.Zero),
+				ConnectedByUserId = connectedBy,
+				StatusChangedAtUtc = new DateTimeOffset(2026, 11, 19, 12, 0, 0, TimeSpan.Zero),
+				ConcurrencyStamp = concurrencyStamp,
+			});
+			await ctx.SaveChangesAsync();
+		}
+
+		string[] sentinels =
+		[
+			protectedTokens,
+			connectedBy,
+			connectionId.ToString("D"),
+			connectionId.ToString("N"),
+			concurrencyStamp.ToString("D"),
+			concurrencyStamp.ToString("N"),
+		];
+
+		// Act
+		string path = await _service.ExportToSqliteAsync();
+		_tempFiles.Add(path);
+
+		// Assert — no table for the connection...
+		await using SqliteConnection conn = new($"Data Source={path};Pooling=False");
+		await conn.OpenAsync();
+		List<string> tables = [];
+		await using (SqliteCommand tablesCmd = conn.CreateCommand())
+		{
+			tablesCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table'";
+			await using SqliteDataReader reader = await tablesCmd.ExecuteReaderAsync();
+			while (await reader.ReadAsync())
+			{
+				tables.Add(reader.GetString(0));
+			}
+		}
+
+		tables.Should().NotBeEmpty();
+		tables.Should().NotContain(table => table.Contains("oauth", StringComparison.OrdinalIgnoreCase));
+
+		// ...and none of its values in any column of any table that is there.
+		foreach (string table in tables)
+		{
+			await using SqliteCommand rowsCmd = conn.CreateCommand();
+			rowsCmd.CommandText = $"SELECT * FROM \"{table}\"";
+			await using SqliteDataReader rows = await rowsCmd.ExecuteReaderAsync();
+			while (await rows.ReadAsync())
+			{
+				for (int column = 0; column < rows.FieldCount; column++)
+				{
+					if (rows.GetValue(column) is not string text)
+					{
+						continue;
+					}
+
+					foreach (string sentinel in sentinels)
+					{
+						text.Should().NotContainEquivalentOf(sentinel, $"{table}.{rows.GetName(column)} must not carry connection data");
+					}
+				}
+			}
+		}
+	}
+
 	public void Dispose()
 	{
 		foreach (string path in _tempFiles)

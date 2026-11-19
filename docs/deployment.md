@@ -117,6 +117,10 @@ compose does not re-pull a tag it already has.
 | `AdminSeed__LastName` | `User` | Admin last name |
 | `IMAGE_TAG` | `latest` | Image tag, no leading `v`. Pin it in `.env` (see [Image tag](#image-tag)) |
 | `OTEL_*` | unset | Optional telemetry export to an external collector. See [observability.md](observability.md) |
+| `YNAB_OAUTH_CLIENT_ID` | unset | YNAB OAuth application client id. See [ynab-connection.md](ynab-connection.md) |
+| `YNAB_OAUTH_CLIENT_SECRET` | unset | YNAB OAuth application client secret. May instead be the file `/secrets/ynab_oauth_client_secret` |
+| `YNAB_OAUTH_REDIRECT_URI` | unset | This deployment's public address followed by `/settings/ynab/callback`, exactly as registered with YNAB |
+| `YNAB_PAT` | unset | YNAB personal access token. A fallback used only when no OAuth connection exists |
 
 ### Auto-Generated Secrets
 
@@ -127,6 +131,9 @@ These are generated automatically and stored as files in the `secrets` volume:
 | `/secrets/pg_password` | `POSTGRES_PASSWORD` | PostgreSQL password |
 | `/secrets/jwt_key` | `Jwt__Key` | JWT signing key (at least 32 UTF-8 bytes) |
 | `/secrets/admin_password` | `AdminSeed__Password` | Initial admin password |
+
+One further file is optional and is never generated: `/secrets/ynab_oauth_client_secret`. When present, and
+`YNAB_OAUTH_CLIENT_SECRET` is not set in the environment, the entrypoint exports its contents under that name.
 
 ### PUID / PGID
 

@@ -45,6 +45,10 @@ function settingsQuery(fields: Record<string, unknown>) {
               ? {
                   isConfigured: fields.isConfigured,
                   isConnected: fields.isConnected,
+                  credentialSource: fields.credentialSource,
+                  oauthAvailable: fields.oauthAvailable,
+                  reconnectRequired: fields.reconnectRequired,
+                  oauthConnectedAtUtc: fields.oauthConnectedAtUtc,
                   lastSuccessfulSyncUtc: fields.lastSuccessfulSyncUtc,
                 }
               : {
@@ -122,6 +126,11 @@ vi.mock("@/hooks/useYnab", () => ({
   useClearStaleMappings: vi.fn(() => mockMutationResult()),
 }));
 
+vi.mock("@/hooks/useYnabConnection", () => ({
+  useStartYnabAuthorization: vi.fn(() => mockMutationResult()),
+  useDisconnectYnab: vi.fn(() => mockMutationResult()),
+}));
+
 vi.mock("@/components/YnabBulkSyncCard", () => ({
   YnabBulkSyncCard: () => (
     <div data-testid="ynab-bulk-sync-card">Bulk YNAB Sync</div>
@@ -138,6 +147,10 @@ beforeEach(async () => {
     useYnabConnectionStatus: {
       isConfigured: true,
       isConnected: true,
+      credentialSource: "personalAccessToken",
+      oauthAvailable: false,
+      reconnectRequired: false,
+      oauthConnectedAtUtc: null,
       lastSuccessfulSyncUtc: null,
     },
     useYnabBudgets: { budgets: [{ id: "budget-1", name: "Budget" }] },
@@ -201,12 +214,16 @@ describe("YnabSettings – Connection Status", () => {
     expect(screen.getByText(/Last sync:/)).toBeInTheDocument();
   });
 
-  it("shows 'Not Configured' badge when PAT is missing", async () => {
+  it("shows 'Not Configured' badge and both ways to enable YNAB when no credential or OAuth settings exist", async () => {
     const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
     vi.mocked(useYnabConnectionStatus).mockReturnValue(
       settingsQuery({
         isConfigured: false,
         isConnected: false,
+        credentialSource: "none",
+        oauthAvailable: false,
+        reconnectRequired: false,
+        oauthConnectedAtUtc: null,
         lastSuccessfulSyncUtc: null,
         isLoading: false,
       }),
@@ -220,6 +237,81 @@ describe("YnabSettings – Connection Status", () => {
       ),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Not Configured")).toBeInTheDocument();
+    expect(screen.getByText(/operator of this deployment/i)).toHaveTextContent(
+      "adding the YNAB OAuth settings (recommended) or by setting the YNAB_PAT environment variable",
+    );
+    expect(
+      screen.queryByText(/^Set the YNAB_PAT environment variable/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("passes the credential in use to the connection card and gives an Admin the fitting action", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      settingsQuery({
+        isConfigured: true,
+        isConnected: true,
+        credentialSource: "oauth",
+        oauthAvailable: true,
+        reconnectRequired: false,
+        oauthConnectedAtUtc: "2026-11-19T12:00:00Z",
+        lastSuccessfulSyncUtc: null,
+        isLoading: false,
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />, {
+      auth: {
+        user: {
+          userId: "admin-1",
+          email: "admin@example.com",
+          roles: ["Admin"],
+          mustResetPassword: false,
+        },
+      },
+    });
+
+    expect(
+      screen.getByText("Connected with OAuth on Nov 19, 2026"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Disconnect" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Connect to YNAB" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a non-admin the reconnect-required state without connection actions, and hides the mapping cards", async () => {
+    const { useYnabConnectionStatus } = await import("@/hooks/useYnab");
+    vi.mocked(useYnabConnectionStatus).mockReturnValue(
+      settingsQuery({
+        isConfigured: false,
+        isConnected: false,
+        credentialSource: "none",
+        oauthAvailable: true,
+        reconnectRequired: true,
+        oauthConnectedAtUtc: null,
+        lastSuccessfulSyncUtc: null,
+        isLoading: false,
+      }),
+    );
+
+    renderWithProviders(<YnabSettings />);
+
+    expect(screen.getByText("Reconnect required")).toBeInTheDocument();
+    for (const name of ["Reconnect", "Disconnect", "Connect to YNAB"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText("Budget Selection")).not.toBeInTheDocument();
+  });
+
+  it("links to the privacy policy from the connection card", () => {
+    renderWithProviders(<YnabSettings />);
+
+    expect(
+      screen.getByRole("link", { name: "Privacy policy" }),
+    ).toHaveAttribute("href", "/privacy");
   });
 
   it("shows 'Disconnected' badge when configured but connection fails", async () => {

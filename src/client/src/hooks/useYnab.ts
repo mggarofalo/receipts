@@ -37,7 +37,7 @@ const ynabSyncEventChanges = [
   "ynab-sync-event",
 ] as const satisfies readonly DomainChange[];
 
-function useYnabSettlementRepair(changes: readonly DomainChange[]) {
+export function useYnabSettlementRepair(changes: readonly DomainChange[]) {
   const queryClient = useQueryClient();
   const [sessionVersion] = useState(getSessionVersion);
   return useCallback(
@@ -50,6 +50,8 @@ function useYnabSettlementRepair(changes: readonly DomainChange[]) {
     [changes, queryClient, sessionVersion],
   );
 }
+
+export type YnabCredentialSource = components["schemas"]["YnabCredentialSource"];
 
 export function useYnabConnectionStatus() {
   const repairAfterValidation = useYnabSettlementRepair(ynabSyncEventChanges);
@@ -79,6 +81,10 @@ export function useYnabConnectionStatus() {
       ...base,
       isConfigured: query.data?.isConfigured ?? false,
       isConnected: query.data?.isConnected ?? false,
+      credentialSource: query.data?.credentialSource ?? "none",
+      oauthAvailable: query.data?.oauthAvailable ?? false,
+      reconnectRequired: query.data?.reconnectRequired ?? false,
+      oauthConnectedAtUtc: query.data?.oauthConnectedAtUtc ?? null,
       lastSuccessfulSyncUtc: query.data?.lastSuccessfulSyncUtc ?? null,
     }),
     [base, query.data],

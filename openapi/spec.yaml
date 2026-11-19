@@ -8537,6 +8537,80 @@ paths:
               schema:
                 $ref: "#/components/schemas/YnabStatusResponse"
 
+  /api/ynab/oauth/authorization:
+    post:
+      operationId: StartYnabAuthorization
+      tags: [YNAB]
+      summary: Start a YNAB OAuth authorization
+      description: Creates a single-use authorization attempt, valid for ten minutes and bound to the calling Admin, and returns the YNAB address the browser must visit. Admin-only.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabAuthorizationStartResponse"
+        "403":
+          description: Admin required
+        "409":
+          description: YNAB OAuth is not configured on this deployment
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+
+  /api/ynab/oauth/callback:
+    post:
+      operationId: CompleteYnabAuthorization
+      tags: [YNAB]
+      summary: Complete a YNAB OAuth authorization
+      description: Exchanges the code YNAB returned for tokens and stores them as the deployment's YNAB connection. Must be called by the Admin who started the attempt. Admin-only.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteYnabAuthorizationRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabConnectionStatusResponse"
+        "400":
+          description: The authorization attempt is not valid, or YNAB rejected the code
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+        "403":
+          description: Admin required
+        "503":
+          description: YNAB could not be reached; the same attempt can be completed again
+
+  /api/ynab/oauth/connection:
+    delete:
+      operationId: DisconnectYnab
+      tags: [YNAB]
+      summary: Disconnect the YNAB OAuth connection
+      description: Asks YNAB to revoke the grant, then removes the stored tokens whether or not YNAB could be reached. Admin-only.
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YnabDisconnectResponse"
+        "403":
+          description: Admin required
+
   /api/ynab/events:
     get:
       operationId: GetYnabSyncEvents
@@ -15577,20 +15651,82 @@ components:
 
     YnabConnectionStatusResponse:
       type: object
-      required: [isConfigured, isConnected]
+      required:
+        [
+          isConfigured,
+          isConnected,
+          credentialSource,
+          oauthAvailable,
+          reconnectRequired,
+        ]
       properties:
         isConfigured:
           type: boolean
-          description: Whether the YNAB personal access token is set.
+          description: Whether a usable YNAB credential exists (an OAuth connection or a personal access token).
         isConnected:
           type: boolean
-          description: Whether the YNAB API is reachable with the configured token.
+          description: Whether the YNAB API is reachable with the credential in use.
+        credentialSource:
+          $ref: "#/components/schemas/YnabCredentialSource"
+        oauthAvailable:
+          type: boolean
+          description: Whether this deployment has the OAuth client settings needed to start a connection.
+        reconnectRequired:
+          type: boolean
+          description: Whether an OAuth connection existed and can no longer be used, so an Admin must reconnect.
+        oauthConnectedAtUtc:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: When the OAuth connection was made, or null when there is none.
         lastSuccessfulSyncUtc:
           type:
             - string
             - "null"
           format: date-time
           description: The timestamp of the last successful YNAB sync operation, or null if no syncs have completed.
+
+    YnabCredentialSource:
+      type: string
+      description: Which credential YNAB requests are sent with.
+      enum: [none, oauth, personalAccessToken]
+
+    YnabAuthorizationStartResponse:
+      type: object
+      required: [authorizationUrl]
+      properties:
+        authorizationUrl:
+          type: string
+          format: uri
+          description: The YNAB address the browser must visit to approve the connection.
+
+    CompleteYnabAuthorizationRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: The authorization code YNAB returned.
+        state:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: The state value YNAB returned unchanged.
+
+    YnabRemoteRevocation:
+      type: string
+      description: What happened when YNAB was asked to revoke the grant. `succeeded` means YNAB accepted the request.
+      enum: [succeeded, failed, notAttempted]
+
+    YnabDisconnectResponse:
+      type: object
+      required: [remoteRevocation]
+      properties:
+        remoteRevocation:
+          $ref: "#/components/schemas/YnabRemoteRevocation"
 
     YnabStatusResponse:
       type: object
@@ -15606,7 +15742,7 @@ components:
       properties:
         isConfigured:
           type: boolean
-          description: Whether the YNAB personal access token is set.
+          description: Whether a usable YNAB credential exists (an OAuth connection or a personal access token).
         lastValidatedAt:
           type:
             - string

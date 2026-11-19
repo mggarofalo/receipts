@@ -23,8 +23,10 @@ public partial class BackupImportService
 		return true;
 	}
 
+	// The YNAB OAuth connection is a credential, not business data: a restore neither counts it
+	// against a pristine install nor touches it.
 	private static IEnumerable<IEntityType> BootstrapBusinessTypes(IModel model) => model.GetEntityTypes()
-		.Where(e => e.GetSchema() != "identity" && e.ClrType != typeof(AuthAuditLogEntity))
+		.Where(e => e.GetSchema() != "identity" && e.ClrType != typeof(AuthAuditLogEntity) && e.ClrType != typeof(Infrastructure.Entities.Core.YnabOAuthConnectionEntity))
 		.OrderBy(e => e.GetSchema()).ThenBy(e => e.GetTableName());
 
 	private static async Task<bool> MatchesBootstrapAsync<TEntity>(ApplicationDbContext db, IEntityType entity, CancellationToken ct)
