@@ -81,76 +81,84 @@ public class EnvelopeDerivationPolicyTests
 	public void AfterOverrideChange_OverrideChosen_RecordsItemSourceOverAnySource(EnvelopeSource source)
 	{
 		// Act
-		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(new(Recorded, source), Override, PaidFrom, ItemTypeDefault);
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(new(Recorded, source), Override);
 
 		// Assert
 		actual.Should().Be(new EnvelopeAssignment(Override, EnvelopeSource.Item));
 	}
 
-	[Fact]
-	public void AfterOverrideChange_ClearedOverride_ReturnsToReceiptPaidFrom()
-	{
-		// Act
-		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(new(Override, EnvelopeSource.Item), null, PaidFrom, ItemTypeDefault);
-
-		// Assert
-		actual.Should().Be(new EnvelopeAssignment(PaidFrom, EnvelopeSource.Receipt));
-	}
-
 	[Theory]
-	[InlineData(true)]
-	[InlineData(false)]
-	public void AfterOverrideChange_ClearedOverrideWithoutPaidFrom_ReturnsToItemTypeDefault(bool hasDefault)
+	[InlineData(EnvelopeSource.Default, true)]
+	[InlineData(EnvelopeSource.Receipt, true)]
+	[InlineData(EnvelopeSource.Item, true)]
+	[InlineData(EnvelopeSource.Historical, true)]
+	[InlineData(EnvelopeSource.Default, false)]
+	public void AfterOverrideChange_NoOverride_KeepsStoredAssignmentWhateverTheSource(EnvelopeSource source, bool hasEnvelope)
 	{
 		// Arrange
-		Guid? itemTypeDefault = hasDefault ? ItemTypeDefault : null;
+		EnvelopeAssignment stored = new(hasEnvelope ? Recorded : null, source);
 
 		// Act
-		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(new(Override, EnvelopeSource.Item), null, null, itemTypeDefault);
-
-		// Assert
-		actual.Should().Be(new EnvelopeAssignment(itemTypeDefault, EnvelopeSource.Default));
-	}
-
-	[Theory]
-	[InlineData(EnvelopeSource.Default)]
-	[InlineData(EnvelopeSource.Receipt)]
-	[InlineData(EnvelopeSource.Historical)]
-	public void AfterOverrideChange_NoOverrideOnNonOverriddenItem_KeepsStoredAssignment(EnvelopeSource source)
-	{
-		// Arrange
-		EnvelopeAssignment stored = new(Recorded, source);
-
-		// Act
-		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(stored, null, PaidFrom, ItemTypeDefault);
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterOverrideChange(stored, null);
 
 		// Assert
 		actual.Should().Be(stored);
 	}
 
+	[Fact]
+	public void Automatic_PaidFrom_IsRecordedAsReceiptSourced()
+	{
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.Automatic(PaidFrom, ItemTypeDefault);
+
+		// Assert
+		actual.Should().Be(new EnvelopeAssignment(PaidFrom, EnvelopeSource.Receipt));
+	}
+
+	[Fact]
+	public void Automatic_WithoutPaidFrom_IsTheItemTypeDefault()
+	{
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.Automatic(null, ItemTypeDefault);
+
+		// Assert
+		actual.Should().Be(new EnvelopeAssignment(ItemTypeDefault, EnvelopeSource.Default));
+	}
+
+	[Fact]
+	public void Automatic_NothingToDeriveFrom_IsReportedUnresolved()
+	{
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.Automatic(null, null);
+
+		// Assert
+		EnvelopeDerivationPolicy.IsUnresolved(actual).Should().BeTrue();
+	}
+
 	[Theory]
-	[InlineData(EnvelopeSource.Default, true, true)]
-	[InlineData(EnvelopeSource.Default, false, true)]
+	[InlineData(EnvelopeSource.Default, true, false)]
 	[InlineData(EnvelopeSource.Receipt, true, false)]
 	[InlineData(EnvelopeSource.Item, true, false)]
 	[InlineData(EnvelopeSource.Historical, true, false)]
+	[InlineData(EnvelopeSource.Default, false, true)]
 	[InlineData(EnvelopeSource.Receipt, false, true)]
 	[InlineData(EnvelopeSource.Item, false, true)]
 	[InlineData(EnvelopeSource.Historical, false, true)]
-	public void FollowsItemType_OnlyDefaultSourcedOrUnresolved(EnvelopeSource source, bool hasEnvelope, bool expected)
+	public void IsUnresolved_OnlyWhenNoEnvelopeIsRecorded(EnvelopeSource source, bool hasEnvelope, bool expected)
 	{
 		// Act
-		bool actual = EnvelopeDerivationPolicy.FollowsItemType(new(hasEnvelope ? Recorded : null, source));
+		bool actual = EnvelopeDerivationPolicy.IsUnresolved(new(hasEnvelope ? Recorded : null, source));
 
 		// Assert
 		actual.Should().Be(expected);
 	}
 
 	[Theory]
+	[InlineData(EnvelopeSource.Default)]
 	[InlineData(EnvelopeSource.Receipt)]
 	[InlineData(EnvelopeSource.Item)]
 	[InlineData(EnvelopeSource.Historical)]
-	public void AfterItemTypeChange_ChosenOrHistoricalEnvelope_IsPreserved(EnvelopeSource source)
+	public void AfterItemTypeChange_RecordedEnvelope_IsKeptWhateverTheSource(EnvelopeSource source)
 	{
 		// Arrange
 		EnvelopeAssignment stored = new(Recorded, source);
@@ -163,28 +171,46 @@ public class EnvelopeDerivationPolicyTests
 	}
 
 	[Theory]
-	[InlineData(EnvelopeSource.Default, true)]
-	[InlineData(EnvelopeSource.Default, false)]
-	[InlineData(EnvelopeSource.Historical, false)]
-	[InlineData(EnvelopeSource.Receipt, false)]
-	public void AfterItemTypeChange_DefaultSourcedOrUnresolved_FollowsNewDefault(EnvelopeSource source, bool hasEnvelope)
+	[InlineData(EnvelopeSource.Default)]
+	[InlineData(EnvelopeSource.Receipt)]
+	[InlineData(EnvelopeSource.Item)]
+	[InlineData(EnvelopeSource.Historical)]
+	public void AfterItemTypeChange_UnresolvedEnvelope_IsFilledFromTheDefault(EnvelopeSource source)
 	{
 		// Act
-		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterItemTypeChange(
-			new(hasEnvelope ? Recorded : null, source), ItemTypeDefault);
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterItemTypeChange(new(null, source), ItemTypeDefault);
 
 		// Assert
 		actual.Should().Be(new EnvelopeAssignment(ItemTypeDefault, EnvelopeSource.Default));
 	}
 
-	[Fact]
-	public void AfterItemTypeChange_NewTypeWithoutDefault_BecomesUnresolvedDefault()
+	[Theory]
+	[InlineData(EnvelopeSource.Default)]
+	[InlineData(EnvelopeSource.Receipt)]
+	[InlineData(EnvelopeSource.Historical)]
+	public void AfterItemTypeChange_UnresolvedWithoutDefault_KeepsTheStoredSource(EnvelopeSource source)
 	{
+		// Arrange
+		EnvelopeAssignment stored = new(null, source);
+
 		// Act
-		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterItemTypeChange(new(Recorded, EnvelopeSource.Default), null);
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterItemTypeChange(stored, null);
 
 		// Assert
-		actual.Should().Be(new EnvelopeAssignment(null, EnvelopeSource.Default));
+		actual.Should().Be(stored);
+	}
+
+	[Fact]
+	public void AfterItemTypeChange_ClearedType_KeepsTheEnvelope()
+	{
+		// Arrange: clearing a type resolves no default.
+		EnvelopeAssignment stored = new(Recorded, EnvelopeSource.Default);
+
+		// Act
+		EnvelopeAssignment actual = EnvelopeDerivationPolicy.AfterItemTypeChange(stored, null);
+
+		// Assert
+		actual.Should().Be(stored);
 	}
 
 	[Theory]

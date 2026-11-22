@@ -47,7 +47,8 @@ public interface IYnabEnvelopeMappingService
 
 /// <summary>
 /// Explicit "paid from" and occasion choices for one receipt or item. Unlike ordinary edits, where an
-/// omitted choice keeps the stored one, null here means automatic (envelope) or none (occasion).
+/// omitted choice keeps the stored one, a null occasion here means none. A null receipt paid-from is automatic;
+/// a null item envelope keeps the recorded one, and <see cref="SetItemAutomaticAsync"/> re-derives it.
 /// </summary>
 public interface IBudgetChoiceService
 {
@@ -55,4 +56,14 @@ public interface IBudgetChoiceService
 	Task<bool> SetReceiptChoicesAsync(Guid receiptId, Guid? paidFromEnvelopeId, Guid? occasionId, CancellationToken cancellationToken);
 	/// <summary>Returns false when the item does not exist.</summary>
 	Task<bool> SetItemChoicesAsync(Guid itemId, Guid? envelopeId, Guid? occasionId, CancellationToken cancellationToken);
+	/// <summary>Re-derives the item's envelope once from the receipt's paid-from, else its item type's default.</summary>
+	Task<ItemEnvelopeAutomaticResult> SetItemAutomaticAsync(Guid itemId, CancellationToken cancellationToken);
+}
+
+public enum ItemEnvelopeAutomaticResult
+{
+	NotFound,
+	Applied,
+	/// <summary>The receipt has no active paid-from and the item type has no default; nothing was recorded.</summary>
+	Unresolvable,
 }

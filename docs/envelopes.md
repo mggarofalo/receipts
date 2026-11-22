@@ -17,12 +17,16 @@ separate library.
 | Item | `ReceiptItems.EnvelopeId`, `EnvelopeSource`, `OccasionId` | The envelope recorded when the item was saved. Null is unresolved. |
 | Receipt | `Receipts.PaidFromEnvelopeId`, `OccasionId` | Optional receipt-level choices applied to its items. |
 
-`EnvelopeSource` records why an item has its envelope:
+`EnvelopeSource` records only where an item's envelope came from:
 
-- `default` — its item type's default;
-- `receipt` — the receipt's "paid from" envelope;
-- `item` — a per-item override;
-- `historical` — written by the [backfill](migrations/20261030134404_AddEnvelopes.md).
+- `default`: filled from its item type's default, or set by a person choosing
+  **Automatic**;
+- `receipt`: the receipt's "paid from" envelope;
+- `item`: a per-item override;
+- `historical`: written by the [backfill](migrations/20261030134404_AddEnvelopes.md).
+
+It is provenance, not a policy: no source makes an envelope follow later
+item-type changes.
 
 ## How an item gets its envelope
 
@@ -36,17 +40,16 @@ Persistence applies it at the write chokepoints (`Infrastructure.Services.ItemEn
   the default for their item type once it is classified. A paid-from envelope
   or occasion archived after the receipt was saved is skipped for items added
   later, as archived defaults are.
-- **Item-type changes.** Every classification write appends through
+- **Item-type changes only fill.** Every classification write appends through
   `ClassificationService.AppendAsync`, whichever path made it: manual choice,
   approved mapping at save, the background approved-mapping worker, historical
-  reclassification or category assistance. There, an item
-  whose source is `default`, or whose envelope is still unresolved, takes the
-  new type's default. `receipt`, `item` and `historical` envelopes are kept.
-  *This is current behaviour, not the intended rule:* an envelope is fixed once
-  recorded and a classification change only fills an unresolved one
+  reclassification and its undo, or category assistance. There, an item whose
+  envelope is still unresolved takes the new type's default, with source
+  `default`. A recorded envelope is fixed: it and its source are kept, whatever
+  the source. A type with no default leaves an unresolved item unresolved and
+  keeps its source. Clearing a type keeps the envelope
   ([envelope-attribution](../openspec/specs/envelope-attribution/spec.md),
-  [ADR](decisions/2026-11-15-envelope-fixed-once-recorded.md)). Implementation is
-  RECEIPTS-1124.
+  [ADR](decisions/2026-11-15-envelope-fixed-once-recorded.md)).
   A [category restructure](restructure-plans.md) is the exception: it changes
   what a purchase is, not who paid, so it keeps every recorded envelope. Only
   an envelope merge in the plan moves purchases between envelopes.
@@ -59,10 +62,16 @@ Persistence applies it at the write chokepoints (`Infrastructure.Services.ItemEn
   cleared follows the next receipt occasion if the receipt had none. Items in
   the recycle bin follow receipt changes too, so a restored item agrees with
   its receipt.
-- **Explicit choices** (`budget-choices` below) replace the stored ones, so
-  null can clear them. Both choices are sent each time. Returning an overridden item to automatic takes the
-  receipt's active paid-from envelope, else its item type's default. Any other
-  item keeps its recorded envelope.
+- **Explicit choices** (`budget-choices` below) are sent together each time. On
+  a receipt, both replace the stored ones, so null clears them. On an item, the
+  occasion is replaced, an envelope is recorded as a per-item override, and a
+  null envelope keeps the recorded one, whatever its source.
+- **Automatic** (`POST /api/receipt-items/{id}/envelope/automatic`) is the only
+  way back to automatic. A person chooses it, and it re-derives the item's
+  envelope once, whatever its source: the receipt's active paid-from envelope
+  (source `receipt`), else its item type's default (source `default`). It
+  leaves the occasion and classification alone. When neither resolves it
+  refuses with 409 and records nothing.
 - A newly chosen archived or missing envelope or occasion is rejected (400).
   Keeping one already stored is allowed.
 
@@ -78,9 +87,12 @@ recorded envelope's link in the selected budget. A null envelope, or an
 envelope with no link, is unmapped and blocks the push, as an unmapped category
 did before. Splits group by YNAB category, so many envelopes can share one.
 
-The "current hierarchy" split comparison previews what saving would do today:
-items that follow their item type are re-derived from the current tree and
-defaults; the others keep their recorded envelope.
+The split comparison always uses recorded envelopes. Saving never moves an
+envelope, so there is no preview of a "current hierarchy" view.
+
+Changing an envelope locally never changes YNAB. Before an override, Automatic
+or paid-from change on a receipt whose YNAB status is anything other than
+not-synced, the receipt page warns that YNAB will not be updated.
 
 Node-keyed resolution is retired. The old `ynab.YnabCategoryMappings` rows stay
 as frozen evidence for the backfill, the parity check and portable backups.
@@ -95,14 +107,16 @@ Nothing writes them any more.
 | `GET /api/item-type-envelope-defaults`, `PUT/DELETE /api/item-type-envelope-defaults/{categoryId}` | Item-type defaults. The item type must be selectable in the current taxonomy. |
 | `GET /api/ynab/envelope-mappings`, `GET /api/ynab/envelope-mappings/unmapped`, `PUT/DELETE /api/ynab/envelope-mappings/{envelopeId}` | YNAB links for the selected budget. |
 | `PUT /api/receipts/{id}/budget-choices` | Set the receipt's paid-from envelope and occasion. Null is automatic / none. |
-| `PUT /api/receipt-items/{id}/budget-choices` | Set an item's envelope override and occasion. Null is automatic / none. |
+| `PUT /api/receipt-items/{id}/budget-choices` | Set an item's envelope override and occasion. A null envelope keeps the recorded one; a null occasion is none. |
+| `POST /api/receipt-items/{id}/envelope/automatic` | Re-derive the item's envelope once from the receipt's paid-from, else its item type's default. 409 with a `detail` when neither resolves. |
 | `GET /api/reports/budget-trends` | Spending over time by envelope (`groupBy=envelope`) or occasion (`groupBy=occasion`), optionally narrowed with `envelopeId` / `occasionId`. |
 
 Receipt and item responses expose `paidFromEnvelopeId`, `occasionId`,
 `envelopeId` and `envelopeSource`. Receipt and item writes accept optional
 `paidFromEnvelopeId`, `occasionId` and `envelopeId` (a per-item override).
-Omitted or null keeps the stored choice on update; use the `budget-choices`
-endpoints to clear one.
+Omitted or null keeps the stored choice on update. Use the receipt's
+`budget-choices` endpoint to clear its choices, and Automatic to remove an
+item's override.
 
 ## Admin UI
 
@@ -119,7 +133,12 @@ own override. Each item row shows its item type and, only where its envelope
 differs from the receipt's, a small envelope badge. The receipt's envelope is
 its paid-from choice, else the one most of its items share. A typed item with no
 envelope shows **No envelope**. The row menu (**⋯**) holds the per-item
-override; **Automatic** removes it.
+override and **Automatic**, which is offered whatever the item's source.
+
+After a person changes an item's type on a receipt never pushed to YNAB, the
+items card offers **Also move to X?** when the item's source is `default` or
+`historical` and the new type's default X differs from the recorded envelope.
+Accepting runs Automatic; declining keeps the envelope.
 
 Before a receipt is saved the page previews each item's envelope with the same
 rule (`lib/envelope-display.ts`); the server records the real value at save.

@@ -33,7 +33,20 @@ public class BudgetChoiceService(IDbContextFactory<ApplicationDbContext> context
 		return true;
 	}
 
-	public async Task<bool> SetItemChoicesAsync(Guid itemId, Guid? envelopeId, Guid? occasionId, CancellationToken cancellationToken)
+	public Task<bool> SetItemChoicesAsync(Guid itemId, Guid? envelopeId, Guid? occasionId, CancellationToken cancellationToken)
+		=> WithLockedItemAsync(itemId, false, async (db, item) =>
+		{
+			await ItemEnvelopeWriter.ApplyItemChoicesAsync(db, item, envelopeId, occasionId, cancellationToken);
+			return true;
+		}, cancellationToken);
+
+	public Task<ItemEnvelopeAutomaticResult> SetItemAutomaticAsync(Guid itemId, CancellationToken cancellationToken)
+		=> WithLockedItemAsync(itemId, ItemEnvelopeAutomaticResult.NotFound, async (db, item) =>
+			await ItemEnvelopeWriter.ApplyAutomaticAsync(db, item, cancellationToken)
+				? ItemEnvelopeAutomaticResult.Applied : ItemEnvelopeAutomaticResult.Unresolvable, cancellationToken);
+
+	private async Task<TResult> WithLockedItemAsync<TResult>(Guid itemId, TResult notFound,
+		Func<ApplicationDbContext, ReceiptItemEntity, Task<TResult>> apply, CancellationToken cancellationToken)
 	{
 		await using ApplicationDbContext db = await contextFactory.CreateDbContextAsync(cancellationToken);
 		await using IDbContextTransaction? transaction = db.Database.IsRelational()
@@ -42,7 +55,7 @@ public class BudgetChoiceService(IDbContextFactory<ApplicationDbContext> context
 			.Select(row => (Guid?)row.ReceiptId).SingleOrDefaultAsync(cancellationToken);
 		if (receiptId is not Guid lockedReceipt)
 		{
-			return false;
+			return notFound;
 		}
 		await Utilities.NormalizationWriteGuard.AcquireWriteGateAsync(db, cancellationToken);
 		await ReceiptFactLock.AcquireAsync(db, [lockedReceipt], cancellationToken);
@@ -50,14 +63,14 @@ public class BudgetChoiceService(IDbContextFactory<ApplicationDbContext> context
 			.SingleOrDefaultAsync(row => row.Id == itemId && row.ReceiptId == lockedReceipt, cancellationToken);
 		if (item is null)
 		{
-			return false;
+			return notFound;
 		}
-		await ItemEnvelopeWriter.ApplyItemChoicesAsync(db, item, envelopeId, occasionId, cancellationToken);
+		TResult result = await apply(db, item);
 		await db.SaveChangesAsync(cancellationToken);
 		if (transaction is not null)
 		{
 			await transaction.CommitAsync(cancellationToken);
 		}
-		return true;
+		return result;
 	}
 }

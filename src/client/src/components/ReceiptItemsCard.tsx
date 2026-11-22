@@ -27,6 +27,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
@@ -54,6 +64,7 @@ import {
 import {
   useSetReceiptBudgetChoices,
   useSetReceiptItemBudgetChoices,
+  useSetReceiptItemEnvelopeAutomatic,
 } from "@/hooks/useBudgetChoices";
 import { previewItemEnvelope, receiptEnvelope } from "@/lib/envelope-display";
 import type { components } from "@/generated/api";
@@ -80,6 +91,20 @@ interface ReceiptItemsCardProps {
   location?: string | null;
   paidFromEnvelopeId?: string | null;
   occasionId?: string | null;
+  /** The receipt's YNAB status. Missing counts as pushed, so the card warns. */
+  persistedYnabStatus?: components["schemas"]["ReceiptYnabSyncStatusValue"];
+}
+
+/** An envelope change waiting for the person to accept that YNAB will not follow. */
+interface DriftChange {
+  description: string;
+  apply: () => void;
+}
+
+/** A saved type change that may come with an offer to move the envelope too. */
+interface TypeChange {
+  itemId: string;
+  categoryId: string;
 }
 
 function categoryLabel(item: ReceiptItem): string {
@@ -104,6 +129,7 @@ export function ReceiptItemsCard({
   location,
   paidFromEnvelopeId = null,
   occasionId = null,
+  persistedYnabStatus,
 }: ReceiptItemsCardProps) {
   const createReceiptItem = useCreateReceiptItem();
   const { envelopes } = useEnvelopes();
@@ -111,7 +137,16 @@ export function ReceiptItemsCard({
   const { defaults } = useItemTypeEnvelopeDefaults();
   const setReceiptChoices = useSetReceiptBudgetChoices();
   const setItemChoices = useSetReceiptItemBudgetChoices();
-  const choicesBusy = setReceiptChoices.isPending || setItemChoices.isPending;
+  const setItemAutomatic = useSetReceiptItemEnvelopeAutomatic();
+  const choicesBusy =
+    setReceiptChoices.isPending ||
+    setItemChoices.isPending ||
+    setItemAutomatic.isPending;
+  // YNAB never follows a local envelope change, so anything but a receipt
+  // known never to have been pushed is warned about first.
+  const neverPushed = persistedYnabStatus === "notSynced";
+  const [driftChange, setDriftChange] = useState<DriftChange | null>(null);
+  const [typeChange, setTypeChange] = useState<TypeChange | null>(null);
   const paidFrom = useMemo(
     () =>
       receiptEnvelope(
@@ -142,6 +177,41 @@ export function ReceiptItemsCard({
   const dialogSession = useRef(0);
   const queryClient = useQueryClient();
   const currentEditItem = items.find((item) => item.id === editItem?.id);
+
+  // The offer waits for the refetched item to carry the new type. A default or
+  // historical source means no paid-from applies, so the preview from the type
+  // alone is exactly what Automatic records.
+  const movedItem = items.find(
+    (item) =>
+      item.id === typeChange?.itemId &&
+      item.currentClassification?.categoryId === typeChange.categoryId,
+  );
+  const moveTarget =
+    neverPushed &&
+    (movedItem?.envelopeSource === "default" ||
+      movedItem?.envelopeSource === "historical")
+      ? previewItemEnvelope(
+          { typePath: movedItem.currentClassification?.recordedPath },
+          null,
+          defaults,
+          envelopes,
+        )
+      : null;
+  const moveOffer =
+    movedItem && moveTarget && moveTarget !== movedItem.envelopeId
+      ? { item: movedItem, envelopeId: moveTarget }
+      : null;
+
+  function changeEnvelope(description: string, apply: () => void) {
+    // Any envelope action supersedes an offer that has not been answered.
+    setTypeChange(null);
+    if (neverPushed) apply();
+    else setDriftChange({ description, apply });
+  }
+
+  function envelopeName(envelopeId: string | null | undefined) {
+    return envelopes.find((envelope) => envelope.id === envelopeId)?.name;
+  }
 
   function closeEditor() {
     dialogSession.current++;
@@ -186,6 +256,11 @@ export function ReceiptItemsCard({
 
   function handleUpdate(values: ReceiptItemFormValues) {
     if (!editItem) return;
+    const itemId = editItem.id;
+    // A re-pick of the same type under a newer revision is not a type change.
+    const typeBefore =
+      (currentEditItem ?? editItem).currentClassification?.categoryId ?? null;
+    setTypeChange(null);
     setServerErrors({});
     setSaveError(undefined);
     const session = dialogSession.current;
@@ -204,6 +279,9 @@ export function ReceiptItemsCard({
       {
         onSuccess: () => {
           if (session === dialogSession.current) closeEditor();
+          const categoryId = values.classification?.categoryId;
+          if (categoryId && categoryId !== typeBefore)
+            setTypeChange({ itemId, categoryId });
         },
         onError: (error) => {
           if (session !== dialogSession.current) return;
@@ -236,11 +314,13 @@ export function ReceiptItemsCard({
                 value={paidFromEnvelopeId}
                 disabled={choicesBusy}
                 onChange={(next) =>
-                  setReceiptChoices.mutate({
-                    receiptId,
-                    paidFromEnvelopeId: next,
-                    occasionId,
-                  })
+                  changeEnvelope("Changing the receipt's paid-from", () =>
+                    setReceiptChoices.mutate({
+                      receiptId,
+                      paidFromEnvelopeId: next,
+                      occasionId,
+                    }),
+                  )
                 }
               />
               <OccasionChip
@@ -392,6 +472,7 @@ export function ReceiptItemsCard({
                             dialogSession.current++;
                             setSaveError(undefined);
                             setServerErrors({});
+                            setTypeChange(null);
                             setEditItem(item);
                           }}
                         >
@@ -406,12 +487,22 @@ export function ReceiptItemsCard({
                           }
                           itemLabel={item.description}
                           disabled={choicesBusy}
-                          onChange={(envelopeId) =>
-                            setItemChoices.mutate({
-                              itemId: item.id,
-                              envelopeId,
-                              occasionId: item.occasionId ?? null,
-                            })
+                          onOverride={(envelopeId) =>
+                            changeEnvelope(
+                              `Overriding the envelope of ${item.description}`,
+                              () =>
+                                setItemChoices.mutate({
+                                  itemId: item.id,
+                                  envelopeId,
+                                  occasionId: item.occasionId ?? null,
+                                }),
+                            )
+                          }
+                          onAutomatic={() =>
+                            changeEnvelope(
+                              `Setting ${item.description} to Automatic`,
+                              () => setItemAutomatic.mutate({ itemId: item.id }),
+                            )
                           }
                         />
                       </TableCell>
@@ -521,6 +612,69 @@ export function ReceiptItemsCard({
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Warning before an envelope change YNAB will not follow */}
+      <AlertDialog
+        open={driftChange !== null}
+        onOpenChange={(open) => {
+          if (!open) setDriftChange(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>YNAB will not be updated</AlertDialogTitle>
+            <AlertDialogDescription>
+              This receipt may already be in YNAB. {driftChange?.description}{" "}
+              changes the envelope in Receipts only; YNAB keeps what it has.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                driftChange?.apply();
+                setDriftChange(null);
+              }}
+            >
+              Change locally
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Offer to move the envelope after a type change, before any push */}
+      <AlertDialog
+        open={moveOffer !== null}
+        onOpenChange={(open) => {
+          if (!open) setTypeChange(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Also move to {envelopeName(moveOffer?.envelopeId) ?? "its default"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {moveOffer?.item.description} is recorded as paid from{" "}
+              {envelopeName(moveOffer?.item.envelopeId) ?? "another envelope"}.
+              Its new item type's default is{" "}
+              {envelopeName(moveOffer?.envelopeId) ?? "different"}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep envelope</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (moveOffer)
+                  setItemAutomatic.mutate({ itemId: moveOffer.item.id });
+                setTypeChange(null);
+              }}
+            >
+              Move
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

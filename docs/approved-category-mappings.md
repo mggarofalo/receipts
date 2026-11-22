@@ -114,6 +114,8 @@ checkpoints; imported pending operations do not acquire new execution authority.
 Revoked mappings, changed taxonomy semantics and saved review choices are rechecked
 by the existing capture/executor transactions. Manual classifications and clears are
 preserved. Committed background changes publish a silent receipt-item invalidation.
+Like every classification write, a mapping write only fills an envelope that has none
+and never moves a recorded one ([Envelopes and occasions](envelopes.md)).
 
 Operations belong to the mapping approver and appear in that actor's automatic
 classification activity list. The public undo route now dispatches approved-mapping

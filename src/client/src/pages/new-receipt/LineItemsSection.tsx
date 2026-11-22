@@ -1066,10 +1066,21 @@ export function LineItemsSection({
                           envelopes={envelopes}
                           value={item.envelopeId ?? null}
                           itemLabel={item.description}
-                          onChange={(envelopeId) =>
+                          onOverride={(envelopeId) =>
                             onChange((current) =>
                               current.map((row) =>
                                 row.id === item.id ? { ...row, envelopeId } : row,
+                              ),
+                            )
+                          }
+                          // An unsaved item has nothing recorded yet: Automatic
+                          // drops the override and the save derives it once.
+                          onAutomatic={() =>
+                            onChange((current) =>
+                              current.map((row) =>
+                                row.id === item.id
+                                  ? { ...row, envelopeId: null }
+                                  : row,
                               ),
                             )
                           }
