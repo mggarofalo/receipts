@@ -9,10 +9,9 @@ namespace Infrastructure.IntegrationTests;
 
 // RECEIPTS-1110. The ChatGPT proposal's MatchScore was written and never read. plpgsql resolves
 // columns only when a function runs, so a function still naming it would fail at run time.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DropProposalMatchScoreMigrationTests(PostgresFixture fixture)
+public class DropProposalMatchScoreMigrationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string Migration = "20261101110308_DropNormalizationAiProposalMatchScore";
 

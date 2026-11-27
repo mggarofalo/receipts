@@ -1,6 +1,7 @@
 using Application.Classification;
 using Application.Taxonomy;
 using FluentAssertions;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Mapping;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +9,25 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+	internal async Task RestructureClearedEnrollmentCore()
+	{
+		var seed = await SeedAsync();
+		var store = new CategoryAssistanceSettingsStore(new Factory(fixture), TimeProvider.System);
+		var settings = await store.GetAsync();
+		await store.UpdateAsync(Actor, settings.Revision, settings with { Enabled = true, Provider = "jev", Model = "jev-1.14.0" });
+		await RestructureClearAsync(seed.Item, seed.Revision, seed.Assignment);
+		await using var db = fixture.CreateDbContext();
+		await using var tx = await db.Database.BeginTransactionAsync();
+		(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, Actor, Guid.NewGuid(), seed.Item, false, false)).Should().BeTrue();
+		await tx.RollbackAsync();
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationCategoryAssistanceTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task StandaloneCreateAndUpdateEnrollExactCurrentSourceButExplicitClearDoesNot()
@@ -54,18 +73,6 @@ public sealed partial class ClassificationTests
 	{
 		await using var isolated = await fixture.CreateIsolatedAsync();
 		await new ClassificationTests(isolated).RestructureClearedEnrollmentCore();
-	}
-	private async Task RestructureClearedEnrollmentCore()
-	{
-		var seed = await SeedAsync();
-		var store = new CategoryAssistanceSettingsStore(new Factory(fixture), TimeProvider.System);
-		var settings = await store.GetAsync();
-		await store.UpdateAsync(Actor, settings.Revision, settings with { Enabled = true, Provider = "jev", Model = "jev-1.14.0" });
-		await RestructureClearAsync(seed.Item, seed.Revision, seed.Assignment);
-		await using var db = fixture.CreateDbContext();
-		await using var tx = await db.Database.BeginTransactionAsync();
-		(await CategoryAssistanceObservationWriter.RecordNoChoiceSaveAsync(db, Actor, Guid.NewGuid(), seed.Item, false, false)).Should().BeTrue();
-		await tx.RollbackAsync();
 	}
 
 	[Fact]

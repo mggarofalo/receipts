@@ -14,7 +14,46 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+
+	internal static CategoryAssistanceReviewOperationEntity Advance(CategoryAssistanceReviewPreferenceEntity row, string state, Guid[] excluded)
+	{
+		Array.Sort(excluded);
+		var expected = row.Revision;
+		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
+		{ attemptId = row.AttemptId, ExpectedRevision = expected, State = state, excludedItemIds = excluded })));
+		row.State = state; row.Revision = Guid.NewGuid(); row.ExcludedItemIdsJson = JsonSerializer.Serialize(excluded);
+		return new()
+		{
+			Actor = row.Actor,
+			AttemptId = row.AttemptId,
+			OperationId = Guid.NewGuid(),
+			RequestHash = hash,
+			ResultJson = JsonSerializer.Serialize(new CategoryAssistanceReviewPreference(row.AttemptId, state, row.Revision, excluded)),
+			RecordedAt = DateTimeOffset.UtcNow
+		};
+	}
+
+	internal sealed class FailAfterPreferenceDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	{
+		private bool inserted;
+		public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
+		{
+			if (inserted) { throw new InvalidOperationException("Injected after preference insert"); }
+			bool adding = ChangeTracker.Entries<CategoryAssistanceReviewPreferenceEntity>().Any(x => x.State == EntityState.Added);
+			int result = await base.SaveChangesAsync(ct);
+			inserted = adding;
+			return result;
+		}
+	}
+	internal sealed class FailAfterPreferenceFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{ public ApplicationDbContext CreateDbContext() => new FailAfterPreferenceDb(fixture.CreateOptions()); }
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationReviewPreferenceRestoreTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task CandidateRestore_RoundTripsDetachedReviewOperationsAndRollsBack()
@@ -148,38 +187,5 @@ public sealed partial class ClassificationTests
 		}
 		finally { File.Delete(path); }
 	}
-
-	private static CategoryAssistanceReviewOperationEntity Advance(CategoryAssistanceReviewPreferenceEntity row, string state, Guid[] excluded)
-	{
-		Array.Sort(excluded);
-		var expected = row.Revision;
-		string hash = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
-		{ attemptId = row.AttemptId, ExpectedRevision = expected, State = state, excludedItemIds = excluded })));
-		row.State = state; row.Revision = Guid.NewGuid(); row.ExcludedItemIdsJson = JsonSerializer.Serialize(excluded);
-		return new()
-		{
-			Actor = row.Actor,
-			AttemptId = row.AttemptId,
-			OperationId = Guid.NewGuid(),
-			RequestHash = hash,
-			ResultJson = JsonSerializer.Serialize(new CategoryAssistanceReviewPreference(row.AttemptId, state, row.Revision, excluded)),
-			RecordedAt = DateTimeOffset.UtcNow
-		};
-	}
-
-	private sealed class FailAfterPreferenceDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
-	{
-		private bool inserted;
-		public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
-		{
-			if (inserted) { throw new InvalidOperationException("Injected after preference insert"); }
-			bool adding = ChangeTracker.Entries<CategoryAssistanceReviewPreferenceEntity>().Any(x => x.State == EntityState.Added);
-			int result = await base.SaveChangesAsync(ct);
-			inserted = adding;
-			return result;
-		}
-	}
-	private sealed class FailAfterPreferenceFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{ public ApplicationDbContext CreateDbContext() => new FailAfterPreferenceDb(fixture.CreateOptions()); }
 }
 

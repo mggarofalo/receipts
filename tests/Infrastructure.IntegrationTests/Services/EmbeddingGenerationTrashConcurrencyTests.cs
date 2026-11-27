@@ -15,10 +15,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class EmbeddingGenerationTrashConcurrencyTests(PostgresFixture fixture)
+public class EmbeddingGenerationTrashConcurrencyTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task MixedPendingBatch_DeletedDuringInference_AndEmptyTrashCompleteWithoutDeadlockOrStaleEmbeddings()

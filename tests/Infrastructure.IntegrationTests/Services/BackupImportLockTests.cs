@@ -8,7 +8,6 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
 public class BackupImportLockTests

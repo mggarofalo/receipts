@@ -10,10 +10,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ColumnTypeMappingTests(PostgresFixture fixture)
+public class ColumnTypeMappingTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task CardEntity_RoundTrips_AllColumnTypes()

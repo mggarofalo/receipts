@@ -16,10 +16,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // duplicate-group count is a GROUP BY ... HAVING COUNT(*) > 1 wrapped in an outer COUNT. The
 // InMemory unit suite client-evaluates both, so it can never catch a translation regression;
 // only a real relational provider throws.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ReportServiceHealthSummaryTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task UnclassifiedReport_AndHealthCountAgreeAcrossCurrentEvidenceAndBoundedPages()

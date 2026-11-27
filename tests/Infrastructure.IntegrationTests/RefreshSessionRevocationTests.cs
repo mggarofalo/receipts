@@ -10,8 +10,7 @@ namespace Infrastructure.IntegrationTests;
 
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-[Collection(PostgresCollection.Name)]
-public class RefreshSessionRevocationTests(PostgresFixture fixture)
+public class RefreshSessionRevocationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private async Task<ApplicationUser> CreateUserAsync(Guid? family)
 	{

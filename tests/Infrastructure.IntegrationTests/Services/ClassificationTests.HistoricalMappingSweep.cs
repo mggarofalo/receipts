@@ -1,6 +1,7 @@
 using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -8,16 +9,10 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Fact]
-	public async Task ApprovedMappingSweepAdvancesPastSkippedPagesAndReplaysPendingWork()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedMappingSweepCore();
-	}
 
-	private async Task ApprovedMappingSweepCore()
+	internal async Task ApprovedMappingSweepCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var group = (await HistoricalRequest(seed.Item, seed.Revision, seed.Root)).Groups.Single().Group;
@@ -124,5 +119,17 @@ public sealed partial class ClassificationTests
 		(await Assert.ThrowsAsync<Application.Taxonomy.TaxonomyException>(() => sweep.NextAsync(laterRequest))).Status.Should().Be(409);
 		(await Assert.ThrowsAsync<Application.Taxonomy.TaxonomyException>(() => sweep.NextAsync(laterRequest with { ExpectedRestoreGeneration = settings.RestoreGeneration }))).Status.Should().Be(409);
 		(await Assert.ThrowsAsync<Application.Taxonomy.TaxonomyException>(() => ApprovedExecutor().ApplyChunkAsync(generation, Actor, later.OperationId!.Value, 100))).Status.Should().Be(409);
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalMappingSweepTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Fact]
+	public async Task ApprovedMappingSweepAdvancesPastSkippedPagesAndReplaysPendingWork()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedMappingSweepCore();
 	}
 }

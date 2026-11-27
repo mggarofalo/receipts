@@ -24,10 +24,9 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime
+public sealed class CategoryAssistanceDispatchStoreTests : IAsyncLifetime, IClassFixture<PostgresFixture>
 {
 	private PostgresFixture fixture = null!;
 	private readonly PostgresFixture server;

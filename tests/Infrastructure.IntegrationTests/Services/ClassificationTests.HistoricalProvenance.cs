@@ -4,6 +4,7 @@ using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Taxonomy;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -13,23 +14,10 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Fact]
-	public async Task HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidence()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidenceCore();
-	}
 
-	[Fact]
-	public async Task MigratedLegacyAutomaticCapturesRejectReplayAndUndoInEveryState()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).MigratedLegacyAutomaticCapturesCore();
-	}
-
-	private async Task MigratedLegacyAutomaticCapturesCore()
+	internal async Task MigratedLegacyAutomaticCapturesCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var manual = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
@@ -73,7 +61,7 @@ public sealed partial class ClassificationTests
 		(await Historical().ApplyChunkAsync(Actor, manual.OperationId, 1)).Applied.Should().Be(1);
 	}
 
-	private async Task HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidenceCore()
+	internal async Task HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidenceCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var request = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
@@ -91,14 +79,7 @@ public sealed partial class ClassificationTests
 		(await Historical().ApplyChunkAsync(Actor, request.OperationId, 1)).Applied.Should().Be(1);
 	}
 
-	[Fact]
-	public async Task AutomaticHistoricalEvidenceRequiresMatchingApprovalAndCannotRunOrExport()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).AutomaticHistoricalEvidenceRequiresMatchingApprovalAndCannotRunOrExportCore();
-	}
-
-	private async Task AutomaticHistoricalEvidenceRequiresMatchingApprovalAndCannotRunOrExportCore()
+	internal async Task AutomaticHistoricalEvidenceRequiresMatchingApprovalAndCannotRunOrExportCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var request = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
@@ -136,14 +117,7 @@ public sealed partial class ClassificationTests
 		await Assert.ThrowsAsync<InvalidDataException>(() => AcceptanceExport());
 	}
 
-	[Fact]
-	public async Task HistoricalArchiveDefaultsMissingFieldsAndRejectsAutomaticClaims()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).HistoricalArchiveDefaultsMissingFieldsAndRejectsAutomaticClaimsCore();
-	}
-
-	private async Task HistoricalArchiveDefaultsMissingFieldsAndRejectsAutomaticClaimsCore()
+	internal async Task HistoricalArchiveDefaultsMissingFieldsAndRejectsAutomaticClaimsCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var request = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
@@ -176,14 +150,8 @@ public sealed partial class ClassificationTests
 		}
 		finally { File.Delete(path); }
 	}
-	[Fact]
-	public async Task HistoricalProvenanceDowngradeWaitsForConcurrentAutomaticInsert()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).HistoricalProvenanceDowngradeWaitsForConcurrentAutomaticInsertCore();
-	}
 
-	private async Task HistoricalProvenanceDowngradeWaitsForConcurrentAutomaticInsertCore()
+	internal async Task HistoricalProvenanceDowngradeWaitsForConcurrentAutomaticInsertCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var request = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
@@ -224,5 +192,43 @@ public sealed partial class ClassificationTests
 		exception.MessageText.Should().Contain("Historical capture mapping evidence is retained");
 		(await migrator.Database.GetAppliedMigrationsAsync()).Should().Contain("20261029014920_AddHistoricalCaptureMappingIdentity");
 	}
+}
 
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalProvenanceTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Fact]
+	public async Task HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidence()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).HistoricalProvenanceMigrationPreservesManualRowsAndGuardsEvidenceCore();
+	}
+
+	[Fact]
+	public async Task MigratedLegacyAutomaticCapturesRejectReplayAndUndoInEveryState()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).MigratedLegacyAutomaticCapturesCore();
+	}
+
+	[Fact]
+	public async Task AutomaticHistoricalEvidenceRequiresMatchingApprovalAndCannotRunOrExport()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).AutomaticHistoricalEvidenceRequiresMatchingApprovalAndCannotRunOrExportCore();
+	}
+
+	[Fact]
+	public async Task HistoricalArchiveDefaultsMissingFieldsAndRejectsAutomaticClaims()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).HistoricalArchiveDefaultsMissingFieldsAndRejectsAutomaticClaimsCore();
+	}
+	[Fact]
+	public async Task HistoricalProvenanceDowngradeWaitsForConcurrentAutomaticInsert()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).HistoricalProvenanceDowngradeWaitsForConcurrentAutomaticInsertCore();
+	}
 }

@@ -17,10 +17,9 @@ using Xunit.Abstractions;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class PurchaseSearchScaleTests(PostgresFixture server, ITestOutputHelper output) : IsolatedPostgresTest(server)
+public sealed class PurchaseSearchScaleTests(PostgresFixture server, ITestOutputHelper output) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(64, 16_509)]

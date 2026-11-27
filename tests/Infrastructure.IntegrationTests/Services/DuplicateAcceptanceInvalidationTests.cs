@@ -8,10 +8,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DuplicateAcceptanceInvalidationTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class DuplicateAcceptanceInvalidationTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData("date")]

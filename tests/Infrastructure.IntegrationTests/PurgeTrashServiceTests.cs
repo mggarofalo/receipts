@@ -8,10 +8,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class PurgeTrashServiceTests(PostgresFixture fixture)
+public class PurgeTrashServiceTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task PurgeAllDeletedAsync_RemovesSoftDeletedRowsFromEverySoftDeletableTable_AndPreservesActiveRows()

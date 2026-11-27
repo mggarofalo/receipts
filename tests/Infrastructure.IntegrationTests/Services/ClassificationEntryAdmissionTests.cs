@@ -13,7 +13,9 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationEntryAdmissionTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task EntryWirePayloadsPersistNoChoiceClearRootParentAndDeepChildWithStableReplay()

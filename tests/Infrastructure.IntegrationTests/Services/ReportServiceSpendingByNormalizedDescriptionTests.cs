@@ -15,10 +15,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // OFFSET/LIMIT) and runs a second page-scoped query for dominant-currency resolution. The InMemory
 // unit suite client-evaluates all of this, so it can never prove the LINQ actually translates —
 // only a real Postgres connection can catch a translation regression.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ReportServiceSpendingByNormalizedDescriptionTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task GetSpendingByNormalizedDescriptionAsync_AggregatesVerifiedPurchases_AndBucketsNullFk()

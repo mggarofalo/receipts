@@ -12,10 +12,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class AuditAtomicityTests(PostgresFixture fixture)
+public class AuditAtomicityTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(false, 1)]

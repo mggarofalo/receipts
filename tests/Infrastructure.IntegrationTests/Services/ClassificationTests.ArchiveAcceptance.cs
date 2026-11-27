@@ -13,16 +13,16 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	private Task<string> AcceptanceExport() => new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
-	private async Task AcceptanceImport(string path)
+	internal Task<string> AcceptanceExport() => new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+	internal async Task AcceptanceImport(string path)
 	{
 		await using var stream = File.OpenRead(path);
 		await new BackupImportService(new Factory(fixture), NullLogger<BackupImportService>.Instance).ImportFromSqliteAsync(stream, default);
 	}
 
-	private static async Task AcceptanceSql(string path, string sql)
+	internal static async Task AcceptanceSql(string path, string sql)
 	{
 		await using var sqlite = new SqliteConnection($"Data Source={path};Pooling=False");
 		await sqlite.OpenAsync();
@@ -33,7 +33,7 @@ public sealed partial class ClassificationTests
 	// Complete source, classification, historical and source-restore audit rows.
 	// Budget attribution columns are excluded: a downgrade may legitimately roll back the
 	// envelope migration (dropping them) before the protected migration's guard refuses.
-	private static async Task<string> AcceptanceDatabaseFacts(ApplicationDbContext db)
+	internal static async Task<string> AcceptanceDatabaseFacts(ApplicationDbContext db)
 	{
 		return await db.Database.SqlQueryRaw<string>("""
             SELECT coalesce(jsonb_agg(fact ORDER BY fact)::text, '[]') AS "Value" FROM (
@@ -47,6 +47,47 @@ public sealed partial class ClassificationTests
             ) facts
             """).SingleAsync();
 	}
+
+	internal async Task AcceptanceSourceDowngrade(bool retainedAudit)
+	{
+		const string migration = "20261026133000_AddPortableSourceRevisionRestore";
+		await using var db = fixture.CreateDbContext();
+		if (retainedAudit)
+		{
+			var seed = await HistoricalSeedAsync();
+			Guid before = await db.ReceiptItems.Where(x => x.Id == seed.Item).Select(x => x.NormalizationRevision).SingleAsync();
+			await using var tx = await db.Database.BeginTransactionAsync();
+			await db.Database.ExecuteSqlRawAsync("LOCK TABLE receipts.\"ReceiptItems\" IN EXCLUSIVE MODE");
+			await db.Database.ExecuteSqlInterpolatedAsync($"SELECT matching.restore_source_revision('ReceiptItems', {seed.Item}, {before}, {Guid.NewGuid()})");
+			await tx.CommitAsync();
+		}
+		string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+		int index = Array.IndexOf(applied, migration); index.Should().BeGreaterThan(0);
+		if (retainedAudit)
+		{
+			string before = await AcceptanceDatabaseFacts(db);
+			before.Should().Contain("sourceaudit:", "the downgrade must encounter retained restore evidence");
+			Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
+			(await downgrade.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("retained source restore evidence");
+			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(index + 1),
+					"the protected source restore migration and every prior migration must remain applied");
+			(await AcceptanceDatabaseFacts(db)).Should().Be(before);
+		}
+		else
+		{
+			await db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
+			(await db.Database.GetAppliedMigrationsAsync()).Should().NotContain(migration);
+			await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
+			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
+			(await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM matching.\"SourceRevisionRestores\"").SingleAsync()).Should().Be(0);
+		}
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationArchiveAcceptanceTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
 
 	[Fact]
 	public async Task ArchiveAcceptanceV11ActualImportPreservesRetainedHistoricalEvidence()
@@ -153,41 +194,6 @@ public sealed partial class ClassificationTests
 		var isolated = new PostgresFixture("20261030134404_AddEnvelopes"); await isolated.InitializeAsync();
 		try { await new ClassificationTests(isolated).AcceptanceSourceDowngrade(retainedAudit); }
 		finally { await isolated.DisposeAsync(); }
-	}
-
-	private async Task AcceptanceSourceDowngrade(bool retainedAudit)
-	{
-		const string migration = "20261026133000_AddPortableSourceRevisionRestore";
-		await using var db = fixture.CreateDbContext();
-		if (retainedAudit)
-		{
-			var seed = await HistoricalSeedAsync();
-			Guid before = await db.ReceiptItems.Where(x => x.Id == seed.Item).Select(x => x.NormalizationRevision).SingleAsync();
-			await using var tx = await db.Database.BeginTransactionAsync();
-			await db.Database.ExecuteSqlRawAsync("LOCK TABLE receipts.\"ReceiptItems\" IN EXCLUSIVE MODE");
-			await db.Database.ExecuteSqlInterpolatedAsync($"SELECT matching.restore_source_revision('ReceiptItems', {seed.Item}, {before}, {Guid.NewGuid()})");
-			await tx.CommitAsync();
-		}
-		string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		int index = Array.IndexOf(applied, migration); index.Should().BeGreaterThan(0);
-		if (retainedAudit)
-		{
-			string before = await AcceptanceDatabaseFacts(db);
-			before.Should().Contain("sourceaudit:", "the downgrade must encounter retained restore evidence");
-			Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
-			(await downgrade.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("retained source restore evidence");
-			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(index + 1),
-					"the protected source restore migration and every prior migration must remain applied");
-			(await AcceptanceDatabaseFacts(db)).Should().Be(before);
-		}
-		else
-		{
-			await db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
-			(await db.Database.GetAppliedMigrationsAsync()).Should().NotContain(migration);
-			await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
-			(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied);
-			(await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM matching.\"SourceRevisionRestores\"").SingleAsync()).Should().Be(0);
-		}
 	}
 }
 

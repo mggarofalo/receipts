@@ -15,10 +15,9 @@ using Pgvector;
 namespace Infrastructure.IntegrationTests.Services;
 
 /// <summary>Description autocomplete: index use, row selection and semantic recall (RECEIPTS-1098).</summary>
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ItemTemplateSimilarityAutocompleteTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ItemTemplateSimilarityAutocompleteTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(false)]

@@ -7,10 +7,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class AuditLogTests(PostgresFixture fixture)
+public class AuditLogTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task Create_Entity_GeneratesAuditLog()

@@ -14,9 +14,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	private async Task<(ReceiptEntity Receipt, ReceiptItemEntity Item, CategoryMappingCommand Command, CategoryMappingRevision Approval)> MappingEntryAsync()
+	internal async Task<(ReceiptEntity Receipt, ReceiptItemEntity Item, CategoryMappingCommand Command, CategoryMappingRevision Approval)> MappingEntryAsync()
 	{
 		var seed = await SeedAsync();
 		var receipt = ReceiptEntityGenerator.Generate();
@@ -28,10 +28,16 @@ public sealed partial class ClassificationTests
 		var approval = await new CategoryMappingService(new Factory(fixture), TimeProvider.System).ChangeAsync(Actor, command);
 		return (receipt, item, command, approval);
 	}
-	private CompleteReceiptWriter MappingWriter(IDbContextFactory<ApplicationDbContext>? factory = null, bool enabled = true)
+	internal CompleteReceiptWriter MappingWriter(IDbContextFactory<ApplicationDbContext>? factory = null, bool enabled = true)
 		=> new(factory ?? new ActorFactory(fixture), new Infrastructure.Mapping.ReceiptMapper(),
 			new Infrastructure.Mapping.TransactionMapper(), new Infrastructure.Mapping.ReceiptItemMapper(),
 			new Infrastructure.Mapping.AdjustmentMapper(), Options.Create(new ClassificationOptions { WritesEnabled = enabled }));
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationApprovedMappingsTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
 
 	[Fact]
 	public async Task ApprovedMappingUsesCurrentRevisionRetainsApprovalAndReplaysAfterRevocation()

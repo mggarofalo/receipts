@@ -14,10 +14,9 @@ using Moq;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed partial class NormalizationCatalogTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public sealed partial class NormalizationCatalogTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	private const string Actor = "catalog-test-admin";
 	private static readonly NormalizationSourceKey Source = new("Store A", "BF FRANKS 8CT", "123");

@@ -10,10 +10,9 @@ namespace Infrastructure.IntegrationTests;
 
 // RECEIPTS-1112: the evidence guard runs matching.review_item_prepared for every written purchase.
 // It must trust exactly the items the current save prepared, at a cost linear in their number.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class ReviewEvidenceGuardTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public sealed class ReviewEvidenceGuardTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task PreparedPurchasesKeepTheirEvidence_AndOthersInTheSameTransactionAreDowngraded()

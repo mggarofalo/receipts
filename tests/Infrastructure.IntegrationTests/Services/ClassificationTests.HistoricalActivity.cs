@@ -1,17 +1,13 @@
 using FluentAssertions;
 
+using Infrastructure.IntegrationTests.Fixtures;
+
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Fact]
-	public async Task AutomaticActivityIsOwnedAndSeparateFromManualOperations()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).AutomaticActivityCore();
-	}
 
-	private async Task AutomaticActivityCore()
+	internal async Task AutomaticActivityCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		var manual = await HistoricalRequest(captured.Item, captured.Request.TaxonomyRevisionId, captured.Category);
@@ -24,5 +20,17 @@ public sealed partial class ClassificationTests
 		(await Historical().ListAutomaticAsync(Actor, 1, 1)).Items.Should().BeEmpty();
 		(await Historical().ListAsync(Actor, 0, 25)).Items.Should().ContainSingle().Which.OperationId.Should().Be(manual.OperationId);
 		await Assert.ThrowsAsync<ArgumentException>(() => Historical().ListAutomaticAsync(Actor, -1, 25));
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalActivityTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Fact]
+	public async Task AutomaticActivityIsOwnedAndSeparateFromManualOperations()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).AutomaticActivityCore();
 	}
 }

@@ -15,10 +15,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // These behaviours are invisible to the InMemory unit tests because that provider enforces no
 // foreign keys at all: the SetNull cleanup never fires and the constraint never rejects a
 // dangling reference, so both paths below would silently "pass" for the wrong reason.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class NormalizedDescriptionNearestNeighbourTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task MergeAsync_DeletingANeighbour_NullsTheReferenceInsteadOfDeletingTheReferrer()

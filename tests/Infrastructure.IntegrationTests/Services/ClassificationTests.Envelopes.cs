@@ -2,11 +2,25 @@ using Domain.Envelopes;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
 using Infrastructure.Entities.Envelopes;
+using Infrastructure.IntegrationTests.Fixtures;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+
+	internal async Task<EnvelopeAssignment> ReadEnvelopeAsync(Guid itemId)
+	{
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		return await db.ReceiptItems.IgnoreAutoIncludes().AsNoTracking().Where(row => row.Id == itemId)
+			.Select(row => new EnvelopeAssignment(row.EnvelopeId, row.EnvelopeSource)).SingleAsync();
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationEnvelopesTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task Assign_DefaultSourcedEnvelopeFollowsItemTypeButOverrideIsKept()
@@ -55,12 +69,5 @@ public sealed partial class ClassificationTests
 		// Assert
 		afterFirst.Should().Be(new EnvelopeAssignment(rootEnvelope, EnvelopeSource.Default));
 		afterOverride.Should().Be(new EnvelopeAssignment(overrideEnvelope, EnvelopeSource.Item));
-	}
-
-	private async Task<EnvelopeAssignment> ReadEnvelopeAsync(Guid itemId)
-	{
-		await using ApplicationDbContext db = fixture.CreateDbContext();
-		return await db.ReceiptItems.IgnoreAutoIncludes().AsNoTracking().Where(row => row.Id == itemId)
-			.Select(row => new EnvelopeAssignment(row.EnvelopeId, row.EnvelopeSource)).SingleAsync();
 	}
 }

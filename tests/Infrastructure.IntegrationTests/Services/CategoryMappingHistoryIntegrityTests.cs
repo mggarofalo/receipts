@@ -15,10 +15,9 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryMappingHistoryIntegrityTests(PostgresFixture fixture)
+public sealed class CategoryMappingHistoryIntegrityTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

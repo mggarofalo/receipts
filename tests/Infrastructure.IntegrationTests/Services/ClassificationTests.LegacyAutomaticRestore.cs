@@ -1,6 +1,7 @@
 using Application.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Taxonomy;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +9,24 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+
+	internal async Task<string> LegacyV13WithoutAutomaticHistoryAsync()
+	{
+		string path = await new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
+		await using var sqlite = new SqliteConnection($"Data Source={path};Pooling=False");
+		await sqlite.OpenAsync();
+		await using var command = sqlite.CreateCommand();
+		command.CommandText = "UPDATE backup_metadata SET value='13' WHERE key='export_version'; DELETE FROM historical_operation_archive; DROP TABLE review_disposition_archive; DROP TABLE review_preference_archive";
+		await command.ExecuteNonQueryAsync();
+		return path;
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationLegacyAutomaticRestoreTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(false)]
@@ -101,16 +119,5 @@ public sealed partial class ClassificationTests
 			(await subject.Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle().Which.Id.Should().Be(captured.Assignment);
 		}
 		finally { File.Delete(path); }
-	}
-
-	private async Task<string> LegacyV13WithoutAutomaticHistoryAsync()
-	{
-		string path = await new BackupService(new Factory(fixture), NullLogger<BackupService>.Instance).ExportToSqliteAsync();
-		await using var sqlite = new SqliteConnection($"Data Source={path};Pooling=False");
-		await sqlite.OpenAsync();
-		await using var command = sqlite.CreateCommand();
-		command.CommandText = "UPDATE backup_metadata SET value='13' WHERE key='export_version'; DELETE FROM historical_operation_archive; DROP TABLE review_disposition_archive; DROP TABLE review_preference_archive";
-		await command.ExecuteNonQueryAsync();
-		return path;
 	}
 }

@@ -11,11 +11,11 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
 	// Pause after PostgreSQL grants the transaction gate. The competing service
 	// uses another physical connection; pg_blocking_pids proves actual contention.
-	private sealed class HistoricalRaceGate(bool pause, bool writeGateOnly = false) : DbCommandInterceptor
+	internal sealed class HistoricalRaceGate(bool pause, bool writeGateOnly = false) : DbCommandInterceptor
 	{
 		public TaskCompletionSource<int> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		public TaskCompletionSource Acquired { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -39,14 +39,14 @@ public sealed partial class ClassificationTests
 		}
 	}
 
-	private sealed class HistoricalRaceFactory(PostgresFixture fixture, HistoricalRaceGate gate)
+	internal sealed class HistoricalRaceFactory(PostgresFixture fixture, HistoricalRaceGate gate)
 		: IDbContextFactory<ApplicationDbContext>
 	{
 		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
 			.AddInterceptors(gate).Options);
 	}
 
-	private async Task AssertHistoricalDatabaseWait(HistoricalRaceGate winner, HistoricalRaceGate loser)
+	internal async Task AssertHistoricalDatabaseWait(HistoricalRaceGate winner, HistoricalRaceGate loser)
 	{
 		int holdingPid = await winner.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
 		int waitingPid = await loser.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -65,6 +65,12 @@ public sealed partial class ClassificationTests
 		}
 		loser.Acquired.Task.IsCompleted.Should().BeFalse("the competing database transaction must wait for the gate");
 	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalConcurrencyTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
 
 	[Theory]
 	[InlineData(true)]

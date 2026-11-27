@@ -5,10 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DateTimeOffsetUtcTests(PostgresFixture fixture)
+public class DateTimeOffsetUtcTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task NonUtcDateTimeOffset_IsPersisted_AsUtc()

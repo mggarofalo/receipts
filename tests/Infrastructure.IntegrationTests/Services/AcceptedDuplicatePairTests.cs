@@ -21,10 +21,9 @@ namespace Infrastructure.IntegrationTests.Services;
 /// The report reads across ALL receipts globally, so each test truncates first to stay isolated
 /// from the rest of the collection.
 /// </summary>
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class AcceptedDuplicatePairTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class AcceptedDuplicatePairTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	#region Check constraint
 

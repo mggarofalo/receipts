@@ -12,10 +12,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // aggregates — including SumAsync(x => Math.Abs(difference)) over correlated `?? 0m` subqueries —
 // fully to SQL, and paginate in SQL. The InMemory unit suite silently client-evaluates all of this,
 // so it can never catch a translation regression; only a real relational provider throws.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class OutOfBalanceReportTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class OutOfBalanceReportTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task GetOutOfBalanceAsync_TranslatesAggregatesToSql_AndReturnsCorrectTotals()

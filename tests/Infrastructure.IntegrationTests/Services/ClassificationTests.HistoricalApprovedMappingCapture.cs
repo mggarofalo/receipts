@@ -3,6 +3,7 @@ using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Taxonomy;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -10,16 +11,10 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Fact]
-	public async Task ApprovedMappingCaptureFreezesEligibleEvidenceAndProtectsManualClear()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedMappingCaptureCore();
-	}
 
-	private async Task ApprovedMappingCaptureCore()
+	internal async Task ApprovedMappingCaptureCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var manual = await Service().AssignAsync(Actor, seed.Item,
@@ -101,14 +96,8 @@ public sealed partial class ClassificationTests
 			seed.Revision, null, Guid.NewGuid(), "Revoke"));
 		(await Assert.ThrowsAsync<TaxonomyException>(() => capture.CaptureAsync(request with { OperationId = Guid.NewGuid() }))).Status.Should().Be(409);
 	}
-	[Fact]
-	public async Task ApprovedMappingCaptureRespectsActorPrivateDispositionsAndTheirLock()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedMappingDispositionCore();
-	}
 
-	private async Task ApprovedMappingDispositionCore()
+	internal async Task ApprovedMappingDispositionCore()
 	{
 		var seed = await HistoricalSeedAsync();
 		var group = (await HistoricalRequest(seed.Item, seed.Revision, seed.Root)).Groups.Single().Group;
@@ -134,7 +123,7 @@ public sealed partial class ClassificationTests
 		for (int attempt = 0; attempt < 100 && waiters == 0 && !pending.IsCompleted; attempt++)
 		{
 			waiters = await db.Database.SqlQueryRaw<int>(
-				"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted").SingleAsync();
+				"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())").SingleAsync();
 			if (waiters == 0) { await Task.Delay(50); }
 		}
 		waiters.Should().BeGreaterThan(0, "capture must wait for the held actor/source advisory lock");
@@ -147,5 +136,22 @@ public sealed partial class ClassificationTests
 		(await Assert.ThrowsAsync<TaxonomyException>(async () => await pending)).Status.Should().Be(409);
 		(await db.HistoricalOperations.AnyAsync(x => x.Id == request.OperationId)).Should().BeFalse();
 	}
+}
 
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalApprovedMappingCaptureTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Fact]
+	public async Task ApprovedMappingCaptureFreezesEligibleEvidenceAndProtectsManualClear()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedMappingCaptureCore();
+	}
+	[Fact]
+	public async Task ApprovedMappingCaptureRespectsActorPrivateDispositionsAndTheirLock()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedMappingDispositionCore();
+	}
 }

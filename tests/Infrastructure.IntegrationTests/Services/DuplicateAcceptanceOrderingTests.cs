@@ -11,10 +11,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DuplicateAcceptanceOrderingTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class DuplicateAcceptanceOrderingTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task AcceptanceHoldingReceiptLocks_EditWaitsThenInvalidatesCommittedAcceptance()

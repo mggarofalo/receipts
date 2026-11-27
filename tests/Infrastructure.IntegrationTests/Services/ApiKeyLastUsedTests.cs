@@ -12,10 +12,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // ExecuteUpdateAsync — the RELATIONAL branch of GetUserIdByApiKeyAsync. The InMemory unit suite can
 // only reach the tracked-fallback branch (ExecuteUpdate is unsupported there), so the production
 // path — the targeted UPDATE, its in-WHERE throttle, and its audit-bypass — is proven only here.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ApiKeyLastUsedTests(PostgresFixture fixture)
+public class ApiKeyLastUsedTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task GetUserIdByApiKeyAsync_OnRelationalProvider_StampsLastUsedAt_ThrottlesRestamp_AndWritesNoAudit()

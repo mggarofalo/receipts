@@ -15,10 +15,9 @@ namespace Infrastructure.IntegrationTests.Services;
 /// selection rules for each suggested field. Legacy category labels are not read (RECEIPTS-1085). The SQL uses DISTINCT ON and schema-qualified tables,
 /// so none of it is exercisable through the InMemory provider.
 /// </summary>
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ItemTemplateHistoryCandidateServiceTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task GetHistoryCandidatesAsync_GroupsDescriptionsCaseInsensitively()

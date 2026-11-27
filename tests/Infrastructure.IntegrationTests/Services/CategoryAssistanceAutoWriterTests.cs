@@ -18,10 +18,9 @@ using Moq;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed partial class CategoryAssistanceAutoWriterTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public sealed partial class CategoryAssistanceAutoWriterTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	private const string Store = "Corner Shop";
 	private const string Description = "Bread loaf";

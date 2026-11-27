@@ -14,10 +14,9 @@ using SampleData.Entities;
 namespace Infrastructure.IntegrationTests.Services;
 
 // Approved scoped mappings resolve offline; canonical spelling is never sufficient authority.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class NormalizedDescriptionResolutionServiceTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task ProcessPendingResolutionsAsync_OfflineApprovedScopeDoesNotInventMatchesForUnknownDescriptions()

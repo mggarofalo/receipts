@@ -10,10 +10,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class YnabPushOperationConcurrencyTests(PostgresFixture fixture)
+public class YnabPushOperationConcurrencyTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task GetOrCreatePushOperation_ConcurrentSameRemoteIdentityForDifferentTransactions_AllowsOneWinner()

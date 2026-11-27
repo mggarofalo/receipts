@@ -13,10 +13,9 @@ using Pgvector;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class EmbeddingFingerprintEligibilityTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(false, null)]

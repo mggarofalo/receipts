@@ -13,10 +13,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // RECEIPTS-1085: the exceptions view filters uncategorized items by whether Jev answered, through a
 // Contains over a Concat of two attempt subqueries. InMemory evaluates that in-process; only a real
 // provider proves Npgsql translates it.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReportServiceExceptionsViewTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ReportServiceExceptionsViewTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task SuggestionFilter_TranslatesToSql_AndAttachesLatestAnswer()

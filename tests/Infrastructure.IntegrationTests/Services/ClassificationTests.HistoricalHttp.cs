@@ -8,6 +8,7 @@ using API.Controllers;
 using Common;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.IntegrationTests.Fixtures;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
@@ -19,9 +20,9 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	private sealed class HistoricalHttpIdentity(IOptionsMonitor<AuthenticationSchemeOptions> options,
+	internal sealed class HistoricalHttpIdentity(IOptionsMonitor<AuthenticationSchemeOptions> options,
 			ILoggerFactory logger, UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 	{
 		protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -34,7 +35,7 @@ public sealed partial class ClassificationTests
 		}
 	}
 
-	private async Task<WebApplication> HistoricalHttpHostAsync(bool backgroundMappings = false)
+	internal async Task<WebApplication> HistoricalHttpHostAsync(bool backgroundMappings = false)
 	{
 		WebApplicationBuilder builder = WebApplication.CreateBuilder();
 		builder.WebHost.UseTestServer();
@@ -63,10 +64,10 @@ public sealed partial class ClassificationTests
 		return app;
 	}
 
-	private static StringContent HistoricalBody(object value) =>
+	internal static StringContent HistoricalBody(object value) =>
 			new(JsonSerializer.Serialize(value), Encoding.UTF8, "application/json");
 
-	private static async Task<JsonElement> HistoricalJson(HttpResponseMessage response, HttpStatusCode status = HttpStatusCode.OK)
+	internal static async Task<JsonElement> HistoricalJson(HttpResponseMessage response, HttpStatusCode status = HttpStatusCode.OK)
 	{
 		string body = await response.Content.ReadAsStringAsync();
 		response.StatusCode.Should().Be(status, body);
@@ -77,6 +78,12 @@ public sealed partial class ClassificationTests
 		}
 		return JsonDocument.Parse(body).RootElement.Clone();
 	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalHttpTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
 
 	[Fact]
 	public async Task HistoricalHttpOwnsIntentPagesEvidenceAndReplaysBoundedWork()

@@ -14,10 +14,9 @@ namespace Infrastructure.IntegrationTests.Services;
 /// History matches no longer carry a receipt item's legacy category labels (RECEIPTS-1085);
 /// templates keep their own defaults. Both the hybrid and trigram-only SQL paths are pinned.
 /// </summary>
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ItemTemplateSimilarityLegacyLabelTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ItemTemplateSimilarityLegacyLabelTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(false)]

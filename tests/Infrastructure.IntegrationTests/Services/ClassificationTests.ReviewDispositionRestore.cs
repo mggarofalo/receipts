@@ -9,7 +9,29 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+	internal sealed class FailAfterDispositionDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	{
+		private bool inserted;
+		public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
+		{
+			if (inserted) { throw new InvalidOperationException("Injected after disposition insert"); }
+			bool adding = ChangeTracker.Entries<HistoricalGroupDispositionEntity>().Any(x => x.State == EntityState.Added);
+			int result = await base.SaveChangesAsync(ct);
+			inserted = adding;
+			return result;
+		}
+	}
+	internal sealed class FailAfterDispositionFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new FailAfterDispositionDb(fixture.CreateOptions());
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationReviewDispositionRestoreTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task CandidateRestore_PreservesPrivateDispositionsAndRetryHistory()
@@ -74,22 +96,6 @@ public sealed partial class ClassificationTests
 		}
 		finally { File.Delete(path); }
 	}
-	private sealed class FailAfterDispositionDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
-	{
-		private bool inserted;
-		public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
-		{
-			if (inserted) { throw new InvalidOperationException("Injected after disposition insert"); }
-			bool adding = ChangeTracker.Entries<HistoricalGroupDispositionEntity>().Any(x => x.State == EntityState.Added);
-			int result = await base.SaveChangesAsync(ct);
-			inserted = adding;
-			return result;
-		}
-	}
-	private sealed class FailAfterDispositionFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new FailAfterDispositionDb(fixture.CreateOptions());
-	}
 
 	[Fact]
 	public async Task CandidateRestore_SerializesDispositionWriterAndDetectsStaleVersion()
@@ -125,5 +131,4 @@ public sealed partial class ClassificationTests
 		}
 		finally { File.Delete(path); }
 	}
-
 }

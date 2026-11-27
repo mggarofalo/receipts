@@ -16,10 +16,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CompleteReceiptCutoverTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public sealed class CompleteReceiptCutoverTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	private const string ActorId = "receipt-cutover-admin";
 	private sealed class Actor : ICurrentUserAccessor

@@ -13,7 +13,69 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+	internal HistoricalReclassificationService Historical(IDbContextFactory<ApplicationDbContext>? factory = null) =>
+		new(factory ?? new Factory(fixture), TimeProvider.System, Options.Create(new ClassificationOptions { WritesEnabled = true }));
+
+	internal async Task<(Guid Item, Guid Revision, Guid Root, Guid Child, Guid Assignment)> HistoricalSeedAsync()
+	{
+		var seed = await SeedAsync();
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		var item = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
+		item.Description = $"Historical fixture {Guid.NewGuid():N}";
+		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).UpdateAsync([item], default);
+		return seed;
+	}
+
+	internal async Task<HistoricalPreviewRequest> HistoricalRequest(Guid itemId, Guid revision, Guid? target)
+	{
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		var source = await (from item in db.ReceiptItems
+							join receipt in db.Receipts on item.ReceiptId equals receipt.Id
+							where item.Id == itemId
+							select new { receipt.Location, item.Description, item.ReceiptItemCode }).SingleAsync();
+		return new(Guid.NewGuid(), Actor, revision, "Review exact historical group",
+			[new(new(source.Location, source.Description, source.ReceiptItemCode), target)]);
+	}
+
+	internal sealed class FailHistoricalProgressDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	{
+		public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+		{
+			if (ChangeTracker.Entries<HistoricalOperationItemEntity>().Any(x => x.Entity.State == HistoricalItemState.Applied))
+			{ throw new InvalidOperationException("Injected failure after assignment save and before progress commit"); }
+			return base.SaveChangesAsync(cancellationToken);
+		}
+	}
+	internal sealed class FailHistoricalFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{ public ApplicationDbContext CreateDbContext() => new FailHistoricalProgressDb(fixture.CreateOptions()); }
+
+	internal sealed class HistoricalQueryCapture : DbCommandInterceptor
+	{
+		public List<(string Sql, int[] IntegerParameters)> PendingQueries { get; } = [];
+		public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+			CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+		{
+			if (command.CommandText.Contains("HistoricalOperationItems") && command.CommandText.Contains("ORDER BY"))
+			{
+				PendingQueries.Add((command.CommandText,
+					command.Parameters.Cast<DbParameter>().Where(x => x.Value is int).Select(x => (int)x.Value!).ToArray()));
+			}
+			return ValueTask.FromResult(result);
+		}
+	}
+
+	internal sealed class HistoricalQueryFactory(PostgresFixture fixture, HistoricalQueryCapture capture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
+			.AddInterceptors(capture).Options);
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 
 	[Fact]
@@ -58,29 +120,6 @@ public sealed partial class ClassificationTests
 		{
 			await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM receipts.\"ReceiptItems\" WHERE \"Description\" LIKE {prefix + "%"}");
 		}
-	}
-	private HistoricalReclassificationService Historical(IDbContextFactory<ApplicationDbContext>? factory = null) =>
-		new(factory ?? new Factory(fixture), TimeProvider.System, Options.Create(new ClassificationOptions { WritesEnabled = true }));
-
-	private async Task<(Guid Item, Guid Revision, Guid Root, Guid Child, Guid Assignment)> HistoricalSeedAsync()
-	{
-		var seed = await SeedAsync();
-		await using ApplicationDbContext db = fixture.CreateDbContext();
-		var item = await db.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item);
-		item.Description = $"Historical fixture {Guid.NewGuid():N}";
-		await new Infrastructure.Repositories.ReceiptItemRepository(new ActorFactory(fixture)).UpdateAsync([item], default);
-		return seed;
-	}
-
-	private async Task<HistoricalPreviewRequest> HistoricalRequest(Guid itemId, Guid revision, Guid? target)
-	{
-		await using ApplicationDbContext db = fixture.CreateDbContext();
-		var source = await (from item in db.ReceiptItems
-							join receipt in db.Receipts on item.ReceiptId equals receipt.Id
-							where item.Id == itemId
-							select new { receipt.Location, item.Description, item.ReceiptItemCode }).SingleAsync();
-		return new(Guid.NewGuid(), Actor, revision, "Review exact historical group",
-			[new(new(source.Location, source.Description, source.ReceiptItemCode), target)]);
 	}
 
 	[Fact]
@@ -139,18 +178,6 @@ public sealed partial class ClassificationTests
 		(await Service().HistoryAsync(seed.Item, null, 1)).Items.Single().Id.Should().Be(back.Id);
 	}
 
-	private sealed class FailHistoricalProgressDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
-	{
-		public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-		{
-			if (ChangeTracker.Entries<HistoricalOperationItemEntity>().Any(x => x.Entity.State == HistoricalItemState.Applied))
-			{ throw new InvalidOperationException("Injected failure after assignment save and before progress commit"); }
-			return base.SaveChangesAsync(cancellationToken);
-		}
-	}
-	private sealed class FailHistoricalFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{ public ApplicationDbContext CreateDbContext() => new FailHistoricalProgressDb(fixture.CreateOptions()); }
-
 	[Fact]
 	public async Task HistoricalCrashRollsBackAssignmentAndProgressThenFreshRunnerResumesAndCancelStopsWork()
 	{
@@ -170,27 +197,6 @@ public sealed partial class ClassificationTests
 		stopped.State.Should().Be(HistoricalOperationState.Cancelled);
 		stopped.Pending.Should().Be(1);
 		stopped.Applied.Should().Be(0);
-	}
-
-	private sealed class HistoricalQueryCapture : DbCommandInterceptor
-	{
-		public List<(string Sql, int[] IntegerParameters)> PendingQueries { get; } = [];
-		public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
-			CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
-		{
-			if (command.CommandText.Contains("HistoricalOperationItems") && command.CommandText.Contains("ORDER BY"))
-			{
-				PendingQueries.Add((command.CommandText,
-					command.Parameters.Cast<DbParameter>().Where(x => x.Value is int).Select(x => (int)x.Value!).ToArray()));
-			}
-			return ValueTask.FromResult(result);
-		}
-	}
-
-	private sealed class HistoricalQueryFactory(PostgresFixture fixture, HistoricalQueryCapture capture) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
-			.AddInterceptors(capture).Options);
 	}
 
 	[Fact]
@@ -304,6 +310,5 @@ public sealed partial class ClassificationTests
 		(await Historical().ReadItemsAsync(Actor, request.OperationId, 0, 1)).Items.Single().Reason.Should().Be("source-changed");
 		(await Service().HistoryAsync(seed.Item, null, 100)).Items.Should().ContainSingle();
 	}
-
 }
 

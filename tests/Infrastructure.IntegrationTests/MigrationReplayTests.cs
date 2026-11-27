@@ -9,10 +9,9 @@ namespace Infrastructure.IntegrationTests;
 // unique violation. This exercises the migration's exact guarded INSERT against real Postgres
 // twice, mirroring a replay. The fresh-DB insert path is already covered by the fixture applying
 // the (modified) migration at startup.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class MigrationReplayTests(PostgresFixture fixture)
+public class MigrationReplayTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task CleanUpInvalidCategories_SeedInsert_IsIdempotentOnReplay()

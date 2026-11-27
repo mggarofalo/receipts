@@ -2,6 +2,7 @@ using System.Net;
 using Application.Taxonomy;
 using FluentAssertions;
 using Infrastructure.Entities.Core;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Repositories;
 using Infrastructure.Services;
 using Microsoft.AspNetCore.TestHost;
@@ -10,7 +11,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalGroupsTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task HistoricalGroupsKeepNullAndEmptyCodesDistinctAndCountPastLastPage()

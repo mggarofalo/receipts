@@ -9,10 +9,9 @@ using SampleData.Entities;
 namespace Infrastructure.IntegrationTests.Services;
 
 // Real PostgreSQL verifies the account-card-transaction FK chain and atomic account merges.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class AccountMergeAtomicityTests(PostgresFixture fixture)
+public class AccountMergeAtomicityTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task HardDeleteAccount_WithReferencingTransaction_IsRejectedByRestrictFk_AndTransactionSurvives()
