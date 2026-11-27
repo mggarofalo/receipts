@@ -4,6 +4,7 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 import {
   dairyClassification,
   taxonomyFixture,
@@ -12,7 +13,7 @@ import {
 for (const width of [1280, 375]) {
   test(`saved item explicit mapping approval and keyboard access at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const source = { location: "Market", description: "MILK", itemCode: "123" };
     const writes: unknown[] = [];
@@ -150,10 +151,7 @@ for (const width of [1280, 375]) {
     await expect(
       page.getByRole("button", { name: "Revoke remembered category" }),
     ).toBeVisible();
-    await page.screenshot({
-      path: `C:/Users/mggar/Source/receipts-017-artifacts/1049/mapping-ui-${width}.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `mapping-ui-${width}.png`);
     expect(unexpected).toEqual([]);
   });
 }

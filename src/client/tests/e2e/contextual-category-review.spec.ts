@@ -7,11 +7,11 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
-const output = "C:/Users/mggar/Source/receipts-017-artifacts/1049";
 
 for (const width of [1280, 375]) {
-  test(`receipt category creation at ${width}px`, async ({ page }) => {
+  test(`receipt category creation at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     const posted: components["schemas"]["TaxonomyChangeRequest"][] = [];
     let current = taxonomyFixture;
@@ -71,10 +71,7 @@ for (const width of [1280, 375]) {
     await expect(name).toBeFocused();
     await name.fill("Pantry");
     await expect(page.getByLabel("Parent")).toHaveValue("");
-    await page.screenshot({
-      path: `${output}/create-${width}-root.png`,
-      animations: "disabled",
-    });
+    await reviewScreenshot(page, testInfo, `create-${width}-root.png`, { fullPage: false, animations: "disabled" });
     await page.getByRole("button", { name: "Create and select" }).click();
     await expect(
       page.getByRole("combobox", { name: /^Category/ }),
@@ -95,10 +92,7 @@ for (const width of [1280, 375]) {
       posted[0].changes[0].categoryId,
     );
     await page.getByLabel("New category").fill("Canned goods");
-    await page.screenshot({
-      path: `${output}/create-${width}-child.png`,
-      animations: "disabled",
-    });
+    await reviewScreenshot(page, testInfo, `create-${width}-child.png`, { fullPage: false, animations: "disabled" });
     await page.getByRole("button", { name: "Create and select" }).click();
     await expect(
       page.getByRole("combobox", { name: /^Category/ }),

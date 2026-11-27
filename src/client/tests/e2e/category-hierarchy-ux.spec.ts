@@ -6,15 +6,15 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
-const output = "C:/Users/mggar/Source/receipts-017-artifacts/1075";
 // Cold Vite transforms can exceed the default navigation budget on Windows.
 // Interaction and assertion timeouts retain the shared defaults.
 test.use({ navigationTimeout: 60_000, hasTouch: true });
 for (const width of [1280, 375]) {
   test(`nested category creation and long path selection at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     const posted: components["schemas"]["TaxonomyChangeRequest"][] = [];
     const deep = Array.from({ length: 9 }, (_, i) => ({
@@ -105,11 +105,7 @@ for (const width of [1280, 375]) {
         element.getAnimations().map((animation) => animation.finished),
       );
     });
-    await page.screenshot({
-      path: `${output}/actions-menu-${width}.png`,
-      fullPage: true,
-      animations: "disabled",
-    });
+    await reviewScreenshot(page, testInfo, `actions-menu-${width}.png`, { animations: "disabled" });
     if (width === 375) {
       await rename.tap();
       await expect(page.getByRole("dialog")).toBeVisible();
@@ -119,10 +115,7 @@ for (const width of [1280, 375]) {
         .tap();
     } else await page.getByRole("menu").press("Escape");
     await expect(actions).toBeFocused();
-    await page.screenshot({
-      path: `${output}/tree-${width}.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `tree-${width}.png`);
     await page
       .getByRole("button", {
         name: "Add child category: Food / Dairy",
@@ -136,10 +129,7 @@ for (const width of [1280, 375]) {
     await page
       .getByLabel("Reason", { exact: true })
       .fill("A more precise category");
-    await page.screenshot({
-      path: `${output}/add-subcategory-${width}.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `add-subcategory-${width}.png`);
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "New category", exact: true })
@@ -171,10 +161,7 @@ for (const width of [1280, 375]) {
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await page.screenshot({
-      path: `${output}/deep-tree-${width}.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `deep-tree-${width}.png`);
     await page.goto("/receipts/new");
     await page.getByPlaceholder("Item description").fill("Preserve my draft");
     const picker = page.getByRole("combobox", { name: /^Category/ });
@@ -242,11 +229,7 @@ for (const width of [1280, 375]) {
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await page.screenshot({
-      path: `${output}/deep-picker-${width}.png`,
-      fullPage: true,
-      animations: "disabled",
-    });
+    await reviewScreenshot(page, testInfo, `deep-picker-${width}.png`, { animations: "disabled" });
     // The first result is active as soon as the search narrows.
     await page.getByPlaceholder("Search category paths…").press("Enter");
     await expect(picker).toHaveAttribute("title", path);
@@ -260,9 +243,6 @@ for (const width of [1280, 375]) {
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
-    await page.screenshot({
-      path: `${output}/selected-deep-path-${width}.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `selected-deep-path-${width}.png`);
   });
 }

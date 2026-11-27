@@ -67,6 +67,14 @@ for (const width of [1280, 375]) {
         new URL(page.url()).searchParams.get("capturedCurrentRevisionId"),
       )
       .toBe(taxonomyFixture.id);
+    // The URL changes before React re-renders with it, and a click in that gap
+    // pages from the unpinned params. The refetch under the pinned revision
+    // shows the page now holds it.
+    await expect
+      .poll(() =>
+        requests.at(-1)?.searchParams.get("capturedCurrentRevisionId"),
+      )
+      .toBe(taxonomyFixture.id);
     expect(requests.at(-1)?.searchParams.get("q")).toBe("");
     expect(requests.at(-1)?.searchParams.get("categoryId")).toBe(categoryId);
 

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { components } from "../../src/generated/api";
 import { installApiMocks, signInAsFixtureUser } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
 // Browser-level control/layout evidence with synthetic HTTP data. The real page,
 // forms, router, query client, Radix controls and CSS run unchanged in Chromium.
@@ -181,10 +182,7 @@ for (const width of [1280, 375]) {
         }),
       );
       await expectNoPageOverflow(page);
-      await testInfo.attach("purchase-controls", {
-        body: await page.screenshot({ fullPage: true }),
-        contentType: "image/png",
-      });
+      await reviewScreenshot(page, testInfo, "purchase-controls.png");
       await page
         .getByRole("button", { name: "Next page", exact: true })
         .click();

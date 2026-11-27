@@ -5,6 +5,7 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
 const productId = "11111111-1111-4111-8111-111111111111";
 const revision = "22222222-2222-4222-8222-222222222222";
@@ -134,10 +135,7 @@ for (const width of [1280, 900, 375, 320]) {
         transactionBounds!.y + transactionBounds!.height,
       ).toBeLessThanOrEqual(itemBounds!.y);
       if (known && (width === 1280 || width === 375))
-        await page.screenshot({
-          path: testInfo.outputPath(`entry-empty-${width}.png`),
-          fullPage: true,
-        });
+        await reviewScreenshot(page, testInfo, `entry-empty-${width}.png`);
       await page.getByRole("combobox", { name: /^Location/ }).click();
       await page.getByRole("option", { name: "Market", exact: true }).click();
       await page.getByPlaceholder("MM/DD/YYYY").first().fill("10/23/2026");
@@ -207,10 +205,7 @@ for (const width of [1280, 900, 375, 320]) {
         });
         await expect(candidate).toBeVisible();
         if (width === 1280 || width === 375)
-          await page.screenshot({
-            path: testInfo.outputPath(`entry-inline-${width}.png`),
-            fullPage: true,
-          });
+          await reviewScreenshot(page, testInfo, `entry-inline-${width}.png`);
         await candidate.click();
         await expect(productDialog).toHaveCount(0);
         await expect(page.getByPlaceholder("Item description")).toHaveValue(
@@ -270,10 +265,7 @@ for (const width of [1280, 900, 375, 320]) {
         .toBe(true);
       expect(bodies).toHaveLength(0);
       if (known && (width === 1280 || width === 375))
-        await page.screenshot({
-          path: testInfo.outputPath(`entry-filled-${width}.png`),
-          fullPage: true,
-        });
+        await reviewScreenshot(page, testInfo, `entry-filled-${width}.png`);
       await page
         .getByRole("button", { name: "Submit Receipt", exact: true })
         .click();

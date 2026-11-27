@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { installApiMocks, signInAs } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 import type { components } from "../../src/generated/api";
 
-const artifacts = process.env.RECEIPTS_DASHBOARD_REVIEW_DIR ?? "test-results/dashboard-category-views";
 type Item = components["schemas"]["SpendingCategoryItem"];
 const historical: Item[] = [
   ...[1, 2].map((revision) => ({
@@ -18,7 +18,7 @@ const historical: Item[] = [
 ];
 
 for (const width of [1280, 375]) {
-  test(`dashboard category identity and URL history at ${width}px`, async ({ page }) => {
+  test(`dashboard category identity and URL history at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     const requests: string[] = [];
     const consoleErrors: string[] = [];
@@ -44,8 +44,7 @@ for (const width of [1280, 375]) {
     await expect(usd.locator(":scope > ul > li")).toHaveCount(3);
     await expect(page.getByText("Partial category history · unresolved amounts included")).toBeVisible();
     await expect(page.getByRole("region", { name: "EUR category spending" }).getByText("Archived groceries (archived)", { exact: true }).last()).toBeVisible();
-    await page.waitForTimeout(1600); // Recharts entrance animation must finish for evidence.
-    await page.screenshot({ path: `${artifacts}/${width}-as-recorded.png`, fullPage: true });
+    await reviewScreenshot(page, testInfo, `${width}-as-recorded.png`, { settleMs: 1600 });
     await page.getByRole("combobox", { name: "Category view" }).selectOption("currentHierarchy");
     await expect(page.getByText("Current groceries", { exact: true }).last()).toBeVisible();
     await expect(page).toHaveURL(/categoryView=currentHierarchy/);
@@ -55,8 +54,7 @@ for (const width of [1280, 375]) {
     expect(url.searchParams.has("offset")).toBe(false);
     expect(url.searchParams.has("capturedCurrentRevisionId")).toBe(false);
     await expect(page.getByRole("main").getByRole("link", { name: "Reports", exact: true })).toHaveAttribute("href", "/reports?categoryView=currentHierarchy&startDate=2026-01-01&endDate=2026-05-24");
-    await page.waitForTimeout(1600);
-    await page.screenshot({ path: `${artifacts}/${width}-current.png`, fullPage: true });
+    await reviewScreenshot(page, testInfo, `${width}-current.png`, { settleMs: 1600 });
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     await page.getByRole("main").getByRole("link", { name: "Reports", exact: true }).click();
     await expect(page).toHaveURL(/\/reports\?/);

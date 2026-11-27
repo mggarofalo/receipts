@@ -4,6 +4,7 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
 const pollingEvidence = new WeakMap<Page, Array<Record<string, unknown>>>();
 test.beforeEach(async ({ page }) => {
@@ -165,7 +166,7 @@ for (const width of [375, 1280]) {
 
   test(`409 releases selection and progress polls compactly (${width}px)`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const groups = [
       group,
@@ -257,10 +258,7 @@ for (const width of [375, 1280]) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
-    await page.screenshot({
-      path: `../../receipts-017-artifacts/1074/historical-${width}.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `historical-${width}.png`);
     const recentBefore = recents;
     await expect
       .poll(() => recents, { timeout: 17_000 })
