@@ -5,9 +5,18 @@ name: CI
 on:
   push:
     branches: ["main"]
+  # Code events only. Title edits and the breaking-changes-allowed label are
+  # handled by pr-metadata.yml, which re-runs CI OK below instead of
+  # re-testing a commit that was already tested (RECEIPTS-1135).
   pull_request:
-    types: [opened, edited, synchronize, labeled, unlabeled, reopened]
+    types: [opened, synchronize, reopened]
     branches: ["main"]
+
+# A new push to a PR supersedes its running code run. Pushes to main each get
+# their own group, so they are never cancelled or dropped from the queue.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_VERSION: "10.0.401"
@@ -16,45 +25,6 @@ env:
   NODE_VERSION: "26.13.0"
 
 jobs:
-  pr-title:
-    name: Conventional Commits
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-
-    steps:
-      - uses: amannn/action-semantic-pull-request@v5
-        with:
-          types: |
-            feat
-            fix
-            docs
-            refactor
-            test
-            chore
-          scopes: |
-            api
-            client
-            domain
-            application
-            infrastructure
-            infra
-            common
-            shared
-            ci
-            docs
-            hooks
-          subjectPattern: ^[a-z].*$
-          subjectPatternError: |
-            The PR title subject must start with a lowercase letter.
-            Example: "feat(api): add pagination support"
-          ignoreLabels: |
-            autorelease: pending
-            autorelease: tagged
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # Classifies a PR's changed files so the jobs below can skip work the PR
   # cannot affect (RECEIPTS-1132). Skipped jobs still satisfy required status
   # checks; a workflow-level `paths` filter would leave them pending instead.
@@ -111,8 +81,8 @@ jobs:
 
   build:
     name: Build & Test
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -124,14 +94,6 @@ jobs:
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
       - name: Restore dependencies
         run: dotnet restore Receipts.slnx
@@ -179,8 +141,8 @@ jobs:
 
   postgres-test:
     name: PostgreSQL Persistence
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -191,21 +153,13 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       - name: Run PostgreSQL persistence tests
         run: dotnet run scripts/run-prerequisite-tests.cs -- postgres
 
   frontend-test:
     name: Frontend Test (Shard ${{ matrix.shard }}/2)
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -261,8 +215,8 @@ jobs:
 
   frontend-test-report:
     name: Frontend Coverage Report
-    needs: [pr-title, changes, frontend-test]
-    if: ${{ !cancelled() && (needs.frontend-test.result == 'success' || needs.frontend-test.result == 'failure') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.frontend != 'false' }}
+    needs: [changes, frontend-test]
+    if: ${{ !cancelled() && (needs.frontend-test.result == 'success' || needs.frontend-test.result == 'failure') && needs.changes.outputs.frontend != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -312,10 +266,10 @@ jobs:
 
   visual-regression:
     name: Visual Regression
-    needs: [pr-title, changes]
+    needs: changes
     # Skip when the visual-regression-allowed label is set (intentional
     # baseline-affecting change). See AGENTS.md for the bypass procedure.
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && !contains(github.event.pull_request.labels.*.name, 'visual-regression-allowed') && needs.changes.outputs.frontend != 'false' }}
+    if: ${{ !cancelled() && !contains(github.event.pull_request.labels.*.name, 'visual-regression-allowed') && needs.changes.outputs.frontend != 'false' }}
     # Pinned: Playwright 1.60 cannot install Chromium on ubuntu-latest (26.04).
     runs-on: ubuntu-24.04
     # Cross-platform pixel diffs (Windows-generated baselines vs Linux CI)
@@ -338,12 +292,17 @@ jobs:
         run: npm ci
         working-directory: src/client
 
+      # runner.os is "Linux" on every Ubuntu image; ImageOS tells them apart.
+      - name: Read runner image
+        id: image
+        run: echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('src/client/package-lock.json') }}
+          key: ${{ steps.image.outputs.os }}-playwright-${{ hashFiles('src/client/package-lock.json') }}
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
@@ -366,8 +325,8 @@ jobs:
 
   e2e:
     name: E2E (Playwright)
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && needs.changes.outputs.frontend != 'false' }}
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.frontend != 'false' }}
     # Pinned: Playwright 1.60 cannot install Chromium on ubuntu-latest (26.04).
     runs-on: ubuntu-24.04
     # Unlike Visual Regression, this job is BLOCKING: it asserts behaviour
@@ -389,12 +348,17 @@ jobs:
         run: npm ci
         working-directory: src/client
 
+      # runner.os is "Linux" on every Ubuntu image; ImageOS tells them apart.
+      - name: Read runner image
+        id: image
+        run: echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('src/client/package-lock.json') }}
+          key: ${{ steps.image.outputs.os }}-playwright-${{ hashFiles('src/client/package-lock.json') }}
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
@@ -417,8 +381,8 @@ jobs:
 
   lint:
     name: Code Formatting
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -429,14 +393,6 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
       - name: Restore dependencies
         run: dotnet restore Receipts.slnx
 
@@ -445,8 +401,8 @@ jobs:
 
   frontend-lint:
     name: Frontend Lint
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.frontend != 'false' }}
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.frontend != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -473,8 +429,8 @@ jobs:
 
   security:
     name: Vulnerability Scan
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -498,8 +454,8 @@ jobs:
 
   docker-build:
     name: Docker Build Check
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && needs.pr-title.result == 'success' && github.event.action != 'labeled' && github.event.action != 'unlabeled' && (needs.changes.outputs.backend != 'false' || needs.changes.outputs.frontend != 'false') }}
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && (needs.changes.outputs.backend != 'false' || needs.changes.outputs.frontend != 'false') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -529,10 +485,12 @@ jobs:
           cache-from: type=gha,scope=docker-build-check
           cache-to: type=gha,mode=min,scope=docker-build-check
 
+  # Runs even when breaking-changes-allowed is set, so its result always states
+  # whether the spec breaks. The label is applied in CI OK, which reads it live.
   api-compat:
     name: API Breaking Changes
-    needs: [pr-title, changes]
-    if: ${{ !cancelled() && needs.pr-title.result == 'success' && !contains(github.event.pull_request.labels.*.name, 'breaking-changes-allowed') && needs.changes.outputs.api != 'false' }}
+    needs: changes
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.changes.outputs.api != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -551,23 +509,66 @@ jobs:
       - name: Check for breaking API changes
         run: node scripts/check-breaking.mjs origin/${{ github.base_ref }}
 
-  # One aggregate gate, meant to become the single required check (RECEIPTS-1132).
-  # Fails if any gating job failed or was cancelled, or if a job was skipped
-  # although its inputs changed. Skips the filter or a bypass label explains
-  # pass. Visual Regression is left out: it is non-blocking (continue-on-error).
+  # One aggregate gate and the single required check (RECEIPTS-1132).
+  # Fails if the PR title is not a Conventional Commit, if any gating job failed
+  # or was cancelled, or if a job was skipped although its inputs changed. Skips
+  # the filter explains pass. Visual Regression is left out: it is non-blocking
+  # (continue-on-error).
+  #
+  # The title and labels are read live from the API, not from the event payload,
+  # because pr-metadata.yml re-runs this job when they change (RECEIPTS-1135).
+  # A re-run keeps the results of the jobs it depends on, so the verdict is
+  # always "this commit's tested results + the PR's current title and labels".
   ci-ok:
     name: CI OK
-    needs: [pr-title, changes, build, postgres-test, frontend-test, frontend-test-report, e2e, lint, frontend-lint, security, docker-build, api-compat]
+    needs: [changes, build, postgres-test, frontend-test, frontend-test-report, e2e, lint, frontend-lint, security, docker-build, api-compat]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
 
     steps:
+      # Fetches the PR's current title itself, so a re-run sees a fixed title.
+      - name: Conventional Commits title
+        if: github.event_name == 'pull_request'
+        uses: amannn/action-semantic-pull-request@v5
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            chore
+          scopes: |
+            api
+            client
+            domain
+            application
+            infrastructure
+            infra
+            common
+            shared
+            ci
+            docs
+            hooks
+          subjectPattern: ^[a-z].*$
+          subjectPatternError: |
+            The PR title subject must start with a lowercase letter.
+            Example: "feat(api): add pagination support"
+          ignoreLabels: |
+            autorelease: pending
+            autorelease: tagged
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Check job results
+        if: always()
         env:
           NEEDS: ${{ toJSON(needs) }}
           IS_PR: ${{ github.event_name == 'pull_request' }}
-          LABEL_EVENT: ${{ github.event.action == 'labeled' || github.event.action == 'unlabeled' }}
-          BREAKING_ALLOWED: ${{ contains(github.event.pull_request.labels.*.name, 'breaking-changes-allowed') }}
+          PR_URL: repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           fail=0
@@ -577,8 +578,20 @@ jobs:
             [ "$(jq -r --arg k "$1" '.changes.outputs[$k] // ""' <<<"$NEEDS")" != false ] && echo true || echo false
           }
 
+          # breaking-changes-allowed forgives an API Breaking Changes failure.
+          # Read live: adding or removing the label re-runs this job.
+          breaking_allowed=false
+          if [ "$IS_PR" = true ] &&
+             gh api "$PR_URL" --jq '.labels[].name' | grep -qx breaking-changes-allowed; then
+            breaking_allowed=true
+            echo "breaking-changes-allowed is set: an api-compat failure does not fail CI OK"
+          fi
+
           for job in $(jq -r 'keys[]' <<<"$NEEDS"); do
             r=$(result "$job"); echo "$job: $r"
+            if [ "$job" = api-compat ] && [ "$r" = failure ] && [ "$breaking_allowed" = true ]; then
+              continue
+            fi
             case "$r" in failure|cancelled) echo "::error::$job: $r"; fail=1 ;; esac
           done
 
@@ -589,19 +602,16 @@ jobs:
             fi
           }
           all() { for c in "$@"; do [ "$c" = true ] || { echo false; return; }; done; echo true; }
-          not() { [ "$1" = true ] && echo false || echo true; }
 
           be=$(changed backend); fe=$(changed frontend); api=$(changed api)
-          runs=$(not "$LABEL_EVENT")   # labeled/unlabeled events suppress most jobs
           either=$([ "$be" = true ] || [ "$fe" = true ] && echo true || echo false)
 
-          expect pr-title "$IS_PR"
           expect changes true
-          for job in build postgres-test lint security; do expect "$job" "$(all "$runs" "$be")"; done
-          expect frontend-test "$runs"
-          expect frontend-lint "$(all "$runs" "$fe")"
-          expect frontend-test-report "$(all "$runs" "$fe")"
+          for job in build postgres-test lint security; do expect "$job" "$be"; done
+          expect frontend-test true
+          expect frontend-lint "$fe"
+          expect frontend-test-report "$fe"
           expect e2e "$fe"
-          expect docker-build "$(all "$IS_PR" "$runs" "$either")"
-          expect api-compat "$(all "$IS_PR" "$(not "$BREAKING_ALLOWED")" "$api")"
+          expect docker-build "$(all "$IS_PR" "$either")"
+          expect api-compat "$(all "$IS_PR" "$api")"
           exit "$fail"
