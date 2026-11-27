@@ -105,9 +105,9 @@ public partial class BackupImportService(
 			legacyTaxonomy = await CaptureLegacyTaxonomyAsync(legacySource, sqlitePath, ReadExportVersion(legacySource), cancellationToken);
 		}
 
-		await using IAsyncDisposable importLease =
-			await BackupImportLock.AcquireLocalAsync(cancellationToken);
 		await using ApplicationDbContext context = await contextFactory.CreateDbContextAsync(cancellationToken);
+		await using IAsyncDisposable importLease =
+			await BackupImportLock.AcquireLocalAsync(context, cancellationToken);
 		context.RestoringNormalizationEvidence = true;
 		await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
 			await context.Database.BeginTransactionAsync(cancellationToken);
