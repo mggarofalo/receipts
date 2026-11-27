@@ -42,7 +42,8 @@ jobs:
   # On a push to main, the job instead asks whether a green PR run already
   # tested this exact tree (scripts/ci/tested-tree-check.sh).
   # If so, it reports every category unchanged, so the push re-runs nothing
-  # and CI OK passes in about a minute. Any doubt, error, or re-run attempt
+  # and CI OK passes in about a minute. When the parent's run is still going,
+  # it waits for it first. Any doubt, error, or re-run attempt
   # leaves the outputs empty and the full suite runs.
   changes:
     name: Detect Changes
@@ -69,8 +70,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+        # The check waits up to 8 minutes for a running parent run (see the
+        # script); `timeout` is a backstop, and a timeout runs everything.
         run: |
-          if scripts/ci/tested-tree-check.sh "$GITHUB_SHA"; then
+          if timeout 600 scripts/ci/tested-tree-check.sh "$GITHUB_SHA"; then
             echo "match=true" >>"$GITHUB_OUTPUT"
           else
             echo "Running the full suite."

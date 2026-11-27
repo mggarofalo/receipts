@@ -51,7 +51,10 @@ scripts/ci/wait-main.sh "$(gh pr view <pr> --json mergeCommit -q .mergeCommit.oi
 A green PR run records the tree it tested (the merge ref's) as a `tested-tree`
 status on the PR head. When the squash commit on `main` has exactly that tree
 and its parent on `main` is green, the push run skips every test job (only `Detect
-Changes` and `CI OK` run) and passes in about a minute. Otherwise, for example when `main` moved after the
+Changes` and `CI OK` run) and passes in about a minute. If the parent's run is
+still going, as when merges land back to back, the check waits for it (up to 8
+min) and then decides; a red parent or a parent still running at the cap means a
+full run. Otherwise, for example when `main` moved after the
 last green PR run, the full suite runs (~20 min). Rebasing and letting the PR
 go green again just before merging gets the fast path.
 `scripts/ci/tested-tree-check.sh <sha>` explains the decision for any commit.
