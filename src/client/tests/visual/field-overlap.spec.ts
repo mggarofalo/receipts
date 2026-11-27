@@ -167,15 +167,6 @@ async function collectViolations(page: Page): Promise<Probe> {
 test.describe("Form fields never overlap", () => {
   for (const surface of SURFACES) {
     test(`${surface.path} across ${WIDTHS.length} widths`, async ({ page }) => {
-      // Catch-all first so it loses to the specific mocks registered after it
-      // (Playwright gives precedence to the most recently added route).
-      await page.route("**/api/**", (route) =>
-        route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ data: [], totalCount: 0 }),
-        }),
-      );
       await signInAsFixtureUser(page);
       await installApiMocks(page);
 
