@@ -7,7 +7,7 @@ on:
     branches: ["main"]
   pull_request:
     types: [opened, edited, synchronize, labeled, unlabeled, reopened]
-    branches: ["main"]
+    branches: ["main", "ci-demo/1132-base"]
 
 env:
   DOTNET_VERSION: "10.0.401"
