@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace Infrastructure.IntegrationTests;
 
@@ -59,10 +60,10 @@ public partial class BackupCurationImportTests
 		heldEmbedding.Release.TrySetResult();
 		await workerBarrier.LockHeld.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-		ImportReadBarrier importBarrier = new();
+		ImportConnectionProbe importConnection = new();
 		DbContextOptions<ApplicationDbContext> importOptions =
 			new DbContextOptionsBuilder<ApplicationDbContext>(target.CreateOptions())
-				.AddInterceptors(importBarrier)
+				.AddInterceptors(importConnection)
 				.Options;
 		BackupImportService importer = new(new Factory(importOptions), NullLogger<BackupImportService>.Instance);
 		artifact.CloseForRead();
@@ -70,9 +71,8 @@ public partial class BackupCurationImportTests
 		await using (stream)
 		{
 			Task<BackupImportResult> import = importer.ImportFromSqliteAsync(stream, CancellationToken.None);
-			await Task.Delay(100);
-			import.IsCompleted.Should().BeFalse("restore must wait for the worker transaction before changing canonical text");
-			workerBarrier.Release.TrySetResult();
+			try { await WaitUntilImportBlockedByWorkerAsync(importConnection, workerBarrier, import); }
+			finally { workerBarrier.Release.TrySetResult(); }
 			await Task.WhenAll(generation, import).WaitAsync(TimeSpan.FromSeconds(15));
 		}
 		(await generation).Should().Be(1);
@@ -536,9 +536,47 @@ public partial class BackupCurationImportTests
 			Task.FromResult(texts.Select(_ => new float[OnnxEmbeddingService.EmbeddingDimension]).ToList());
 	}
 
+	// The import must be waiting on the worker's PostgreSQL row lock, not merely unfinished: an
+	// import still queued on the in-process gate is also unfinished, but never opens a connection.
+	private async Task WaitUntilImportBlockedByWorkerAsync(
+		ImportConnectionProbe importConnection,
+		CanonicalLockBarrier worker,
+		Task import)
+	{
+		int workerPid = await worker.LockHeld.Task;
+		int importPid = await Task.WhenAny(importConnection.Opened.Task, import, Task.Delay(TimeSpan.FromSeconds(10))) switch
+		{
+			Task<int> opened when opened == importConnection.Opened.Task => await opened,
+			Task finished when finished == import => throw new InvalidOperationException(
+				"The import completed before it opened its database connection.", import.Exception),
+			_ => throw new TimeoutException("The import never opened its database connection; it is queued in process, not on PostgreSQL."),
+		};
+		importPid.Should().NotBe(workerPid);
+		await using NpgsqlConnection monitor = new(target.ConnectionString);
+		await monitor.OpenAsync();
+		using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(10));
+		while (true)
+		{
+			await using NpgsqlCommand blocked = new("SELECT @worker = ANY(pg_blocking_pids(@import))", monitor);
+			blocked.Parameters.AddWithValue("worker", workerPid);
+			blocked.Parameters.AddWithValue("import", importPid);
+			if ((bool)(await blocked.ExecuteScalarAsync(timeout.Token))!)
+			{
+				import.IsCompleted.Should().BeFalse("restore must wait for the worker transaction before changing canonical text");
+				return;
+			}
+			if (import.IsCompleted)
+			{
+				await import;
+				throw new InvalidOperationException("The import completed without waiting for the worker's row lock.");
+			}
+			await Task.Delay(10, timeout.Token);
+		}
+	}
+
 	private sealed class CanonicalLockBarrier : DbCommandInterceptor
 	{
-		public TaskCompletionSource LockHeld { get; } =
+		public TaskCompletionSource<int> LockHeld { get; } =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
 		public TaskCompletionSource Release { get; } =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -552,30 +590,25 @@ public partial class BackupCurationImportTests
 			if (command.CommandText.Contains("matching.\"NormalizedDescriptions\"", StringComparison.Ordinal)
 				&& command.CommandText.Contains("FOR UPDATE", StringComparison.Ordinal))
 			{
-				LockHeld.TrySetResult();
+				LockHeld.TrySetResult(((NpgsqlConnection)command.Connection!).ProcessID);
 				await Release.Task.WaitAsync(cancellationToken);
 			}
 			return result;
 		}
 	}
 
-	private sealed class ImportReadBarrier : DbCommandInterceptor
+	private sealed class ImportConnectionProbe : DbConnectionInterceptor
 	{
-		public TaskCompletionSource CanonicalRead { get; } =
+		public TaskCompletionSource<int> Opened { get; } =
 			new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-		public override ValueTask<DbDataReader> ReaderExecutedAsync(
-			DbCommand command,
-			CommandExecutedEventData eventData,
-			DbDataReader result,
+		public override Task ConnectionOpenedAsync(
+			DbConnection connection,
+			ConnectionEndEventData eventData,
 			CancellationToken cancellationToken = default)
 		{
-			if (command.CommandText.Contains("matching.\"NormalizedDescriptions\"", StringComparison.Ordinal)
-				&& !command.CommandText.Contains("FOR UPDATE", StringComparison.Ordinal))
-			{
-				CanonicalRead.TrySetResult();
-			}
-			return ValueTask.FromResult(result);
+			Opened.TrySetResult(((NpgsqlConnection)connection).ProcessID);
+			return Task.CompletedTask;
 		}
 	}
 
