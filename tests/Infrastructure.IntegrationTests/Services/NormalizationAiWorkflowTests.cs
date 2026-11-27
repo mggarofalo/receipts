@@ -20,10 +20,9 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed partial class NormalizationAiWorkflowTests(PostgresFixture server) : IsolatedPostgresTest(server), IDisposable
+public sealed partial class NormalizationAiWorkflowTests(PostgresFixture server) : IsolatedPostgresTest(server), IDisposable, IClassFixture<PostgresFixture>
 {
 	private readonly IOptions<PiNormalizationRunnerOptions> bindingOptions = Options.Create(new PiNormalizationRunnerOptions
 	{ HomeDirectory = Path.Combine(Path.GetTempPath(), "receipts-workflow-binding-" + Guid.NewGuid().ToString("N")) });

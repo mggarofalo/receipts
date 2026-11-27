@@ -11,10 +11,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture)
+public sealed class CategoryAssistanceReadStoreTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }

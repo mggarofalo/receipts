@@ -13,10 +13,9 @@ using Moq;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class TaxonomyTests(PostgresFixture fixture)
+public sealed class TaxonomyTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string Actor = "taxonomy-test-admin";
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>

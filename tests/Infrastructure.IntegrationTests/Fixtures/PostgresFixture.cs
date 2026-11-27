@@ -1,51 +1,29 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
-using Testcontainers.PostgreSql;
 
 namespace Infrastructure.IntegrationTests.Fixtures;
 
+// A private database on the process-wide PostgreSQL server (see PostgresServer), migrated to
+// the requested migration (null = latest). Disposal drops it; immutable application evidence
+// is never reset, so a test that needs a clean slate takes a new fixture.
 public class PostgresFixture : IAsyncLifetime
 {
-	private readonly PostgreSqlContainer? _container;
-	private readonly string? _adminConnectionString;
-	private readonly string? _databaseName;
-	private readonly string? _isolatedConnectionString;
-
-	private readonly string? _migration;
-
 	/// <summary>Pinned: the kNN completeness rule needs pgvector 0.8 (RECEIPTS-1097).</summary>
 	internal const string Image = "pgvector/pgvector:0.8.7-pg17";
 
+	private readonly string? _migration;
+	private string? _databaseName;
+	private string? _connectionString;
+	private NpgsqlDataSource? _dataSource;
+
 	public PostgresFixture() : this(null) { }
 
-	internal PostgresFixture(string? migration)
-	{
-		_migration = migration;
-		_container = new PostgreSqlBuilder(Image).Build();
-	}
+	internal PostgresFixture(string? migration) => _migration = migration;
 
-	private PostgresFixture(string adminConnectionString, string databaseName, string? migration)
-	{
-		_migration = migration;
-		_adminConnectionString = adminConnectionString;
-		_databaseName = databaseName;
-		_isolatedConnectionString = new NpgsqlConnectionStringBuilder(adminConnectionString) { Database = databaseName }.ConnectionString;
-	}
-
-	// Each test owns a database, while the collection shares only the PostgreSQL server.
-	// Disposal drops that test database; immutable application evidence is never reset.
+	// Each test owns a database; classes share only the PostgreSQL server.
 	public async Task<PostgresFixture> CreateIsolatedAsync(string? migration = null)
 	{
-		string name = $"test_{Guid.NewGuid():N}";
-		await using (NpgsqlConnection admin = new(ConnectionString))
-		{
-			await admin.OpenAsync();
-			await using NpgsqlCommand create = new($"CREATE DATABASE \"{name}\"", admin);
-			await create.ExecuteNonQueryAsync();
-		}
-		PostgresFixture isolated = new(ConnectionString, name, migration);
+		PostgresFixture isolated = new(migration);
 		try
 		{
 			await isolated.InitializeAsync();
@@ -58,57 +36,30 @@ public class PostgresFixture : IAsyncLifetime
 		}
 	}
 
-	private NpgsqlDataSource? _dataSource;
-
-	public string ConnectionString => _isolatedConnectionString ?? _container!.GetConnectionString();
+	public string ConnectionString => _connectionString
+		?? throw new InvalidOperationException("Fixture has not been initialized. Call InitializeAsync() first.");
 
 	public async Task InitializeAsync()
 	{
-		if (_container is not null)
-		{
-			await _container.StartAsync();
-		}
+		string admin = await PostgresServer.AdminConnectionStringAsync();
+		_databaseName = await PostgresServer.CreateDatabaseAsync("test", _migration);
+		_connectionString = PostgresServer.ConnectionString(admin, _databaseName);
 
-		// RECEIPTS-746: tables live in bounded-context schemas (receipts, library, matching,
-		// ynab, audit, identity), not public. Set a search_path spanning every schema so the
-		// hand-written raw SQL in tests resolves unqualified table names regardless of which
-		// schema a table currently occupies. This matters most for MigrationSafetyTests, which
-		// deliberately roll the DB back to a pre-746 state (tables still in public) and forward
-		// again — the same table name must resolve in public before the move and in its schema
-		// after. EF's own queries are always schema-qualified, so this only affects test SQL.
-		//
-		// public MUST come first: EF scaffolds the schema move as unqualified
-		// `ALTER TABLE "Foo" SET SCHEMA <schema>`, and the historical migrations replayed by
-		// MigrationSafetyTests use unqualified raw SQL — both assume public is the working
-		// schema. Keeping public first makes that DDL deterministic while still resolving the
-		// moved tables (a table exists in exactly one schema, so lookup falls through to it).
-		NpgsqlConnectionStringBuilder connectionStringBuilder = new(ConnectionString)
-		{
-			SearchPath = "public,receipts,library,matching,ynab,audit,identity",
-		};
-
-		NpgsqlDataSourceBuilder dataSourceBuilder = new(connectionStringBuilder.ConnectionString);
+		// The template already holds the pgvector extension, so the first connection's type
+		// cache includes the vector mapping.
+		NpgsqlDataSourceBuilder dataSourceBuilder = new(_connectionString);
 		dataSourceBuilder.UseVector();
 		_dataSource = dataSourceBuilder.Build();
-
-		// Run migrations to create the schema. The first connection caches
-		// npgsql's type info before the pgvector extension exists, so
-		// UseVector()'s vector mapping can't resolve. Reload types after
-		// migrations so the cache picks up the newly-created extension.
-		await using (ApplicationDbContext context = CreateDbContext())
-		{
-			await context.GetService<IMigrator>().MigrateAsync(_migration);
-		}
-
-		await using NpgsqlConnection reloadConnection = await _dataSource.OpenConnectionAsync();
-		await reloadConnection.ReloadTypesAsync();
 	}
 
 	public ApplicationDbContext CreateDbContext() => new(CreateOptions());
 
+	internal ValueTask<NpgsqlConnection> OpenConnectionAsync() =>
+		(_dataSource ?? throw new InvalidOperationException("Fixture has not been initialized. Call InitializeAsync() first.")).OpenConnectionAsync();
+
 	// Exposes the same Npgsql/pgvector options CreateDbContext() builds, so a test can construct a
 	// custom ApplicationDbContext subclass (e.g. one that injects a mid-transaction failure) against
-	// the fixture's already-type-reloaded data source without standing up a second connection pool.
+	// the fixture's data source without standing up a second connection pool.
 	public DbContextOptions<ApplicationDbContext> CreateOptions()
 	{
 		if (_dataSource is null)
@@ -133,16 +84,9 @@ public class PostgresFixture : IAsyncLifetime
 			await _dataSource.DisposeAsync();
 		}
 
-		if (_container is not null)
+		if (_databaseName is not null)
 		{
-			await _container.DisposeAsync();
-		}
-		else
-		{
-			await using NpgsqlConnection admin = new(_adminConnectionString!);
-			await admin.OpenAsync();
-			await using NpgsqlCommand drop = new($"DROP DATABASE \"{_databaseName}\" WITH (FORCE)", admin);
-			await drop.ExecuteNonQueryAsync();
+			await PostgresServer.DropDatabaseAsync(_databaseName);
 		}
 		GC.SuppressFinalize(this);
 	}

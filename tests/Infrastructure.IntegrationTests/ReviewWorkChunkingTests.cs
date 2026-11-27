@@ -11,10 +11,9 @@ namespace Infrastructure.IntegrationTests;
 
 // RECEIPTS-1111: a backup restore saves every imported item in one SaveChanges. Review-work
 // reconciliation must run in statements bounded by ReviewWorkChunkSize, never by the save's size.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class ReviewWorkChunkingTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public sealed class ReviewWorkChunkingTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	private const int Chunk = ApplicationDbContext.ReviewWorkChunkSize;
 	private const int ItemCount = (2 * Chunk) + 500;

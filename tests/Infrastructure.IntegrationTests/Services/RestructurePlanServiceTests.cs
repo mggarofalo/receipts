@@ -12,10 +12,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class RestructurePlanServiceTests(PostgresFixture server) : RestructureTestBase(server)
+public sealed class RestructurePlanServiceTests(PostgresFixture server) : RestructureTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task DryRunEqualsApplyAndUndoPutsEverythingBack()

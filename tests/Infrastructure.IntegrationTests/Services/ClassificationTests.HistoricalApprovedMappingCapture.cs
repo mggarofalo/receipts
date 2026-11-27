@@ -134,7 +134,7 @@ public sealed partial class ClassificationTests
 		for (int attempt = 0; attempt < 100 && waiters == 0 && !pending.IsCompleted; attempt++)
 		{
 			waiters = await db.Database.SqlQueryRaw<int>(
-				"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted").SingleAsync();
+				"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())").SingleAsync();
 			if (waiters == 0) { await Task.Delay(50); }
 		}
 		waiters.Should().BeGreaterThan(0, "capture must wait for the held actor/source advisory lock");

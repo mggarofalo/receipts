@@ -21,10 +21,9 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server)
+public sealed class CategoryAssistanceDecisionStoreTests(PostgresFixture server) : IClassFixture<PostgresFixture>
 {
 	private sealed class Factory(PostgresFixture fixture, IInterceptor? interceptor = null) : IDbContextFactory<ApplicationDbContext>
 	{

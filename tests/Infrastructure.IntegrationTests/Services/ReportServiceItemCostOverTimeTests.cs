@@ -19,10 +19,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // this translates to SQL, and — more importantly — cannot prove the added LEFT JOIN doesn't
 // duplicate or drop rows for the pre-existing description path. Only a real Postgres
 // connection can catch that regression.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ReportServiceItemCostOverTimeTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task StableCategoryFilter_UsesSubtreeCutoffAndCurrencyBuckets()

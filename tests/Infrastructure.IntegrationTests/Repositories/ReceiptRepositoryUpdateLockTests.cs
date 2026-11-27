@@ -13,10 +13,9 @@ namespace Infrastructure.IntegrationTests.Repositories;
 
 // ReceiptRepository.UpdateAsync applies the receipt's paid-from choice to its items, so it runs in one transaction
 // and takes the normalization write gate and then the receipt row lock, like the budget-choice endpoints.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReceiptRepositoryUpdateLockTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ReceiptRepositoryUpdateLockTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task UpdateAsync_WaitsForAConcurrentReceiptRowLock_ThenCommitsTheEditAndItsChoiceCascade()

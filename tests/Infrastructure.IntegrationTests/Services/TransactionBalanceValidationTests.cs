@@ -19,10 +19,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // against real PostgreSQL. This lives here rather than in the InMemory unit suite because the
 // InMemory provider cannot model the SELECT ... FOR UPDATE row lock the fix depends on (and driving
 // the fallback path there crashed the test host under coverage on CI).
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class TransactionBalanceValidationTests(PostgresFixture fixture)
+public class TransactionBalanceValidationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private static void NoOp(ReceiptBalanceState _) { }
 

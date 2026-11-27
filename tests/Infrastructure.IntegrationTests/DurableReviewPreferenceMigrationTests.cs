@@ -10,10 +10,9 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DurableReviewPreferenceMigrationTests(PostgresFixture fixture)
+public class DurableReviewPreferenceMigrationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string Previous = "20261029015215_AddHistoricalMappingSweep";
 

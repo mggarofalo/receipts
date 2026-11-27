@@ -16,10 +16,9 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class PurchaseSearchReaderTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task SearchAsync_FiltersStableSubtreesBeforeCountAndPageAndReturnsSelectedPaths()

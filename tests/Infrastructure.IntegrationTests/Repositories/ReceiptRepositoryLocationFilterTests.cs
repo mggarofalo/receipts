@@ -18,10 +18,9 @@ namespace Infrastructure.IntegrationTests.Repositories;
 // connection can prove that a plain `==` actually translates into a byte-for-byte comparison under
 // the database's real collation, rather than some provider-level case-folding or trimming that
 // would silently reintroduce the mismatch this filter exists to prevent.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReceiptRepositoryLocationFilterTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class ReceiptRepositoryLocationFilterTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task GetAllAsync_LocationFilter_ReturnsOnlyExactMatch_NotLongerPrefixMatch()

@@ -12,10 +12,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryMappingConcurrencyTests(PostgresFixture fixture)
+public sealed class CategoryMappingConcurrencyTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

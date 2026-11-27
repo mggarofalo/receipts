@@ -9,10 +9,9 @@ namespace Infrastructure.IntegrationTests;
 
 // RECEIPTS-1105. plpgsql resolves column names only when a function runs, so a dropped column that
 // a trigger still assigns surfaces as a runtime failure on the next ordinary edit, not at migrate time.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DropMatchScoreMigrationTests(PostgresFixture fixture)
+public class DropMatchScoreMigrationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string Migration = "20261031190554_DropNormalizedDescriptionMatchScore";
 	private static readonly string[] RetiredColumns = ["NormalizedDescriptionMatchScore", "PreviousScore", "SourceMatchScore"];

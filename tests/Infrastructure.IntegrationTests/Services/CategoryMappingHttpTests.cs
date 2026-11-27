@@ -23,10 +23,9 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public sealed class CategoryMappingHttpTests(PostgresFixture fixture)
+public sealed class CategoryMappingHttpTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string Actor = "mapping-http-admin";
 	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>

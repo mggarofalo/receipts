@@ -13,10 +13,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionProjectionTests(PostgresFixture server) : IsolatedPostgresTest(server)
+public class NormalizedDescriptionProjectionTests(PostgresFixture server) : IsolatedPostgresTest(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task GetAllAsync_DuplicateRawDescriptions_ReturnsDistinctAlphabeticalCappedSamplesOnPostgres()

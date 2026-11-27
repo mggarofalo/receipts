@@ -7,10 +7,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class SoftDeleteTests(PostgresFixture fixture)
+public class SoftDeleteTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task SoftDelete_Receipt_SetsDeletedAt()

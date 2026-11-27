@@ -14,10 +14,9 @@ namespace Infrastructure.IntegrationTests;
 /// active-item membership did not change (a metadata-only edit).
 /// Descriptions are made unique per test so the shared fixture container does not cross-contaminate.
 /// </summary>
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class DistinctDescriptionReconcileTests(PostgresFixture fixture)
+public class DistinctDescriptionReconcileTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task Reconcile_AddingActiveReceiptItem_InsertsDistinctDescription()

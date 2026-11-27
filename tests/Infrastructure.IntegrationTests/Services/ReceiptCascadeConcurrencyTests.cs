@@ -15,10 +15,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class ReceiptCascadeConcurrencyTests(PostgresFixture fixture)
+public class ReceiptCascadeConcurrencyTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Theory]
 	[InlineData(false)]

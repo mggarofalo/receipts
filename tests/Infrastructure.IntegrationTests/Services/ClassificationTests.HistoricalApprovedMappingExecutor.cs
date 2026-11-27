@@ -154,7 +154,7 @@ public sealed partial class ClassificationTests
 		int waiters = 0;
 		for (int i = 0; i < 100 && waiters == 0 && !pending.IsCompleted; i++)
 		{
-			waiters = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted").SingleAsync();
+			waiters = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())").SingleAsync();
 			if (waiters == 0) { await Task.Delay(50); }
 		}
 		waiters.Should().BeGreaterThan(0);
@@ -275,7 +275,7 @@ public sealed partial class ClassificationTests
 		int waiters = 0;
 		for (int i = 0; i < 100 && waiters == 0 && !pending.IsCompleted; i++)
 		{
-			waiters = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted").SingleAsync();
+			waiters = await db.Database.SqlQueryRaw<int>("SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())").SingleAsync();
 			if (waiters == 0) { await Task.Delay(50); }
 		}
 		waiters.Should().BeGreaterThan(0);
@@ -476,7 +476,7 @@ public sealed partial class ClassificationTests
 			for (int attempt = 0; attempt < 100 && waiters < 2 && !queuedCapture.IsCompleted && !queuedApply.IsCompleted; attempt++)
 			{
 				waiters = await db.Database.SqlQueryRaw<int>(
-						"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted").SingleAsync();
+						"SELECT count(*)::int AS \"Value\" FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())").SingleAsync();
 				if (waiters < 2) { await Task.Delay(50); }
 			}
 			waiters.Should().BeGreaterThanOrEqualTo(2);

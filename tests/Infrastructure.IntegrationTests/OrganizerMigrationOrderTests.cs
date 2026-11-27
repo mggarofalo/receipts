@@ -9,10 +9,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class OrganizerMigrationOrderTests(PostgresFixture fixture)
+public class OrganizerMigrationOrderTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private const string PublishedMain = "20261029014850_AddCategoryAssistanceSecondDispatch";
 

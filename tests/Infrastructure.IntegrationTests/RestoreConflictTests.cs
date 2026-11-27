@@ -14,10 +14,9 @@ namespace Infrastructure.IntegrationTests;
 // original is soft-deleted. Restoring the original must then fail cleanly (409 via
 // DuplicateEntityException) rather than throwing a raw unique-violation (500). These tests run
 // against real PostgreSQL, where the filtered unique index is actually enforced.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class RestoreConflictTests(PostgresFixture fixture)
+public class RestoreConflictTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	private sealed class FixtureContextFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{

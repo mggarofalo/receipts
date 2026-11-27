@@ -22,10 +22,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // and sibling tests seed their own PendingReview rows. Since the requeue is deliberately global
 // ("every pending row"), each test here clears the pending set first so the counts under test are
 // exactly the ones it seeded, and every assertion is scoped to its own rows.
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionRequeueTests(PostgresFixture fixture)
+public class NormalizedDescriptionRequeueTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task RequeuePendingAsync_UnlinksLiveAndTrashedItemsAndKeepsActiveRows()

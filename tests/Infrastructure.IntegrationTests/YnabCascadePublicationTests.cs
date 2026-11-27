@@ -13,10 +13,9 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests;
 
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class YnabCascadePublicationTests(PostgresFixture fixture)
+public class YnabCascadePublicationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task ReceiptDelete_PublishesOnlyAfterCascadeIsDurableToAnotherConnection()

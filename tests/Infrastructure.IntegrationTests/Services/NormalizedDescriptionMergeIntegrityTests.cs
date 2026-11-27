@@ -22,10 +22,9 @@ namespace Infrastructure.IntegrationTests.Services;
 // `DeletedAt == null` query filter, so a trashed item is invisible to the re-link query,
 // gets SetNull'd, and comes back from the recycle bin unlinked — with no error anywhere.
 // This mirrors the fix already made for transactions in AccountMergeService (RECEIPTS-801).
-[Collection(PostgresCollection.Name)]
 [Trait("Category", "Integration")]
 [Trait("Prerequisite", "Postgres")]
-public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture)
+public class NormalizedDescriptionMergeIntegrityTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task MergeAsync_RepointsSoftDeletedReceiptItems_InsteadOfNullingTheirLink()
