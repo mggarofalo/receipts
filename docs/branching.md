@@ -87,15 +87,49 @@ main working tree.
 
 ### Git Worktrees (preferred for AI agents)
 
-`git worktree add` creates a linked working tree sharing the same `.git` directory:
+A worktree is a linked working tree that shares the same `.git` directory. Create one with
+git-cow when it's installed, so the worktree is a copy-on-write clone that already has `bin/`,
+`obj/` and `node_modules/` (see [below](#claude-code-worktree-hook-and-git-cow)):
+
+```bash
+git cow add -b <branch-name> .claude/worktrees/<branch-name> origin/main
+```
+
+Without git-cow (`git cow` reports "not a git command"), use plain `git worktree add`:
 
 ```bash
 git worktree add .claude/worktrees/<branch-name> -b <branch-name> origin/main
 ```
 
+git-cow falls back to plain `git worktree add` by itself when the volume can't clone, and
+`GIT_COW=0` forces the fallback.
+
 - Shares git history and refs with the main worktree (no duplication).
 - Claude Code's `isolation: "worktree"` parameter automates this for subagents.
 - Worktrees live in `.claude/worktrees/` (gitignored).
+
+#### Claude Code worktree hook and git-cow
+
+Claude Code creates worktrees through `.claude/hooks/worktree-create.py` (a `WorktreeCreate`
+hook). It makes `.claude/worktrees/<name>` on branch `worktree-<name>`, then runs `npm install`
+in `src/client` unless `node_modules` already matches `package-lock.json`.
+
+If [git-cow](https://github.com/gabrielkoerich/git-cow) is installed (`cargo install git-cow`,
+found on `PATH` or in `~/.cargo/bin`), the hook uses `git cow add`. The new worktree is then a
+copy-on-write clone (APFS on macOS), so `bin/`, `obj/` and `node_modules/` come along at almost
+no disk cost and `npm install` is skipped. Without git-cow, with `GIT_COW=0`, or on a volume that
+can't clone, the hook falls back to plain `git worktree add`. Windows, Linux CI and fresh machines
+need nothing extra.
+
+git-cow keeps one extra checkout at `.claude/worktrees/.git-cow/receipts`, and it shows up in
+`git worktree list` as a detached worktree. Leave it alone; the next `git cow add` rebuilds it if
+it goes missing. Removal needs no hook: Claude Code's default `git worktree remove --force` works
+on cloned worktrees and never touches the extra checkout.
+
+The first `dotnet build` in a cloned worktree still recompiles. NuGet re-restores because
+`obj/project.assets.json` stores absolute paths, and the extra checkout's sources can be newer than
+the `obj/` it copied from the main checkout. The saving is disk and the npm install, not compile
+time.
 
 #### Detecting a worktree
 

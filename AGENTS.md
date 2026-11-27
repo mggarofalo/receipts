@@ -25,6 +25,10 @@ Single-trunk model: `main` is the only long-lived branch. Cut a short-lived
 module/parent branches. Releases are tag-driven (push a `vX.Y.Z` tag). See
 **[docs/branching.md](docs/branching.md)** and **[docs/releases.md](docs/releases.md)**.
 
+Make worktrees under `.claude/worktrees/` with `git cow add -b <branch> .claude/worktrees/<branch> origin/main`
+when git-cow is installed, and with plain `git worktree add` otherwise. See
+[docs/branching.md](docs/branching.md#git-worktrees-preferred-for-ai-agents).
+
 **Never close or merge a pull request you did not open in the current session.**
 If a PR looks like a blocker, report it and stop — do not close it.
 
