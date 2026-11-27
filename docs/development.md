@@ -213,7 +213,7 @@ Examples:
 
 **Enforcement:**
 - **Local:** `commit-msg` hook runs `commitlint` on every commit (see `.githooks/commit-msg`)
-- **CI:** PR title validation via `amannn/action-semantic-pull-request` (squash-merge means the PR title becomes the commit on `main`)
+- **CI:** PR title validation via `amannn/action-semantic-pull-request`, as the first step of the required `CI OK` check (squash-merge means the PR title becomes the commit on `main`). Fixing a bad title re-runs only `CI OK`, through `.github/workflows/pr-metadata.yml`; the commit is not re-tested.
 - **Config:** `commitlint.config.mjs` at the repo root defines allowed types, scopes, and header length (100 chars max)
 
 ### `pre-commit` hook
