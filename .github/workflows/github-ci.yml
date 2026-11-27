@@ -252,7 +252,8 @@ jobs:
     # Skip when the visual-regression-allowed label is set (intentional
     # baseline-affecting change). See AGENTS.md for the bypass procedure.
     if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && !contains(github.event.pull_request.labels.*.name, 'visual-regression-allowed') }}
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.60 cannot install Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     # Cross-platform pixel diffs (Windows-generated baselines vs Linux CI)
     # are tolerated at the threshold set in playwright.config.ts. Non-
     # blocking for now; flip to blocking after Linux baselines are
@@ -303,7 +304,8 @@ jobs:
     name: E2E (Playwright)
     needs: [pr-title]
     if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.60 cannot install Chromium on ubuntu-latest (26.04).
+    runs-on: ubuntu-24.04
     # Unlike Visual Regression, this job is BLOCKING: it asserts behaviour
     # (which requests fire, what the user is told) against a mocked API, so
     # there is no cross-platform pixel jitter to tolerate. A failure here is
