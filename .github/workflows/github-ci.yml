@@ -581,8 +581,8 @@ jobs:
           # breaking-changes-allowed forgives an API Breaking Changes failure.
           # Read live: adding or removing the label re-runs this job.
           breaking_allowed=false
-          if [ "$IS_PR" = true ] &&
-             gh api "$PR_URL" --jq '.labels[].name' | grep -qx breaking-changes-allowed; then
+          if [ "$IS_PR" = true ] && [ "$(gh api "$PR_URL" \
+               --jq 'any(.labels[]; .name == "breaking-changes-allowed")')" = true ]; then
             breaking_allowed=true
             echo "breaking-changes-allowed is set: an api-compat failure does not fail CI OK"
           fi
