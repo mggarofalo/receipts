@@ -92,13 +92,17 @@ git-cow when it's installed, so the worktree is a copy-on-write clone that alrea
 `obj/` and `node_modules/` (see [below](#claude-code-worktree-hook-and-git-cow)):
 
 ```bash
-git cow add -b <branch-name> .claude/worktrees/<branch-name> origin/main
+git cow add -b <type>/<name> .claude/worktrees/<name> origin/main
 ```
+
+Name the folder after the branch without its `<type>/` prefix (or with `/` replaced by `-`).
+git-cow keeps its extra checkout next to the worktree, so a nested path like
+`.claude/worktrees/feat/<name>` would make a second extra checkout under `feat/`.
 
 Without git-cow (`git cow` reports "not a git command"), use plain `git worktree add`:
 
 ```bash
-git worktree add .claude/worktrees/<branch-name> -b <branch-name> origin/main
+git worktree add .claude/worktrees/<name> -b <type>/<name> origin/main
 ```
 
 git-cow falls back to plain `git worktree add` by itself when the volume can't clone, and
@@ -111,7 +115,8 @@ git-cow falls back to plain `git worktree add` by itself when the volume can't c
 #### Claude Code worktree hook and git-cow
 
 Claude Code creates worktrees through `.claude/hooks/worktree-create.py` (a `WorktreeCreate`
-hook). It makes `.claude/worktrees/<name>` on branch `worktree-<name>`, then runs `npm install`
+hook). It makes `.claude/worktrees/<name>` on branch `worktree-<name>` (any `/` in the name
+becomes `-` in the folder, so the path stays flat), then runs `npm install`
 in `src/client` unless `node_modules` already matches `package-lock.json`.
 
 If [git-cow](https://github.com/gabrielkoerich/git-cow) is installed (`cargo install git-cow`,
