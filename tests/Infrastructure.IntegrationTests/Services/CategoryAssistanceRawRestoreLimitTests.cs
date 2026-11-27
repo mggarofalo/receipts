@@ -94,10 +94,16 @@ public sealed class CategoryAssistanceRawRestoreLimitTests(PostgresFixture fixtu
 		using var process = Process.Start(start)!;
 		Task<string> output = process.StandardOutput.ReadToEndAsync();
 		Task<string> error = process.StandardError.ReadToEndAsync();
+		string command = $"dotnet {string.Join(' ', arguments)}";
 		using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 		try { await process.WaitForExitAsync(timeout.Token); }
-		catch (OperationCanceledException) { process.Kill(entireProcessTree: true); throw; }
-		process.ExitCode.Should().Be(0, $"`dotnet {string.Join(' ', arguments)}` failed:\n{await output}\n{await error}");
+		catch (OperationCanceledException)
+		{
+			process.Kill(entireProcessTree: true);
+			throw new TimeoutException($"`{command}` did not finish in 2 minutes:\n{await output}\n{await error}");
+		}
+
+		process.ExitCode.Should().Be(0, $"`{command}` failed:\n{await output}\n{await error}");
 		return await output;
 	}
 }
