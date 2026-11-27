@@ -18,7 +18,7 @@ Removal needs no hook: Claude Code's default `git worktree remove --force`
 works on git-cow worktrees, and never touches the extra checkout.
 
 Input (stdin JSON):
-  - name: slug identifier for the worktree
+  - name: slug identifier for the worktree (may contain "/")
   - cwd: current working directory (repo root)
 
 Output (stdout):
@@ -108,7 +108,10 @@ def main():
             print(f"ERROR: cwd {cwd} does not exist and git toplevel not found", file=sys.stderr)
             sys.exit(1)
 
-    worktree_dir = os.path.join(cwd, ".claude", "worktrees", name)
+    # Names may contain "/" (e.g. feat/x). Keep the folder flat: git-cow puts
+    # its extra checkout beside the worktree's parent, so a nested folder would
+    # get its own extra checkout.
+    worktree_dir = os.path.join(cwd, ".claude", "worktrees", name.replace("/", "-"))
     create_worktree(cwd, worktree_dir, f"worktree-{name}")
     install_npm_dependencies(os.path.join(worktree_dir, "src", "client"))
 
