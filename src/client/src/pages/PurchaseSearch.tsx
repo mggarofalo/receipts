@@ -157,37 +157,34 @@ export default function PurchaseSearch() {
       knowledgeCutoff,
       capturedCurrentRevisionId,
     });
-  // Pin the taxonomy used by a loaded current-hierarchy page so later pages
-  // retain the same meaning if the hierarchy changes in another session.
+  // The taxonomy revision a loaded current-hierarchy page used. Later pages
+  // pin it so they keep the same meaning if the hierarchy changes in another
+  // session. It is derived rather than read back from the URL because the
+  // Effect below writes it there asynchronously, and react-router's functional
+  // setParams builds from the params of the last render: an event between the
+  // two would otherwise navigate without it.
+  const revisionPin =
+    capturedCurrentRevisionId ??
+    (categoryView === "currentHierarchy" && !isPending && !isError
+      ? data?.currentRevisionId || undefined
+      : undefined);
+  // Keep the pin in the URL so a reload or shared link stays on the revision.
   useEffect(() => {
-    if (
-      categoryView !== "currentHierarchy" ||
-      capturedCurrentRevisionId ||
-      !data?.currentRevisionId ||
-      isPending ||
-      isError
-    )
-      return;
+    if (capturedCurrentRevisionId || !revisionPin) return;
     setParams(
       (previous) => {
         if (previous.get("capturedCurrentRevisionId")) return previous;
         const next = new URLSearchParams(previous);
-        next.set("capturedCurrentRevisionId", data.currentRevisionId!);
+        next.set("capturedCurrentRevisionId", revisionPin);
         return next;
       },
       { replace: true },
     );
-  }, [
-    categoryView,
-    capturedCurrentRevisionId,
-    data?.currentRevisionId,
-    isPending,
-    isError,
-    setParams,
-  ]);
+  }, [capturedCurrentRevisionId, revisionPin, setParams]);
   function update(updates: Record<string, string>, resetPage = true) {
     setParams((previous) => {
       const next = new URLSearchParams(previous);
+      if (revisionPin) next.set("capturedCurrentRevisionId", revisionPin);
       if (resetPage) next.delete("offset");
       for (const [key, value] of Object.entries(updates)) {
         if (value) next.set(key, value);
