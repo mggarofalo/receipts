@@ -149,3 +149,4 @@ git clone --local . .clones/<branch-name>
 - **Worktrees** — preferred for parallel AI agent work (faster setup, shared git state).
 - **Local clones** — preferred for human developers who want full independence.
 - **Neither** — for simple/small changes, working on a branch in the main worktree is fine.
+
