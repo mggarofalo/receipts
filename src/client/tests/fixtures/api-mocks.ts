@@ -1,5 +1,5 @@
 import { taxonomyFixture } from "../../src/test/taxonomy-fixture";
-import type { Page, Route } from "@playwright/test";
+import { expect, type Page, type Route } from "@playwright/test";
 
 // Deterministic API fixtures shared by the visual-regression suite
 // (tests/visual) and the behavioural E2E suite (tests/e2e). Every endpoint the
@@ -173,6 +173,34 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
     await page.clock.install({ time: new Date(FROZEN_NOW_ISO) });
   }
 
+  // Registered first, so every mock below (and every override) wins over it:
+  // Playwright tries the most recently added route first. An /api request
+  // that reaches it has no fixture. Without this it would go to the dev
+  // proxy, which has no API behind it and fails with ECONNREFUSED. Fail the
+  // test loudly instead, naming the request.
+  await page.route(
+    (url) => url.pathname.startsWith("/api/"),
+    (route) => {
+      const request = route.request();
+      const { pathname } = new URL(request.url());
+      expect
+        .soft(
+          `${request.method()} ${pathname}`,
+          "Unmocked API request. Add a fixture in tests/fixtures/api-mocks.ts or a test override.",
+        )
+        .toBe("no unmocked API request");
+      return route.fulfill({
+        status: 501,
+        contentType: "application/problem+json",
+        body: JSON.stringify({
+          title: "Unmocked API request",
+          status: 501,
+          detail: `${request.method()} ${pathname} has no E2E fixture`,
+        }),
+      });
+    },
+  );
+
   // Auth + user — checked at app boot
   await page.route("**/api/auth/me", (route) => route.fulfill(json(user)));
   await page.route("**/api/auth/login", (route) =>
@@ -229,6 +257,26 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   // Receipts — empty so EmptyState shows; tests can override per surface
   await page.route("**/api/receipts?*", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/receipts/recent**", (route) => route.fulfill(json([])));
+  // Receipt entry suggests past locations (LocationSuggestionsResponse).
+  await page.route(
+    (url) => url.pathname === "/api/receipts/locations",
+    (route) => route.fulfill(json({ locations: [] })),
+  );
+  // No receipt exists in the default fixtures, so a receipt's trip is not
+  // found. The spec declares that 404 without a body. Tests that open a
+  // receipt override this with a TripResponse.
+  await page.route(
+    (url) => url.pathname === "/api/trips",
+    (route) => route.fulfill({ status: 404 }),
+  );
+  // Enum metadata (EnumMetadataResponse) — empty lists, like the reference data.
+  await page.route(
+    (url) => url.pathname === "/api/metadata/enums",
+    (route) =>
+      route.fulfill(
+        json({ adjustmentTypes: [], authEventTypes: [], auditActions: [], entityTypes: [] }),
+      ),
+  );
 
   // Dashboard widgets
   await page.route("**/api/dashboard/**", (route) => route.fulfill(json({ data: [], totalAmount: 0, totalCount: 0 })));
