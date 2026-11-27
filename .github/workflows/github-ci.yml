@@ -59,10 +59,63 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Classifies a PR's changed files so the jobs below can skip work the PR
+  # cannot affect (RECEIPTS-1132). Skipped jobs still satisfy required status
+  # checks; a workflow-level `paths` filter would leave them pending instead.
+  #
+  # Fails open: on push (step skipped) or if detection fails, the outputs are
+  # empty, and every consumer tests `!= 'false'`, so everything runs.
+  #
+  # - backend:  anything that is not client code or Markdown. Deliberately
+  #             broad, so an unclassified path (scripts/, .github/, docs/*.json,
+  #             Dockerfile, ...) runs the backend jobs.
+  # - frontend: client code plus the shared inputs the client reads or is
+  #             built by.
+  # - api:      inputs of the API Breaking Changes check.
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      api: ${{ steps.filter.outputs.api }}
+
+    steps:
+      - name: Classify changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: some-with-excludes
+          filters: |
+            backend:
+              - '**'
+              - '!src/client/**'
+              - '!**/*.md'
+            frontend:
+              - 'src/client/**'
+              - 'openapi/**'
+              - 'test-data/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'Directory.*'
+              - 'scripts/**'
+              - '.github/**'
+              - 'Dockerfile'
+              - '.dockerignore'
+            api:
+              - 'openapi/**'
+              - 'scripts/check-breaking.mjs'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/**'
+
   build:
     name: Build & Test
-    needs: [pr-title]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -129,8 +182,8 @@ jobs:
 
   postgres-test:
     name: PostgreSQL Persistence
-    needs: [pr-title]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -154,18 +207,29 @@ jobs:
 
   frontend-test:
     name: Frontend Test (Shard ${{ matrix.shard }}/2)
-    needs: [pr-title]
+    needs: [pr-title, changes]
     if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2]
+    # Gate the steps, not the job: a matrix job skipped by a job-level `if`
+    # reports one unexpanded "Shard ${{ matrix.shard }}/2" check, so the
+    # required "Frontend Test (Shard N/2)" checks would never report.
+    env:
+      RUN_FRONTEND: ${{ needs.changes.outputs.frontend != 'false' }}
 
     steps:
+      - name: Skip (no frontend changes)
+        if: env.RUN_FRONTEND != 'true'
+        run: echo "This PR changes no frontend inputs; skipping the shard."
+
       - uses: actions/checkout@v6
+        if: env.RUN_FRONTEND == 'true'
 
       - name: Setup Node.js
+        if: env.RUN_FRONTEND == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -173,21 +237,24 @@ jobs:
           cache-dependency-path: src/client/package-lock.json
 
       - name: Install dependencies
+        if: env.RUN_FRONTEND == 'true'
         run: npm ci
         working-directory: src/client
 
       - name: Build client
+        if: env.RUN_FRONTEND == 'true'
         run: npm run build
         working-directory: src/client
 
       - name: Run tests with coverage
+        if: env.RUN_FRONTEND == 'true'
         run: npx vitest run --shard=${{ matrix.shard }}/2 --reporter=blob --coverage
         working-directory: src/client
         env:
           VITEST_SHARD: "true"
 
       - name: Upload test results
-        if: always()
+        if: always() && env.RUN_FRONTEND == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: frontend-test-shard-${{ matrix.shard }}
@@ -197,8 +264,8 @@ jobs:
 
   frontend-test-report:
     name: Frontend Coverage Report
-    needs: [pr-title, frontend-test]
-    if: ${{ !cancelled() && (needs.frontend-test.result == 'success' || needs.frontend-test.result == 'failure') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: [pr-title, changes, frontend-test]
+    if: ${{ !cancelled() && (needs.frontend-test.result == 'success' || needs.frontend-test.result == 'failure') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.frontend != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -248,10 +315,10 @@ jobs:
 
   visual-regression:
     name: Visual Regression
-    needs: [pr-title]
+    needs: [pr-title, changes]
     # Skip when the visual-regression-allowed label is set (intentional
     # baseline-affecting change). See AGENTS.md for the bypass procedure.
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && !contains(github.event.pull_request.labels.*.name, 'visual-regression-allowed') }}
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && !contains(github.event.pull_request.labels.*.name, 'visual-regression-allowed') && needs.changes.outputs.frontend != 'false' }}
     # Pinned: Playwright 1.60 cannot install Chromium on ubuntu-latest (26.04).
     runs-on: ubuntu-24.04
     # Cross-platform pixel diffs (Windows-generated baselines vs Linux CI)
@@ -302,8 +369,8 @@ jobs:
 
   e2e:
     name: E2E (Playwright)
-    needs: [pr-title]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && needs.changes.outputs.frontend != 'false' }}
     # Pinned: Playwright 1.60 cannot install Chromium on ubuntu-latest (26.04).
     runs-on: ubuntu-24.04
     # Unlike Visual Regression, this job is BLOCKING: it asserts behaviour
@@ -353,8 +420,8 @@ jobs:
 
   lint:
     name: Code Formatting
-    needs: [pr-title]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -381,8 +448,8 @@ jobs:
 
   frontend-lint:
     name: Frontend Lint
-    needs: [pr-title]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.frontend != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -409,8 +476,8 @@ jobs:
 
   security:
     name: Vulnerability Scan
-    needs: [pr-title]
-    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && (needs.pr-title.result == 'success' || needs.pr-title.result == 'skipped') && github.event.action != 'labeled' && github.event.action != 'unlabeled' && needs.changes.outputs.backend != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -434,8 +501,8 @@ jobs:
 
   docker-build:
     name: Docker Build Check
-    needs: [pr-title]
-    if: ${{ needs.pr-title.result == 'success' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && needs.pr-title.result == 'success' && github.event.action != 'labeled' && github.event.action != 'unlabeled' && (needs.changes.outputs.backend != 'false' || needs.changes.outputs.frontend != 'false') }}
     runs-on: ubuntu-latest
 
     steps:
@@ -467,8 +534,8 @@ jobs:
 
   api-compat:
     name: API Breaking Changes
-    needs: [pr-title]
-    if: ${{ needs.pr-title.result == 'success' && !contains(github.event.pull_request.labels.*.name, 'breaking-changes-allowed') }}
+    needs: [pr-title, changes]
+    if: ${{ !cancelled() && needs.pr-title.result == 'success' && !contains(github.event.pull_request.labels.*.name, 'breaking-changes-allowed') && needs.changes.outputs.api != 'false' }}
     runs-on: ubuntu-latest
 
     steps:
