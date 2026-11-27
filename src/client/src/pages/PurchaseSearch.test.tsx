@@ -1,7 +1,14 @@
 import type { components } from "@/generated/api";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useLocation, useNavigate } from "react-router";
+import {
+  RouterProvider,
+  createMemoryRouter,
+  useLocation,
+  useNavigate,
+} from "react-router";
+import { AppearanceProvider } from "@/contexts/AppearanceContext";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { renderWithProviders } from "@/test/test-utils";
 import { mockQueryResult } from "@/test/mock-hooks";
 import { usePurchaseSearch } from "@/hooks/usePurchaseSearch";
@@ -601,4 +608,73 @@ it("shows the API reason when a captured hierarchy revision is invalid", () => {
   expect(
     screen.getByText("The captured taxonomy revision is unavailable."),
   ).toBeInTheDocument();
+});
+
+it("keeps the captured hierarchy revision when paging before the pin navigation commits", async () => {
+  const currentRevisionId = "95000000-0000-4000-8000-000000000042";
+  const categoryId = taxonomyFixture.nodes[1].id;
+  search.mockReturnValue(
+    mockQueryResult({
+      isPending: false,
+      data: {
+        categoryView: "currentHierarchy",
+        assignmentSelection: "currentPointer",
+        currentRevisionId,
+        items: [item],
+        total: 26,
+        offset: 0,
+        limit: 25,
+      },
+    }),
+  );
+  // Search-param navigations revalidate loaders. The initial load resolves at
+  // once; the first navigation after it (the Effect's pin) hangs, so the
+  // rendered URL stays unpinned while the user clicks Next page.
+  let releasePin: () => void = () => {};
+  const pinGate = new Promise<null>((resolve) => {
+    releasePin = () => resolve(null);
+  });
+  let loaderCalls = 0;
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/search",
+        loader: () => (++loaderCalls === 2 ? pinGate : null),
+        HydrateFallback: () => null,
+        element: (
+          <AppearanceProvider>
+            <TooltipProvider>
+              <PurchaseSearch />
+            </TooltipProvider>
+          </AppearanceProvider>
+        ),
+      },
+    ],
+    {
+      initialEntries: [
+        `/search?categoryId=${categoryId}&categoryView=currentHierarchy`,
+      ],
+    },
+  );
+  try {
+    render(<RouterProvider router={router} />);
+    const next = await screen.findByRole("button", { name: "Next page" });
+    await waitFor(() => expect(router.state.navigation.state).toBe("loading"));
+    expect(router.state.navigation.location?.search).toContain(
+      `capturedCurrentRevisionId=${currentRevisionId}`,
+    );
+    fireEvent.click(next);
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith("", 25, 25, true, expect.anything()),
+    );
+    const firstNextPageCall = search.mock.calls.find(
+      ([, offset]) => offset === 25,
+    );
+    expect(firstNextPageCall?.[4]).toEqual(
+      expect.objectContaining({ capturedCurrentRevisionId: currentRevisionId }),
+    );
+  } finally {
+    releasePin();
+    router.dispose();
+  }
 });
