@@ -14,7 +14,54 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+
+	internal sealed class CommitBarrier : DbTransactionInterceptor
+	{
+		public TaskCompletionSource<int> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public override async ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction,
+			TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
+		{
+			Entered.TrySetResult(((NpgsqlConnection)transaction.Connection!).ProcessID);
+			await Release.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
+			return result;
+		}
+	}
+	internal sealed class BarrierFactory(PostgresFixture fixture, CommitBarrier barrier) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
+			.AddInterceptors(barrier).Options, new ActorAccessor());
+	}
+	internal async Task WaitForDatabaseBlockAsync(int blocker)
+	{
+		await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+		await connection.OpenAsync();
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+		while (true)
+		{
+			await using var query = new NpgsqlCommand("SELECT EXISTS (SELECT FROM pg_stat_activity WHERE @pid = ANY(pg_blocking_pids(pid)))", connection);
+			query.Parameters.AddWithValue("pid", blocker);
+			if ((bool)(await query.ExecuteScalarAsync(timeout.Token))!) { return; }
+			await Task.Delay(20, timeout.Token);
+		}
+	}
+	internal sealed class FailCommit : DbTransactionInterceptor
+	{
+		public override ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction, TransactionEventData eventData,
+			InterceptionResult result, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Injected classification commit failure");
+	}
+	internal sealed class FailureFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
+			.AddInterceptors(new FailCommit()).Options, new ActorAccessor());
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationAcceptanceTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task ReceiptItemRepository_HydratesRecordedParentForYnabExport()
@@ -109,37 +156,6 @@ public sealed partial class ClassificationTests
 		stored.Description.Should().Be(item.Description);
 		stored.Category.Should().Be(storedLabels.Category); stored.Subcategory.Should().Be(storedLabels.Subcategory);
 		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == item.Id)).AssignmentId.Should().Be(history.Items.First().Id);
-	}
-
-	private sealed class CommitBarrier : DbTransactionInterceptor
-	{
-		public TaskCompletionSource<int> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		public override async ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction,
-			TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
-		{
-			Entered.TrySetResult(((NpgsqlConnection)transaction.Connection!).ProcessID);
-			await Release.Task.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken);
-			return result;
-		}
-	}
-	private sealed class BarrierFactory(PostgresFixture fixture, CommitBarrier barrier) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
-			.AddInterceptors(barrier).Options, new ActorAccessor());
-	}
-	private async Task WaitForDatabaseBlockAsync(int blocker)
-	{
-		await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-		await connection.OpenAsync();
-		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-		while (true)
-		{
-			await using var query = new NpgsqlCommand("SELECT EXISTS (SELECT FROM pg_stat_activity WHERE @pid = ANY(pg_blocking_pids(pid)))", connection);
-			query.Parameters.AddWithValue("pid", blocker);
-			if ((bool)(await query.ExecuteScalarAsync(timeout.Token))!) { return; }
-			await Task.Delay(20, timeout.Token);
-		}
 	}
 	[Fact]
 	public async Task TaxonomyCommitWinsAgainstAssignmentAlreadyWaitingOnItsLock()
@@ -237,16 +253,6 @@ public sealed partial class ClassificationTests
 		(await db.CurrentClassifications.SingleAsync(x => x.ReceiptItemId == stored.Id)).AssignmentId.Should().Be(history.Items.Single().Id);
 		(await db.Receipts.CountAsync()).Should().Be(receiptCount + 1);
 		(await db.Classifications.CountAsync()).Should().Be(assignmentCount + 1);
-	}
-	private sealed class FailCommit : DbTransactionInterceptor
-	{
-		public override ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction, TransactionEventData eventData,
-			InterceptionResult result, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Injected classification commit failure");
-	}
-	private sealed class FailureFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions())
-			.AddInterceptors(new FailCommit()).Options, new ActorAccessor());
 	}
 }
 

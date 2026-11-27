@@ -11,16 +11,10 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Fact]
-	public async Task HostedMappingWithoutJevSkipsProtectedPrefixAndSupportsPublicUndoAfterManualChange()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).HostedMappingHttpCore();
-	}
 
-	private async Task HostedMappingHttpCore()
+	internal async Task HostedMappingHttpCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -101,5 +95,17 @@ public sealed partial class ClassificationTests
 		using var restarted = MappingWorker();
 		await restarted.RunOnceAsync();
 		(await db.Classifications.CountAsync(x => x.Source == "approved_mapping")).Should().Be(3);
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationAutomaticMappingHttpTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Fact]
+	public async Task HostedMappingWithoutJevSkipsProtectedPrefixAndSupportsPublicUndoAfterManualChange()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).HostedMappingHttpCore();
 	}
 }

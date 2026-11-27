@@ -9,16 +9,10 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Fact]
-	public async Task ApprovedUndoRestoresManualNullAndReplayDoesNotReapply()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedUndoReplayCore();
-	}
 
-	private async Task ApprovedUndoReplayCore()
+	internal async Task ApprovedUndoReplayCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
@@ -55,16 +49,7 @@ public sealed partial class ClassificationTests
 				undo with { Reason = "Different intent" }, 1));
 	}
 
-	[Theory]
-	[InlineData(true)]
-	[InlineData(false)]
-	public async Task ApprovedUndoPreservesLaterManualAssignment(bool sameCategory)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedUndoLaterCore(sameCategory);
-	}
-
-	private async Task ApprovedUndoLaterCore(bool sameCategory)
+	internal async Task ApprovedUndoLaterCore(bool sameCategory)
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
@@ -78,16 +63,7 @@ public sealed partial class ClassificationTests
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().HaveCount(3).And.Subject.First().Id.Should().Be(later.Id);
 	}
 
-	[Theory]
-	[InlineData(false)]
-	[InlineData(true)]
-	public async Task ApprovedApplyRetryDuringUndoReportsStoredProgress(bool taxonomyChanges)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedApplyRetryDuringUndoCore(taxonomyChanges);
-	}
-
-	private async Task ApprovedApplyRetryDuringUndoCore(bool taxonomyChanges)
+	internal async Task ApprovedApplyRetryDuringUndoCore(bool taxonomyChanges)
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -118,16 +94,7 @@ public sealed partial class ClassificationTests
 				.UndoTaxonomyRevisionId.Should().Be(request.TaxonomyRevisionId);
 	}
 
-	[Theory]
-	[InlineData(true)]
-	[InlineData(false)]
-	public async Task ApprovedUndoSerializesWithManualCorrection(bool manualFirst)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedUndoRaceCore(manualFirst);
-	}
-
-	private async Task ApprovedUndoRaceCore(bool manualFirst)
+	internal async Task ApprovedUndoRaceCore(bool manualFirst)
 	{
 		var captured = await CaptureExecutableAsync();
 		await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
@@ -167,7 +134,7 @@ public sealed partial class ClassificationTests
 		}
 	}
 
-	private sealed class FailApprovedUndoDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	internal sealed class FailApprovedUndoDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
 	{
 		public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
 		{
@@ -176,17 +143,10 @@ public sealed partial class ClassificationTests
 			return base.SaveChangesAsync(cancellationToken);
 		}
 	}
-	private sealed class FailApprovedUndoFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	internal sealed class FailApprovedUndoFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{ public ApplicationDbContext CreateDbContext() => new FailApprovedUndoDb(fixture.CreateOptions()); }
 
-	[Fact]
-	public async Task ApprovedUndoRollsBackAssignmentAndOutcomeTogether()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedUndoRollbackCore();
-	}
-
-	private async Task ApprovedUndoRollbackCore()
+	internal async Task ApprovedUndoRollbackCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
@@ -200,5 +160,51 @@ public sealed partial class ClassificationTests
 		row.UndoState.Should().Be(HistoricalItemState.Pending);
 		row.UndoAssignmentId.Should().BeNull();
 		(await ApprovedExecutor().UndoChunkAsync(CurrentRestoreGeneration(), Actor, captured.Request.OperationId, undo, 1)).Undone.Should().Be(1);
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalApprovedMappingUndoTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Fact]
+	public async Task ApprovedUndoRestoresManualNullAndReplayDoesNotReapply()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedUndoReplayCore();
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task ApprovedUndoPreservesLaterManualAssignment(bool sameCategory)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedUndoLaterCore(sameCategory);
+	}
+
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task ApprovedApplyRetryDuringUndoReportsStoredProgress(bool taxonomyChanges)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedApplyRetryDuringUndoCore(taxonomyChanges);
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task ApprovedUndoSerializesWithManualCorrection(bool manualFirst)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedUndoRaceCore(manualFirst);
+	}
+
+	[Fact]
+	public async Task ApprovedUndoRollsBackAssignmentAndOutcomeTogether()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedUndoRollbackCore();
 	}
 }

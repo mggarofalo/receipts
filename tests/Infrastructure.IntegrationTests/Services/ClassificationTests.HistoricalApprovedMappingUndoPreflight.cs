@@ -3,23 +3,16 @@ using Application.Taxonomy;
 using Common;
 using Domain.Taxonomy;
 using FluentAssertions;
+using Infrastructure.IntegrationTests.Fixtures;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Theory]
-	[InlineData(false)]
-	[InlineData(true)]
-	public async Task ApprovedUndoRejectsStaleInitialTaxonomyWithoutConsumingIntentOrRows(bool http)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedUndoPreflightCore(http);
-	}
 
-	private async Task ApprovedUndoPreflightCore(bool http)
+	internal async Task ApprovedUndoPreflightCore(bool http)
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
@@ -82,5 +75,19 @@ public sealed partial class ClassificationTests
 		history.Items.Should().HaveCount(3);
 		history.Items.First().CategoryId.Should().BeNull();
 		history.Items.First().Source.Should().Be("manual");
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalApprovedMappingUndoPreflightTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task ApprovedUndoRejectsStaleInitialTaxonomyWithoutConsumingIntentOrRows(bool http)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedUndoPreflightCore(http);
 	}
 }

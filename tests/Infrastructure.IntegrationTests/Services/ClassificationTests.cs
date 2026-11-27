@@ -13,16 +13,16 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-[Trait("Category", "Integration")]
-[Trait("Prerequisite", "Postgres")]
-public sealed partial class ClassificationTests(PostgresFixture fixture) : IClassFixture<PostgresFixture>
+public abstract partial class ClassificationTestBase(PostgresFixture server)
 {
-	private const string Actor = "classification-test-admin";
-	private sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	protected readonly PostgresFixture fixture = server;
+
+	internal const string Actor = "classification-test-admin";
+	internal sealed class Factory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
 	{ public ApplicationDbContext CreateDbContext() => fixture.CreateDbContext(); }
-	private ClassificationService Service(bool enabled = true) => new(new Factory(fixture), TimeProvider.System, Options.Create(new ClassificationOptions { WritesEnabled = enabled }));
-	private TaxonomyService Tree() => new(new Factory(fixture), TimeProvider.System);
-	private async Task<(Guid Item, Guid Revision, Guid Root, Guid Child, Guid Assignment)> SeedAsync()
+	internal ClassificationService Service(bool enabled = true) => new(new Factory(fixture), TimeProvider.System, Options.Create(new ClassificationOptions { WritesEnabled = enabled }));
+	internal TaxonomyService Tree() => new(new Factory(fixture), TimeProvider.System);
+	internal async Task<(Guid Item, Guid Revision, Guid Root, Guid Child, Guid Assignment)> SeedAsync()
 	{
 		await using ApplicationDbContext db = fixture.CreateDbContext();
 		if (!await db.Users.AnyAsync(x => x.Id == Actor))
@@ -55,6 +55,23 @@ public sealed partial class ClassificationTests(PostgresFixture fixture) : IClas
 			[new TaxonomyEdit("create", root, Name: Guid.NewGuid().ToString()), new TaxonomyEdit("create", child, root, "Child")]));
 		return (item.Id, revision.Id, root, child, assignment);
 	}
+	internal sealed class ActorAccessor : Application.Interfaces.Services.ICurrentUserAccessor
+	{
+		public string? UserId => Actor;
+		public Guid? ApiKeyId => null;
+		public string? IpAddress => null;
+		public string? UserAgent => null;
+	}
+	internal sealed class ActorFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(fixture.CreateOptions(), new ActorAccessor());
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
 	[Fact]
 	public async Task BackdatedPurchaseRetainsOriginalPathAndFinancialEvidenceAfterMoveAndReclassification()
 	{
@@ -101,17 +118,6 @@ public sealed partial class ClassificationTests(PostgresFixture fixture) : IClas
 		(await Service().HistoryAsync(seed.Item, null, 100)).Items.Should().HaveCount(3);
 		Func<Task> disabled = () => Service(false).AssignAsync(Actor, seed.Item, new(null, archived.Id, current.Id, Guid.NewGuid(), "Disabled"));
 		(await disabled.Should().ThrowAsync<TaxonomyException>()).Which.Status.Should().Be(409);
-	}
-	private sealed class ActorAccessor : Application.Interfaces.Services.ICurrentUserAccessor
-	{
-		public string? UserId => Actor;
-		public Guid? ApiKeyId => null;
-		public string? IpAddress => null;
-		public string? UserAgent => null;
-	}
-	private sealed class ActorFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new(fixture.CreateOptions(), new ActorAccessor());
 	}
 
 	[Fact]
@@ -189,6 +195,5 @@ public sealed partial class ClassificationTests(PostgresFixture fixture) : IClas
 		(await db.Receipts.CountAsync()).Should().Be(receiptsBefore);
 		(await db.ReceiptItems.CountAsync()).Should().Be(itemsBefore);
 	}
-
 }
 

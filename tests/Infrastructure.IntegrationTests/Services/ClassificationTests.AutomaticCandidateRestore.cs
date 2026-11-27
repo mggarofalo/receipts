@@ -12,17 +12,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	[Fact]
-	public async Task PublicV14Restore_RoundTripsUndoneAutomaticHistoryAndRollsBack()
-	{
-		await using var source = await fixture.CreateIsolatedAsync();
-		await using var destination = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(source).CandidateRestoreUndoneCore(destination);
-	}
 
-	private async Task CandidateRestoreUndoneCore(PostgresFixture destination)
+	internal async Task CandidateRestoreUndoneCore(PostgresFixture destination)
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
@@ -75,6 +68,74 @@ public sealed partial class ClassificationTests
 			(await restored.Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Id.Should().Be(later.Id);
 		}
 		finally { File.Delete(path); }
+	}
+
+	internal sealed class FailAfterAbandonDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	{
+		private bool abandoned;
+		public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+		{
+			if (abandoned) { throw new InvalidOperationException("Injected after abandonment"); }
+			bool cancelling = ChangeTracker.Entries<HistoricalOperationEntity>().Any(x => x.State == EntityState.Modified && x.Entity.State == HistoricalOperationState.Cancelled);
+			int result = await base.SaveChangesAsync(cancellationToken);
+			abandoned = cancelling;
+			return result;
+		}
+	}
+
+	internal sealed class FailAfterAbandonFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new FailAfterAbandonDb(fixture.CreateOptions());
+	}
+
+	internal sealed class CandidateSnapshotGate : DbCommandInterceptor
+	{
+		public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+				CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+		{
+			if (command.CommandText.Contains("\"HistoricalOperations\"", StringComparison.Ordinal))
+			{
+				Entered.TrySetResult();
+				await Release.Task.WaitAsync(cancellationToken);
+			}
+			return result;
+		}
+	}
+
+	internal sealed class CandidateSnapshotFactory(PostgresFixture fixture, CandidateSnapshotGate gate) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(gate).Options);
+	}
+
+	internal sealed class FailCandidateRestoreDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+	{
+		public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+		{
+			if (ChangeTracker.Entries<HistoricalOperationItemEntity>().Any(x => x.State == EntityState.Added))
+			{ throw new InvalidOperationException("Injected late restore failure"); }
+			return base.SaveChangesAsync(cancellationToken);
+		}
+	}
+
+	internal sealed class FailCandidateRestoreFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
+	{
+		public ApplicationDbContext CreateDbContext() => new FailCandidateRestoreDb(fixture.CreateOptions());
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationAutomaticCandidateRestoreTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+	[Fact]
+	public async Task PublicV14Restore_RoundTripsUndoneAutomaticHistoryAndRollsBack()
+	{
+		await using var source = await fixture.CreateIsolatedAsync();
+		await using var destination = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(source).CandidateRestoreUndoneCore(destination);
 	}
 
 	[Fact]
@@ -136,24 +197,6 @@ public sealed partial class ClassificationTests
 			stopped.Applied.Should().Be(0); stopped.Pending.Should().Be(1);
 		}
 		finally { File.Delete(path); }
-	}
-
-	private sealed class FailAfterAbandonDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
-	{
-		private bool abandoned;
-		public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-		{
-			if (abandoned) { throw new InvalidOperationException("Injected after abandonment"); }
-			bool cancelling = ChangeTracker.Entries<HistoricalOperationEntity>().Any(x => x.State == EntityState.Modified && x.Entity.State == HistoricalOperationState.Cancelled);
-			int result = await base.SaveChangesAsync(cancellationToken);
-			abandoned = cancelling;
-			return result;
-		}
-	}
-
-	private sealed class FailAfterAbandonFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new FailAfterAbandonDb(fixture.CreateOptions());
 	}
 
 	[Fact]
@@ -412,42 +455,5 @@ public sealed partial class ClassificationTests
 			(await db.HistoricalOperationItems.SingleAsync(x => x.OperationId == request.OperationId)).ItemId.Should().Be(seed.Item);
 		}
 		finally { File.Delete(path); }
-	}
-
-	private sealed class CandidateSnapshotGate : DbCommandInterceptor
-	{
-		public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-		public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
-				CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
-		{
-			if (command.CommandText.Contains("\"HistoricalOperations\"", StringComparison.Ordinal))
-			{
-				Entered.TrySetResult();
-				await Release.Task.WaitAsync(cancellationToken);
-			}
-			return result;
-		}
-	}
-
-	private sealed class CandidateSnapshotFactory(PostgresFixture fixture, CandidateSnapshotGate gate) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(fixture.CreateOptions()).AddInterceptors(gate).Options);
-	}
-
-	private sealed class FailCandidateRestoreDb(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
-	{
-		public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-		{
-			if (ChangeTracker.Entries<HistoricalOperationItemEntity>().Any(x => x.State == EntityState.Added))
-			{ throw new InvalidOperationException("Injected late restore failure"); }
-			return base.SaveChangesAsync(cancellationToken);
-		}
-	}
-
-	private sealed class FailCandidateRestoreFactory(PostgresFixture fixture) : IDbContextFactory<ApplicationDbContext>
-	{
-		public ApplicationDbContext CreateDbContext() => new FailCandidateRestoreDb(fixture.CreateOptions());
 	}
 }

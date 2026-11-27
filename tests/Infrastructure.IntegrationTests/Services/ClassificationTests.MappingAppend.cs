@@ -4,12 +4,15 @@ using Application.Taxonomy;
 using Domain.Taxonomy;
 using FluentAssertions;
 using Infrastructure;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationMappingAppendTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task HistoricalMappingAppendValidatesEvidenceAndReplaysWithoutChangingManualSemantics()
@@ -186,5 +189,4 @@ public sealed partial class ClassificationTests
 		(await setup.ReceiptItems.AsNoTracking().SingleAsync(x => x.Id == seed.Item)).Description.Should().Be(item.Description);
 		(await setup.Receipts.AsNoTracking().SingleAsync(x => x.Id == item.ReceiptId)).Location.Should().Be(location);
 	}
-
 }

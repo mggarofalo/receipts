@@ -8,7 +8,39 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
+{
+
+	internal async Task AssertHistoricalDowngradeBoundary()
+	{
+		var seed = await HistoricalSeedAsync();
+		var request = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
+		await Historical().SavePreviewAsync(request);
+		await using ApplicationDbContext db = fixture.CreateDbContext();
+		string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+		int index = Array.IndexOf(applied, "20261026120050_AddHistoricalReclassification");
+		index.Should().BeGreaterThan(0);
+		Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
+		(await downgrade.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("historical reclassification evidence is retained");
+		// EF safely removes later empty migrations before the protected migration refuses.
+		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(index + 1));
+		await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
+		(await Historical().ReadAsync(Actor, request.OperationId)).Total.Should().Be(1);
+		(await Historical().ApplyChunkAsync(Actor, request.OperationId, 1)).Applied.Should().Be(1);
+	}
+
+	internal static async Task RejectHistoricalSql(ApplicationDbContext db, string sql, Guid operationId, string message)
+	{
+		Func<Task> mutate = () => db.Database.ExecuteSqlRawAsync(sql, operationId);
+		var error = (await mutate.Should().ThrowAsync<PostgresException>()).Which;
+		error.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
+		error.MessageText.Should().Contain(message);
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalIntegrityTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
 {
 	[Fact]
 	public async Task HistoricalIntegrityRejectsEveryFrozenFieldAndDeletionButAllowsApplyAndUndo()
@@ -139,24 +171,6 @@ public sealed partial class ClassificationTests
 		finally { await isolated.DisposeAsync(); }
 	}
 
-	private async Task AssertHistoricalDowngradeBoundary()
-	{
-		var seed = await HistoricalSeedAsync();
-		var request = await HistoricalRequest(seed.Item, seed.Revision, seed.Root);
-		await Historical().SavePreviewAsync(request);
-		await using ApplicationDbContext db = fixture.CreateDbContext();
-		string[] applied = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-		int index = Array.IndexOf(applied, "20261026120050_AddHistoricalReclassification");
-		index.Should().BeGreaterThan(0);
-		Func<Task> downgrade = () => db.GetService<IMigrator>().MigrateAsync(applied[index - 1]);
-		(await downgrade.Should().ThrowAsync<PostgresException>()).Which.MessageText.Should().Contain("historical reclassification evidence is retained");
-		// EF safely removes later empty migrations before the protected migration refuses.
-		(await db.Database.GetAppliedMigrationsAsync()).Should().Equal(applied.Take(index + 1));
-		await db.GetService<IMigrator>().MigrateAsync(applied[^1]);
-		(await Historical().ReadAsync(Actor, request.OperationId)).Total.Should().Be(1);
-		(await Historical().ApplyChunkAsync(Actor, request.OperationId, 1)).Applied.Should().Be(1);
-	}
-
 	[Fact]
 	public async Task HistoricalIntegrityEmptySchemaCanDowngradeAndUpgradeAgain()
 	{
@@ -171,13 +185,5 @@ public sealed partial class ClassificationTests
 		(await db.Database.GetAppliedMigrationsAsync()).Should().Contain(migration);
 		(await db.HistoricalOperations.CountAsync()).Should().Be(0);
 		(await db.HistoricalOperationItems.CountAsync()).Should().Be(0);
-	}
-
-	private static async Task RejectHistoricalSql(ApplicationDbContext db, string sql, Guid operationId, string message)
-	{
-		Func<Task> mutate = () => db.Database.ExecuteSqlRawAsync(sql, operationId);
-		var error = (await mutate.Should().ThrowAsync<PostgresException>()).Which;
-		error.SqlState.Should().Be(PostgresErrorCodes.CheckViolation);
-		error.MessageText.Should().Contain(message);
 	}
 }

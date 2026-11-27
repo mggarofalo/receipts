@@ -10,13 +10,19 @@ using Npgsql;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	private sealed class RejectDestinationFactory : IDbContextFactory<ApplicationDbContext>
+	internal sealed class RejectDestinationFactory : IDbContextFactory<ApplicationDbContext>
 	{
 		public int Calls { get; private set; }
 		public ApplicationDbContext CreateDbContext() { Calls++; throw new InvalidOperationException("Destination must not be opened"); }
 	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalRestoreReviewTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
 
 	[Theory]
 	[InlineData("missing")]

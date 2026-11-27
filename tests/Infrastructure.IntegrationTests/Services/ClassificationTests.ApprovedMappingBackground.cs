@@ -14,22 +14,12 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	private ApprovedMappingBackgroundWorker MappingWorker(bool enabled = true) => new(new Factory(fixture), TimeProvider.System,
+	internal ApprovedMappingBackgroundWorker MappingWorker(bool enabled = true) => new(new Factory(fixture), TimeProvider.System,
 		Options.Create(new ClassificationOptions { WritesEnabled = enabled }), NullLogger<ApprovedMappingBackgroundWorker>.Instance);
 
-	[Theory]
-	[InlineData("none")]
-	[InlineData("failure")]
-	[InlineData("timeout")]
-	public async Task BackgroundMappingRotatesUnfinishedSourcesAfterEachBoundedPass(string failure)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).BackgroundMappingFairnessCore(failure);
-	}
-
-	private sealed class MappingPassFailure(string failure) : DbCommandInterceptor
+	internal sealed class MappingPassFailure(string failure) : DbCommandInterceptor
 	{
 		private int gates;
 		public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command,
@@ -45,14 +35,14 @@ public sealed partial class ClassificationTests
 		}
 	}
 
-	private sealed class MappingFailureFactory(PostgresFixture database, MappingPassFailure failure)
+	internal sealed class MappingFailureFactory(PostgresFixture database, MappingPassFailure failure)
 		: IDbContextFactory<ApplicationDbContext>
 	{
 		public ApplicationDbContext CreateDbContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>(database.CreateOptions())
 			.AddInterceptors(failure).Options);
 	}
 
-	private async Task BackgroundMappingFairnessCore(string failure)
+	internal async Task BackgroundMappingFairnessCore(string failure)
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -87,18 +77,7 @@ public sealed partial class ClassificationTests
 			.Should().Be(failure == "none" ? 200 : 100, "the first source resumes its frozen page after yielding");
 	}
 
-	[Theory]
-	[InlineData("active")]
-	[InlineData("later")]
-	[InlineData("left_as_is")]
-	[InlineData("malformed")]
-	public async Task BackgroundMappingProtectedSourceDoesNotGrowHistoryAcrossActors(string state)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).BackgroundMappingProtectedCore(state);
-	}
-
-	private async Task BackgroundMappingProtectedCore(string state)
+	internal async Task BackgroundMappingProtectedCore(string state)
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -153,14 +132,7 @@ public sealed partial class ClassificationTests
 		(await Service().HistoryAsync(captured.Item, null, 1)).Items.Single().CategoryId.Should().Be(captured.Category);
 	}
 
-	[Fact]
-	public async Task BackgroundMappingRepeatedIdleScansDoNotGrowDurableHistory()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).BackgroundMappingIdleCore();
-	}
-
-	private async Task BackgroundMappingIdleCore()
+	internal async Task BackgroundMappingIdleCore()
 	{
 		await CaptureExecutableAsync();
 		using var worker = MappingWorker();
@@ -181,14 +153,7 @@ public sealed partial class ClassificationTests
 		(await db.HistoricalOperationItems.CountAsync()).Should().Be(items);
 	}
 
-	[Fact]
-	public async Task BackgroundMappingResumesPagesWithoutProviderAndPublicUndoPreservesManualClear()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).BackgroundMappingCore();
-	}
-
-	private async Task BackgroundMappingCore()
+	internal async Task BackgroundMappingCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -235,14 +200,7 @@ public sealed partial class ClassificationTests
 		}
 	}
 
-	[Fact]
-	public async Task BackgroundMappingResumesFrozenPageAndKeepsLaterManualChoice()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).BackgroundMappingFrozenCore();
-	}
-
-	private async Task BackgroundMappingFrozenCore()
+	internal async Task BackgroundMappingFrozenCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		var sweep = new ApprovedMappingSweepRequest(Guid.NewGuid(), Actor, captured.Request.TaxonomyRevisionId,
@@ -256,6 +214,54 @@ public sealed partial class ClassificationTests
 		await using var db = fixture.CreateDbContext();
 		var row = await db.HistoricalOperationItems.SingleAsync(x => x.OperationId == page.OperationId);
 		row.State.Should().Be(HistoricalItemState.Skipped);
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationApprovedMappingBackgroundTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+
+	[Theory]
+	[InlineData("none")]
+	[InlineData("failure")]
+	[InlineData("timeout")]
+	public async Task BackgroundMappingRotatesUnfinishedSourcesAfterEachBoundedPass(string failure)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingFairnessCore(failure);
+	}
+
+	[Theory]
+	[InlineData("active")]
+	[InlineData("later")]
+	[InlineData("left_as_is")]
+	[InlineData("malformed")]
+	public async Task BackgroundMappingProtectedSourceDoesNotGrowHistoryAcrossActors(string state)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingProtectedCore(state);
+	}
+
+	[Fact]
+	public async Task BackgroundMappingRepeatedIdleScansDoNotGrowDurableHistory()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingIdleCore();
+	}
+
+	[Fact]
+	public async Task BackgroundMappingResumesPagesWithoutProviderAndPublicUndoPreservesManualClear()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingCore();
+	}
+
+	[Fact]
+	public async Task BackgroundMappingResumesFrozenPageAndKeepsLaterManualChoice()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).BackgroundMappingFrozenCore();
 	}
 }
 

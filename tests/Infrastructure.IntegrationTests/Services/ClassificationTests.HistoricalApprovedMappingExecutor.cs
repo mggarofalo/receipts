@@ -1,6 +1,7 @@
 using Application.Normalization;
 using Application.Taxonomy;
 using FluentAssertions;
+using Infrastructure.IntegrationTests.Fixtures;
 using Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -8,18 +9,18 @@ using SampleData.Entities;
 
 namespace Infrastructure.IntegrationTests.Services;
 
-public sealed partial class ClassificationTests
+public abstract partial class ClassificationTestBase
 {
-	private Guid CurrentRestoreGeneration()
+	internal Guid CurrentRestoreGeneration()
 	{
 		using var db = fixture.CreateDbContext();
 		return db.CategoryAssistanceSettings.AsNoTracking().Select(x => x.RestoreGeneration).Single();
 	}
 
-	private HistoricalApprovedMappingExecutor ApprovedExecutor() => new(new Factory(fixture), TimeProvider.System,
+	internal HistoricalApprovedMappingExecutor ApprovedExecutor() => new(new Factory(fixture), TimeProvider.System,
 		Options.Create(new ClassificationOptions { WritesEnabled = true }));
 
-	private async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync(int extraItems = 0, string? legacyLabel = null, bool restructureCleared = false)
+	internal async Task<(ApprovedMappingCaptureRequest Request, Guid Item, Guid Assignment, Guid Category)> CaptureExecutableAsync(int extraItems = 0, string? legacyLabel = null, bool restructureCleared = false)
 	{
 		var seed = await HistoricalSeedAsync();
 		// The seed purchase shares the group; a person's choice keeps it out so only the new items are captured.
@@ -47,14 +48,7 @@ public sealed partial class ClassificationTests
 		(await new HistoricalApprovedMappingCapture(new Factory(fixture), TimeProvider.System).CaptureAsync(request)).Should().Be(1 + extraItems);
 		return (request, item.Id, assignment, seed.Root);
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorAppliesAtomicallyAndReplaysWithoutAnotherAssignment()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorReplayCore();
-	}
-	private async Task ApprovedExecutorReplayCore()
+	internal async Task ApprovedExecutorReplayCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		var executor = ApprovedExecutor();
@@ -69,14 +63,7 @@ public sealed partial class ClassificationTests
 		var row = await db.HistoricalOperationItems.AsNoTracking().SingleAsync(x => x.OperationId == captured.Request.OperationId);
 		row.AppliedAssignmentId.Should().Be(history.Items.First().Id);
 	}
-
-	[Fact]
-	public async Task ApprovedMappingCapturesAndAppliesToAnUntypedItemWithStoredLabels()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorStoredLabelCore();
-	}
-	private async Task ApprovedExecutorStoredLabelCore()
+	internal async Task ApprovedExecutorStoredLabelCore()
 	{
 		var captured = await CaptureExecutableAsync(legacyLabel: "Groceries");
 		var result = await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1);
@@ -86,7 +73,7 @@ public sealed partial class ClassificationTests
 		history.Items.First().CategoryId.Should().Be(captured.Category);
 	}
 
-	private async Task<Guid> RestructureClearAsync(Guid itemId, Guid revision, Guid expected)
+	internal async Task<Guid> RestructureClearAsync(Guid itemId, Guid revision, Guid expected)
 	{
 		await using var db = fixture.CreateDbContext();
 		await using var tx = await db.Database.BeginTransactionAsync();
@@ -95,14 +82,7 @@ public sealed partial class ClassificationTests
 		await tx.CommitAsync();
 		return written[itemId];
 	}
-
-	[Fact]
-	public async Task ApprovedMappingCapturesAndAppliesToARestructureClearedItem()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorRestructureClearedCore();
-	}
-	private async Task ApprovedExecutorRestructureClearedCore()
+	internal async Task ApprovedExecutorRestructureClearedCore()
 	{
 		var captured = await CaptureExecutableAsync(restructureCleared: true);
 		(await Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Source.Should().Be("restructure");
@@ -112,14 +92,7 @@ public sealed partial class ClassificationTests
 		history.Items.First().Source.Should().Be("approved_mapping");
 		history.Items.First().CategoryId.Should().Be(captured.Category);
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorPreservesManualClearAndRevokedMapping()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorProtectionCore();
-	}
-	private async Task ApprovedExecutorProtectionCore()
+	internal async Task ApprovedExecutorProtectionCore()
 	{
 		var first = await CaptureExecutableAsync();
 		var correction = await Service().AssignAsync(Actor, first.Item,
@@ -135,14 +108,7 @@ public sealed partial class ClassificationTests
 		(await ApprovedExecutor().ApplyChunkAsync(second.Request.ExpectedRestoreGeneration, Actor, second.Request.OperationId, 10)).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(second.Item, null, 10)).Items.Should().ContainSingle();
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorWaitsForDispositionAndObservesCommittedDeferral()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorDispositionCore();
-	}
-	private async Task ApprovedExecutorDispositionCore()
+	internal async Task ApprovedExecutorDispositionCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		var group = captured.Request.Group;
@@ -176,16 +142,8 @@ public sealed partial class ClassificationTests
 		(await pending).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 	}
-	[Theory]
-	[InlineData("later")]
-	[InlineData("left_as_is")]
-	public async Task DetachedDeferredPreferenceProtectsSourceAcrossActors(string state)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).DetachedDeferredPreferenceCore(state);
-	}
 
-	private async Task DetachedDeferredPreferenceCore(string state)
+	internal async Task DetachedDeferredPreferenceCore(string state)
 	{
 		var captured = await CaptureExecutableAsync();
 		var group = captured.Request.Group;
@@ -207,14 +165,7 @@ public sealed partial class ClassificationTests
 		(await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorHonorsCurrentExclusionsAndRollsBackWhenWritesDisabled()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorPreferenceAndRollbackCore();
-	}
-	private async Task ApprovedExecutorPreferenceAndRollbackCore()
+	internal async Task ApprovedExecutorPreferenceAndRollbackCore()
 	{
 		var first = await CaptureExecutableAsync();
 		await using (var db = fixture.CreateDbContext())
@@ -258,14 +209,7 @@ public sealed partial class ClassificationTests
 		row.AppliedAssignmentId.Should().BeNull();
 		(await Service().HistoryAsync(second.Item, null, 10)).Items.Should().ContainSingle();
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorObservesRevocationWhileWaitingForWriteGate()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorRevocationRaceCore();
-	}
-	private async Task ApprovedExecutorRevocationRaceCore()
+	internal async Task ApprovedExecutorRevocationRaceCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -288,18 +232,7 @@ public sealed partial class ClassificationTests
 		(await pending).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 	}
-
-	[Theory]
-	[InlineData("null")]
-	[InlineData("not-json")]
-	[InlineData("[\"00000000-0000-0000-0000-000000000000\"]")]
-	[InlineData("[\"bad-guid\"]")]
-	public async Task ApprovedExecutorFailsClosedOnMalformedPreference(string payload)
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorMalformedPreferenceCore(payload);
-	}
-	private async Task ApprovedExecutorMalformedPreferenceCore(string payload)
+	internal async Task ApprovedExecutorMalformedPreferenceCore(string payload)
 	{
 		var captured = await CaptureExecutableAsync();
 		await using (var db = fixture.CreateDbContext())
@@ -333,14 +266,7 @@ public sealed partial class ClassificationTests
 		(await ApprovedExecutor().ApplyChunkAsync(captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1)).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 	}
-
-	[Fact]
-	public async Task ApprovedCaptureRejectsItemsWithDifferentMapping()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorScopeCore();
-	}
-	private async Task ApprovedExecutorScopeCore()
+	internal async Task ApprovedExecutorScopeCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -369,14 +295,7 @@ public sealed partial class ClassificationTests
 		progress.Applied.Should().Be(1); progress.Skipped.Should().Be(0);
 		(await Service().HistoryAsync(other.Id, null, 10)).Items.Should().ContainSingle();
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorWaitsForConcurrentManualClear()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorCorrectionRaceCore();
-	}
-	private async Task ApprovedExecutorCorrectionRaceCore()
+	internal async Task ApprovedExecutorCorrectionRaceCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		var winner = new HistoricalRaceGate(true); var loser = new HistoricalRaceGate(false);
@@ -398,14 +317,7 @@ public sealed partial class ClassificationTests
 		(await pending!).Skipped.Should().Be(1);
 		(await Service().HistoryAsync(captured.Item, null, 1)).Items.Single().Id.Should().Be(manual.Id);
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorRollsBackMidChunkAndRetries()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorMidChunkCore();
-	}
-	private async Task ApprovedExecutorMidChunkCore()
+	internal async Task ApprovedExecutorMidChunkCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -425,14 +337,7 @@ public sealed partial class ClassificationTests
 		(await Service().HistoryAsync(sibling.Id, null, 10)).Items.Should().ContainSingle();
 		(await ApprovedExecutor().ApplyChunkAsync(request.ExpectedRestoreGeneration, Actor, request.OperationId, 2)).Applied.Should().Be(2);
 	}
-
-	[Fact]
-	public async Task ApprovedExecutorRejectsInjectedExcludedItem()
-	{
-		await using var isolated = await fixture.CreateIsolatedAsync();
-		await new ClassificationTests(isolated).ApprovedExecutorExcludedScopeCore();
-	}
-	private async Task ApprovedExecutorExcludedScopeCore()
+	internal async Task ApprovedExecutorExcludedScopeCore()
 	{
 		var captured = await CaptureExecutableAsync();
 		await using var db = fixture.CreateDbContext();
@@ -453,6 +358,108 @@ public sealed partial class ClassificationTests
 		excluded.Reason.Should().Be("invalid-capture-evidence");
 		(await Service().HistoryAsync(captured.Item, null, 10)).Items.Should().ContainSingle();
 		(await Service().HistoryAsync(sibling.Id, null, 10)).Items.Should().HaveCount(2);
+	}
+}
+
+[Trait("Category", "Integration")]
+[Trait("Prerequisite", "Postgres")]
+public sealed class ClassificationHistoricalApprovedMappingExecutorTests(PostgresFixture server) : ClassificationTestBase(server), IClassFixture<PostgresFixture>
+{
+
+	[Fact]
+	public async Task ApprovedExecutorAppliesAtomicallyAndReplaysWithoutAnotherAssignment()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorReplayCore();
+	}
+
+	[Fact]
+	public async Task ApprovedMappingCapturesAndAppliesToAnUntypedItemWithStoredLabels()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorStoredLabelCore();
+	}
+
+	[Fact]
+	public async Task ApprovedMappingCapturesAndAppliesToARestructureClearedItem()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorRestructureClearedCore();
+	}
+
+	[Fact]
+	public async Task ApprovedExecutorPreservesManualClearAndRevokedMapping()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorProtectionCore();
+	}
+
+	[Fact]
+	public async Task ApprovedExecutorWaitsForDispositionAndObservesCommittedDeferral()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorDispositionCore();
+	}
+	[Theory]
+	[InlineData("later")]
+	[InlineData("left_as_is")]
+	public async Task DetachedDeferredPreferenceProtectsSourceAcrossActors(string state)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).DetachedDeferredPreferenceCore(state);
+	}
+
+	[Fact]
+	public async Task ApprovedExecutorHonorsCurrentExclusionsAndRollsBackWhenWritesDisabled()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorPreferenceAndRollbackCore();
+	}
+
+	[Fact]
+	public async Task ApprovedExecutorObservesRevocationWhileWaitingForWriteGate()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorRevocationRaceCore();
+	}
+
+	[Theory]
+	[InlineData("null")]
+	[InlineData("not-json")]
+	[InlineData("[\"00000000-0000-0000-0000-000000000000\"]")]
+	[InlineData("[\"bad-guid\"]")]
+	public async Task ApprovedExecutorFailsClosedOnMalformedPreference(string payload)
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorMalformedPreferenceCore(payload);
+	}
+
+	[Fact]
+	public async Task ApprovedCaptureRejectsItemsWithDifferentMapping()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorScopeCore();
+	}
+
+	[Fact]
+	public async Task ApprovedExecutorWaitsForConcurrentManualClear()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorCorrectionRaceCore();
+	}
+
+	[Fact]
+	public async Task ApprovedExecutorRollsBackMidChunkAndRetries()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorMidChunkCore();
+	}
+
+	[Fact]
+	public async Task ApprovedExecutorRejectsInjectedExcludedItem()
+	{
+		await using var isolated = await fixture.CreateIsolatedAsync();
+		await new ClassificationTests(isolated).ApprovedExecutorExcludedScopeCore();
 	}
 
 	[Fact]
@@ -498,5 +505,4 @@ public sealed partial class ClassificationTests
 		(await Assert.ThrowsAsync<TaxonomyException>(() => executor.ApplyChunkAsync(
 				captured.Request.ExpectedRestoreGeneration, Actor, captured.Request.OperationId, 1))).Status.Should().Be(409);
 	}
-
 }
