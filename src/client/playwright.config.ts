@@ -28,7 +28,7 @@ export default defineConfig({
     },
   },
   // Local dev: Vite at default port. CI gets the same via the webServer
-  // block — Playwright boots the dev server on demand.
+  // block — Playwright boots the server (see below) on demand.
   //
   // 127.0.0.1, not localhost: the dev server binds the IPv4 loopback (see
   // vite.config.ts), while `localhost` resolves to ::1 first on Windows. Naming
@@ -45,32 +45,50 @@ export default defineConfig({
     {
       name: "desktop-chromium",
       testDir: "./tests/visual",
+      workers: 1,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 720 } },
     },
     {
       name: "mobile-chromium",
       testDir: "./tests/visual",
+      workers: 1,
       use: { ...devices["Desktop Chrome"], viewport: { width: 375, height: 812 } },
     },
     // Behavioural end-to-end flows against the mocked API. These assert on
     // behaviour (toasts, dialog state, request bodies) rather than pixels, so
     // they run at one viewport only and take no snapshots.
+    //
+    // Fully parallel: every test installs its own page-level route mocks and
+    // keeps its state in closures, so tests share nothing but the dev server.
     {
       name: "e2e-chromium",
       testDir: "./tests/e2e",
+      fullyParallel: true,
       use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 720 } },
     },
   ],
+  // `npm run test:e2e` serves a production build: four workers hitting a cold
+  // dev server spend much of the run waiting on on-demand transforms, and a
+  // build plus `vite preview` (same host and /api proxy) is roughly twice as
+  // fast. Everything else, visual snapshots included, keeps the dev server
+  // its baselines were recorded against. npm sets npm_lifecycle_event to the
+  // script name on every platform, so this needs no env-setting wrapper.
   webServer: {
-    command: "npm run dev",
+    command:
+      process.env.npm_lifecycle_event === "test:e2e"
+        ? "npx vite build && npx vite preview --port 5173 --strictPort"
+        : "npm run dev",
     url: "http://127.0.0.1:5173",
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
   },
-  // Single worker keeps the snapshot output stable; parallel runs across
-  // multiple browser contexts have been observed to introduce timing
-  // differences in animations even with animations: "disabled".
-  workers: 1,
+  // Visual snapshots run on one worker (per-project `workers: 1` above, and
+  // `--workers=1` in the test:visual scripts so the two viewports don't
+  // overlap either): parallel runs across browser contexts have been observed
+  // to introduce animation timing differences even with animations:
+  // "disabled". This global limit is what the behavioural E2E project fans out
+  // to — 4 matches the vCPUs of a GitHub-hosted Linux runner.
+  workers: process.env.CI ? 4 : "50%",
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : [["list"]],
   // Tests should not retry — a flaky VR test is a real bug.
   retries: 0,

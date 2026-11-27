@@ -5,6 +5,7 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
 // Synthetic HTTP contracts exercise the real browser/router/forms/query lifecycle.
 // This does not establish provider entitlement or actual database persistence.
@@ -190,10 +191,7 @@ for (const width of [1280, 375]) {
     await expect(
       page.locator("#chatgpt-connection-settings"),
     ).not.toHaveAttribute("open");
-    await page.screenshot({
-      path: testInfo.outputPath(`run-ui-unknown-busy-${width}.png`),
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `run-ui-unknown-busy-${width}.png`);
     await page.getByRole("button", { name: "Close run" }).click();
     await expect(
       page.getByRole("button", { name: "Request suggestions in Catalog" }),

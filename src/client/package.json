@@ -35,8 +35,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "test:visual": "playwright test --project=desktop-chromium --project=mobile-chromium --grep-invert \"Color-vision-deficiency\"",
-    "test:visual:update": "playwright test --project=desktop-chromium --project=mobile-chromium --grep-invert \"Color-vision-deficiency\" --update-snapshots",
+    "test:visual": "playwright test --workers=1 --project=desktop-chromium --project=mobile-chromium --grep-invert \"Color-vision-deficiency\"",
+    "test:visual:update": "playwright test --workers=1 --project=desktop-chromium --project=mobile-chromium --grep-invert \"Color-vision-deficiency\" --update-snapshots",
     "test:e2e": "playwright test --project=e2e-chromium",
     "audit:cvd": "playwright test cvd-audit.spec.ts --project=desktop-chromium",
     "coverage": "vitest run --coverage"

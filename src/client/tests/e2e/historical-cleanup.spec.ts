@@ -1,12 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   ADMIN_FIXTURE_USER,
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
 const group = {
   group: { store: "Market", rawDescription: "MILK 2% GAL", itemCode: null },
@@ -34,7 +32,7 @@ const groups = [
 for (const width of [375, 1280]) {
   test(`cleanup link, keyboard choice and mobile width (${width}px)`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await installApiMocks(page, {
       user: ADMIN_FIXTURE_USER,
@@ -75,12 +73,7 @@ for (const width of [375, 1280]) {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width);
-    const artifactDir = join(tmpdir(), "receipts-e2e-artifacts");
-    await mkdir(artifactDir, { recursive: true });
-    await page.screenshot({
-      path: join(artifactDir, `cleanup-${width}.png`),
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `cleanup-${width}.png`);
     await page.getByLabel("Select visible page").check();
     await expect(page.getByText("Selected groups (25/25)")).toBeVisible();
     await expect(

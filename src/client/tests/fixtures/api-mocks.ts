@@ -188,6 +188,32 @@ export async function installApiMocks(page: Page, opts: ApiMockOptions = {}): Pr
   await page.route("**/api/categories**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/subcategories**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
   await page.route("**/api/item-templates**", (route) => route.fulfill(json({ data: [], totalCount: 0 })));
+  // Budget envelopes, occasions and per-item-type envelope defaults: unpaginated
+  // `{ data }` lists (EnvelopeListResponse, OccasionListResponse,
+  // ItemTypeEnvelopeDefaultListResponse). Empty means "none set up yet".
+  // Reads only: a write a test did not stub falls through rather than
+  // pretending to succeed.
+  for (const path of ["/api/envelopes", "/api/occasions", "/api/item-type-envelope-defaults"]) {
+    await page.route(
+      (url) => url.pathname === path,
+      (route) => (route.request().method() === "GET" ? route.fulfill(json({ data: [] })) : route.fallback()),
+    );
+  }
+  // Category assistance as a fresh deployment reports it: provider known,
+  // assistance switched off, settings at CategoryAssistanceSettings.Default.
+  await page.route("**/api/category-assistance/status", (route) =>
+    route.fulfill(
+      json({
+        capability: "disabled",
+        consentEnabled: false,
+        suggestionsAvailable: false,
+        provider: "jev",
+        models: [],
+        dailyLimit: 100,
+        pendingLimit: 3,
+      }),
+    ),
+  );
   // Advisory item suggestions return arrays, unlike paginated template lists.
   await page.route(
     (url) => url.pathname === "/api/item-templates/similar",

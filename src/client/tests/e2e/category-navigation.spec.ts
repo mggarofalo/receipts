@@ -5,12 +5,11 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 import { taxonomyFixture } from "../../src/test/taxonomy-fixture";
 
 test.setTimeout(120_000);
 test.use({ navigationTimeout: 60_000 });
-const output =
-  "C:/Users/mggar/Source/receipts-017-artifacts/1060/navigation-review";
 const historicalId = "95000000-0000-4000-8000-000000000099";
 const current = { ...taxonomyFixture, previousRevisionId: historicalId };
 
@@ -18,7 +17,7 @@ for (const width of [1280, 375]) {
   for (const admin of [false, true]) {
     test(`categories navigation ${width} ${admin ? "admin" : "reader"}`, async ({
       page,
-    }) => {
+    }, testInfo) => {
       await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
       const user = admin ? ADMIN_FIXTURE_USER : FIXTURE_USER;
       await installApiMocks(page, {
@@ -84,11 +83,7 @@ for (const width of [1280, 375]) {
         ).toBeVisible();
         await page.keyboard.press("Escape");
       }
-      await page.screenshot({
-        path: `${output}/${width}-${admin ? "admin" : "reader"}-tree.png`,
-        fullPage: true,
-        animations: "disabled",
-      });
+      await reviewScreenshot(page, testInfo, `${width}-${admin ? "admin" : "reader"}-tree.png`, { animations: "disabled" });
       if (width === 375)
         await page
           .getByRole("button", { name: "Open navigation menu" })
@@ -106,11 +101,7 @@ for (const width of [1280, 375]) {
       await expect(
         navigation.getByRole("link", { name: /Subcategories|Category tree/ }),
       ).toHaveCount(0);
-      await page.screenshot({
-        path: `${output}/${width}-${admin ? "admin" : "reader"}-navigation.png`,
-        fullPage: true,
-        animations: "disabled",
-      });
+      await reviewScreenshot(page, testInfo, `${width}-${admin ? "admin" : "reader"}-navigation.png`, { animations: "disabled" });
       await navigation
         .getByRole("link", { name: "Classification", exact: true })
         .click();
@@ -131,11 +122,7 @@ for (const width of [1280, 375]) {
       await expect(
         page.getByRole("option").filter({ hasText: "Food / Dairy" }),
       ).toBeVisible();
-      await page.screenshot({
-        path: `${output}/${width}-${admin ? "admin" : "reader"}-palette.png`,
-        fullPage: true,
-        animations: "disabled",
-      });
+      await reviewScreenshot(page, testInfo, `${width}-${admin ? "admin" : "reader"}-palette.png`, { animations: "disabled" });
       await page
         .getByRole("option")
         .filter({ hasText: "Food / Dairy" })
@@ -154,11 +141,7 @@ for (const width of [1280, 375]) {
       await expect(
         page.getByRole("button", { name: /^Category actions:/ }),
       ).toHaveCount(0);
-      await page.screenshot({
-        path: `${output}/${width}-${admin ? "admin" : "reader"}-history.png`,
-        fullPage: true,
-        animations: "disabled",
-      });
+      await reviewScreenshot(page, testInfo, `${width}-${admin ? "admin" : "reader"}-history.png`, { animations: "disabled" });
       await page.getByRole("link", { name: "Back to categories" }).click();
       await expect(page).toHaveURL(/\/categories$/);
       await page.goto("/subcategories?categoryId=old&new=true#old");

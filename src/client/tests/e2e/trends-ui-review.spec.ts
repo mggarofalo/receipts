@@ -1,9 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { installApiMocks, signInAs } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 import type { components } from "../../src/generated/api";
 import { readFile } from "node:fs/promises";
-const output =
-  "C:/Users/mggar/Source/receipts-017-artifacts/1050/trends-ui-review";
 type Result = components["schemas"]["CategoryTrendsResponse"];
 const id = "10000000-0000-0000-0000-000000000001";
 const rev = "20000000-0000-0000-0000-000000000001";
@@ -67,7 +66,7 @@ const historical: NonNullable<Result["series"]> = [
   },
 ];
 for (const width of [1280, 375])
-  test(`trends acceptance ${width}`, async ({ page }) => {
+  test(`trends acceptance ${width}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
     const queries: string[] = [];
     const errors: string[] = [];
@@ -188,11 +187,7 @@ for (const width of [1280, 375])
         .locator("tbody tr")
         .first(),
     ).toHaveText("2026-01€50.00€5.00");
-    await page.waitForTimeout(1500);
-    await page.screenshot({
-      path: `${output}/${width}-historical.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `${width}-historical.png`, { settleMs: 1500 });
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth - window.innerWidth,
@@ -205,7 +200,7 @@ for (const width of [1280, 375])
       .getByRole("combobox", { name: "Category view", exact: true })
       .selectOption("currentHierarchy");
     const download = await downloadPromise;
-    const csvPath = `${output}/${width}-frozen.csv`;
+    const csvPath = testInfo.outputPath(`${width}-frozen.csv`);
     await download.saveAs(csvPath);
     const csv = await readFile(csvPath, "utf8");
     expect(csv).toContain("latestAtCutoff");
@@ -245,11 +240,7 @@ for (const width of [1280, 375])
       .getByRole("button", { name: "Clear filter", exact: true })
       .click();
     await expect(page).not.toHaveURL(/categoryId=/);
-    await page.waitForTimeout(1500);
-    await page.screenshot({
-      path: `${output}/${width}-current.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `${width}-current.png`, { settleMs: 1500 });
     await page.reload();
     await expect(
       page.getByRole("combobox", { name: "Category view", exact: true }),

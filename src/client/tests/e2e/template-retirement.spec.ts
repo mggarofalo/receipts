@@ -4,6 +4,7 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
 for (const width of [375, 1280]) {
   test(`legacy Templates route redirects and navigation omits it (${width}px)`, async ({
@@ -26,10 +27,7 @@ for (const width of [375, 1280]) {
     ).toHaveCount(0);
     const search = page.getByRole("button", { name: "Search or jump to…" });
     await expect(search).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("receipts.png"),
-      animations: "disabled",
-    });
+    await reviewScreenshot(page, testInfo, "receipts.png", { fullPage: false, animations: "disabled" });
 
     if (width < 900) {
       await page.getByRole("button", { name: "Open navigation menu" }).click();
@@ -40,10 +38,7 @@ for (const width of [375, 1280]) {
           .getByRole("link", { name: "Receipts", exact: true }),
       ).toBeVisible();
       await expect(page.locator('a[href="/item-templates"]')).toHaveCount(0);
-      await page.screenshot({
-        path: testInfo.outputPath("navigation.png"),
-        animations: "disabled",
-      });
+      await reviewScreenshot(page, testInfo, "navigation.png", { fullPage: false, animations: "disabled" });
       await page.keyboard.press("Escape");
     }
     await search.click();

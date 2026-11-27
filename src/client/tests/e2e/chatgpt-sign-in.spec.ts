@@ -5,13 +5,13 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
-const artifact = "C:/Users/mggar/Source/receipts-017-artifacts/1059/ui-review";
 const id = "10000000-0000-0000-0000-000000000059";
 for (const width of [1280, 375]) {
   test(`owner sign-in lifecycle and explicit disconnect at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     let connected = false;
     let pollState = "waiting";
@@ -102,10 +102,7 @@ for (const width of [1280, 375]) {
     });
     await expect(start).toBeDisabled();
     expect(starts).toBe(0);
-    await page.screenshot({
-      path: `${artifact}/${width}-initial.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `${width}-initial.png`);
     await consent.check();
     await start.click();
     await expect(
@@ -123,10 +120,7 @@ for (const width of [1280, 375]) {
         JSON.stringify({ ...localStorage, ...sessionStorage }),
       ),
     ).not.toContain("SYNTHETIC-1059");
-    await page.screenshot({
-      path: `${artifact}/${width}-waiting.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `${width}-waiting.png`);
     await page.getByRole("button", { name: "Cancel sign-in" }).click();
     await expect(page.getByText(/Sign-in cancelled/)).toBeVisible();
     await expect(page.getByText("SYNTHETIC-1059", { exact: true })).toHaveCount(
@@ -152,10 +146,7 @@ for (const width of [1280, 375]) {
     await expect(
       page.getByRole("button", { name: "Reconnect ChatGPT", exact: true }),
     ).toBeDisabled();
-    await page.screenshot({
-      path: `${artifact}/${width}-success.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `${width}-success.png`);
     const setup = page.getByRole("link", {
       name: "Set up post-save ChatGPT suggestions",
     });
@@ -174,10 +165,7 @@ for (const width of [1280, 375]) {
     await expect(
       page.getByRole("combobox", { name: "Post-save model" }),
     ).toBeVisible();
-    await page.screenshot({
-      path: `${artifact}/${width}-assistance-destination.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `${width}-assistance-destination.png`);
     await page.goto("/admin/normalized-descriptions?tab=chatgpt");
     await consent.check();
     await page
@@ -212,10 +200,7 @@ for (const width of [1280, 375]) {
           document.documentElement.clientWidth + 1,
       ),
     ).toBe(false);
-    await page.screenshot({
-      path: `${artifact}/${width}-disconnected.png`,
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `${width}-disconnected.png`);
   });
 }
 

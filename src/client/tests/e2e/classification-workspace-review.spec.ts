@@ -4,6 +4,7 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 import { taxonomyFixture } from "../../src/test/taxonomy-fixture";
 
 const attemptId = "11111111-1111-4111-8111-111111111111";
@@ -212,10 +213,7 @@ for (const width of [1280, 375]) {
       .click();
     await page.getByRole("button", { name: "Review details" }).click();
     await expect(page.getByText(/Current choice: active/)).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath(`workspace-browser-${width}.png`),
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, `workspace-browser-${width}.png`);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
@@ -329,8 +327,5 @@ test("unknown capability keeps manual browsing and admin settings reachable", as
   await expect(
     page.getByText("Category setup could not be used for this request."),
   ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("workspace-admin-unknown.png"),
-    fullPage: true,
-  });
+  await reviewScreenshot(page, testInfo, "workspace-admin-unknown.png");
 });

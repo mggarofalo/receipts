@@ -5,6 +5,7 @@ import {
   installApiMocks,
   signInAs,
 } from "../fixtures/api-mocks";
+import { reviewScreenshot } from "../fixtures/review-screenshot";
 
 for (const width of [375, 1280]) {
   test(`category assistance environment setup (${width}px)`, async ({
@@ -120,10 +121,7 @@ for (const width of [375, 1280]) {
       page.getByRole("region", { name: "Available Jev models" }),
     ).toHaveCount(0);
     expect(checks).toBe(0);
-    await page.screenshot({
-      path: testInfo.outputPath("jev-missing.png"),
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, "jev-missing.png");
     state = "configuredUnverified";
     await page.reload();
     await expect(
@@ -140,10 +138,7 @@ for (const width of [375, 1280]) {
     expect(checks).toBe(1);
     await expect(page.getByText("Connected", { exact: true })).toBeVisible();
     await expect(page.getByText(/authenticationVerified/)).toHaveCount(0);
-    await page.screenshot({
-      path: testInfo.outputPath("jev-connected.png"),
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, "jev-connected.png");
     await page.route("**/api/jev/check", (route) =>
       route.fulfill({
         status: 500,
@@ -159,10 +154,7 @@ for (const width of [375, 1280]) {
     ).toHaveCount(0);
     await expect(page.getByText("Connected", { exact: true })).toHaveCount(0);
     await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
-    await page.screenshot({
-      path: testInfo.outputPath("jev-check-error.png"),
-      fullPage: true,
-    });
+    await reviewScreenshot(page, testInfo, "jev-check-error.png");
   });
 }
 
@@ -195,10 +187,7 @@ test("Jev loading and failed status hide checks and models", async ({
   await expect(
     page.getByRole("region", { name: "Available Jev models" }),
   ).toHaveCount(0);
-  await page.screenshot({
-    path: testInfo.outputPath("jev-loading.png"),
-    fullPage: true,
-  });
+  await reviewScreenshot(page, testInfo, "jev-loading.png");
   release();
   await expect(
     page.getByText("Connection status unavailable.", { exact: true }),
@@ -210,10 +199,7 @@ test("Jev loading and failed status hide checks and models", async ({
     page.getByRole("region", { name: "Available Jev models" }),
   ).toHaveCount(0);
   expect(checks).toBe(0);
-  await page.screenshot({
-    path: testInfo.outputPath("jev-error.png"),
-    fullPage: true,
-  });
+  await reviewScreenshot(page, testInfo, "jev-error.png");
 });
 
 test("non-admin Settings never mounts Jev or calls endpoints", async ({
