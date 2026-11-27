@@ -61,32 +61,43 @@ public sealed class CategoryAssistanceRawRestoreLimitTests(PostgresFixture fixtu
 		}
 
 		directory.Should().NotBeNull("the script lives in the repository containing the test output");
+		string root = directory!.FullName;
+		// Build first, separately: on a cold build `dotnet run` writes restore/build diagnostics
+		// (e.g. NuGet audit warnings) to stdout ahead of the program's own output. Running with
+		// --no-build afterwards makes stdout exactly what the script prints.
+		await RunDotnetAsync(root, "build", "scripts/restore.cs");
 		string ledger = Path.GetTempFileName();
 		try
 		{
 			await File.WriteAllTextAsync(ledger, "");
-			var start = new ProcessStartInfo("dotnet")
-			{
-				WorkingDirectory = directory!.FullName,
-				UseShellExecute = false,
-				CreateNoWindow = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-			};
-			foreach (string argument in new[] { "run", "scripts/restore.cs", "--", "--test-fence-sql", ledger, "--unknown" })
-			{
-				start.ArgumentList.Add(argument);
-			}
-
-			using var process = Process.Start(start)!;
-			Task<string> output = process.StandardOutput.ReadToEndAsync();
-			Task<string> error = process.StandardError.ReadToEndAsync();
-			using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-			try { await process.WaitForExitAsync(timeout.Token); }
-			catch (OperationCanceledException) { process.Kill(entireProcessTree: true); throw; }
-			process.ExitCode.Should().Be(0, await error);
-			return await output;
+			return await RunDotnetAsync(
+				root, "run", "--no-build", "scripts/restore.cs", "--", "--test-fence-sql", ledger, "--unknown");
 		}
 		finally { File.Delete(ledger); }
+	}
+
+	private static async Task<string> RunDotnetAsync(string workingDirectory, params string[] arguments)
+	{
+		var start = new ProcessStartInfo("dotnet")
+		{
+			WorkingDirectory = workingDirectory,
+			UseShellExecute = false,
+			CreateNoWindow = true,
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+		};
+		foreach (string argument in arguments)
+		{
+			start.ArgumentList.Add(argument);
+		}
+
+		using var process = Process.Start(start)!;
+		Task<string> output = process.StandardOutput.ReadToEndAsync();
+		Task<string> error = process.StandardError.ReadToEndAsync();
+		using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+		try { await process.WaitForExitAsync(timeout.Token); }
+		catch (OperationCanceledException) { process.Kill(entireProcessTree: true); throw; }
+		process.ExitCode.Should().Be(0, $"`dotnet {string.Join(' ', arguments)}` failed:\n{await output}\n{await error}");
+		return await output;
 	}
 }
