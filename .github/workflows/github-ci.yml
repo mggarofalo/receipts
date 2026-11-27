@@ -29,8 +29,8 @@ jobs:
   # cannot affect (RECEIPTS-1132). Skipped jobs still satisfy required status
   # checks; a workflow-level `paths` filter would leave them pending instead.
   #
-  # Fails open: on push (step skipped) or if detection fails, the outputs are
-  # empty, and every consumer tests `!= 'false'`, so everything runs.
+  # Fails open: on push without a tested-tree match (below), or if detection
+  # fails, the outputs are empty, and every consumer tests `!= 'false'`, so everything runs.
   #
   # - backend:  anything that is not client code, Markdown or LICENSE. Deliberately
   #             broad, so an unclassified path (scripts/, .github/, docs/*.json,
@@ -38,17 +38,44 @@ jobs:
   # - frontend: client code plus the shared inputs the client reads or is
   #             built by.
   # - api:      inputs of the API Breaking Changes check.
+  #
+  # On a push to main, the job instead asks whether a green PR run already
+  # tested this exact tree (scripts/ci/tested-tree-check.sh).
+  # If so, it reports every category unchanged, so the push re-runs nothing
+  # and CI OK passes in about a minute. Any doubt, error, or re-run attempt
+  # leaves the outputs empty and the full suite runs.
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
+      statuses: read
+      actions: read
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      api: ${{ steps.filter.outputs.api }}
+      backend: ${{ steps.tested.outputs.match == 'true' && 'false' || steps.filter.outputs.backend }}
+      frontend: ${{ steps.tested.outputs.match == 'true' && 'false' || steps.filter.outputs.frontend }}
+      api: ${{ steps.tested.outputs.match == 'true' && 'false' || steps.filter.outputs.api }}
 
     steps:
+      - uses: actions/checkout@v6
+        if: github.event_name == 'push' && github.run_attempt == 1
+        with:
+          sparse-checkout: scripts/ci
+
+      - name: Reuse a green PR run of this tree
+        id: tested
+        if: github.event_name == 'push' && github.run_attempt == 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if scripts/ci/tested-tree-check.sh "$GITHUB_SHA"; then
+            echo "match=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "Running the full suite."
+          fi
+
       - name: Classify changed paths
         id: filter
         if: github.event_name == 'pull_request'
@@ -519,13 +546,20 @@ jobs:
   # because pr-metadata.yml re-runs this job when they change (RECEIPTS-1135).
   # A re-run keeps the results of the jobs it depends on, so the verdict is
   # always "this commit's tested results + the PR's current title and labels".
+  #
+  # A green verdict then records the tree those results tested (the merge
+  # ref's) as a `tested-tree` status on the PR head, which the push to main
+  # reuses (see `changes`). A re-run keeps the run's GITHUB_SHA, so it records
+  # the same tree. Fork PRs get a read-only token, so they do not record.
   ci-ok:
     name: CI OK
     needs: [changes, build, postgres-test, frontend-test, frontend-test-report, e2e, lint, frontend-lint, security, docker-build, api-compat]
     if: always()
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: read
+      statuses: write
 
     steps:
       # Fetches the PR's current title itself, so a re-run sees a fixed title.
@@ -615,3 +649,24 @@ jobs:
           expect docker-build "$(all "$IS_PR" "$either")"
           expect api-compat "$(all "$IS_PR" "$api")"
           exit "$fail"
+
+      - name: Record the tested tree
+        # Best effort: without the status, the push to main just runs everything.
+        continue-on-error: true
+        # Runs only when both steps above passed: a green verdict. PR runs are
+        # code events only, so every green PR run (or CI OK re-run) qualifies.
+        if: >-
+          github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # GITHUB_SHA is refs/pull/N/merge: the commit this run actually tested.
+          tree=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA" --jq .commit.tree.sha)
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state=success -f context=tested-tree \
+            -f description="$tree" -f target_url="$RUN_URL" >/dev/null
+          echo "Recorded tested tree $tree on $HEAD_SHA"

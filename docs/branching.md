@@ -38,6 +38,24 @@ One short-lived branch per tracked Plane issue:
   commit message, so it must be a valid Conventional Commit.
 - Delete the branch after merge.
 
+### Waiting for CI
+
+Wait with the scripts, not by polling by hand. Both exit 0 on green and exit 1
+on the first failed blocking job, printing the end of its log:
+
+```bash
+scripts/ci/wait-pr.sh [pr]       # until the PR's "CI OK" passes
+scripts/ci/wait-main.sh "$(gh pr view <pr> --json mergeCommit -q .mergeCommit.oid)"
+```
+
+A green PR run records the tree it tested (the merge ref's) as a `tested-tree`
+status on the PR head. When the squash commit on `main` has exactly that tree
+and its parent on `main` is green, the push run skips every test job (only `Detect
+Changes` and `CI OK` run) and passes in about a minute. Otherwise, for example when `main` moved after the
+last green PR run, the full suite runs (~20 min). Rebasing and letting the PR
+go green again just before merging gets the fast path.
+`scripts/ci/tested-tree-check.sh <sha>` explains the decision for any commit.
+
 ### Hotfixes
 
 A hotfix is not special — it is an ordinary `fix:` PR to `main`:

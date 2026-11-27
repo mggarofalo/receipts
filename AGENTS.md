@@ -25,6 +25,10 @@ Single-trunk model: `main` is the only long-lived branch. Cut a short-lived
 module/parent branches. Releases are tag-driven (push a `vX.Y.Z` tag). See
 **[docs/branching.md](docs/branching.md)** and **[docs/releases.md](docs/releases.md)**.
 
+Wait for CI with `scripts/ci/wait-pr.sh` and, after merging, `scripts/ci/wait-main.sh <sha>`. A push to
+`main` whose tree a green PR run already tested reports green in about a minute. See
+[docs/branching.md](docs/branching.md#waiting-for-ci).
+
 Make worktrees under `.claude/worktrees/` with `git cow add -b <type>/<name> .claude/worktrees/<name> origin/main`
 when git-cow is installed, and with plain `git worktree add` otherwise. Keep the folder name flat (no `/`),
 because git-cow keeps one extra checkout per parent folder. See
